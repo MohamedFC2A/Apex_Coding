@@ -7,13 +7,18 @@ require('dotenv').config();
 
 const app = express();
 
-app.use(
-  cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-  })
-);
+// RELAXED CORS CONFIGURATION
+// Note: You cannot use `origin: '*'` together with `credentials: true` in browsers.
+// This configuration allows any origin and echoes it back when present (works with credentials).
+const corsOptions = {
+  origin: (origin, callback) => callback(null, true),
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true
+};
+app.use(cors(corsOptions));
+// Handle Preflight requests explicitly
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 

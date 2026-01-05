@@ -15,7 +15,6 @@ describe('aiService (API mode)', () => {
 
   it('generatePlan calls backend endpoint', async () => {
     vi.resetModules();
-    process.env.VITE_BACKEND_URL = 'https://backend.example.com';
     const { aiService } = await import('./aiService');
 
     (axios.post as any).mockResolvedValueOnce({
@@ -25,7 +24,7 @@ describe('aiService (API mode)', () => {
     const res = await aiService.generatePlan('test prompt', false);
 
     expect(axios.post).toHaveBeenCalledWith(
-      'https://backend.example.com/api/ai/plan',
+      'https://apex-coding-backend.vercel.app/api/ai/plan',
       { prompt: 'test prompt', thinkingMode: false },
       { withCredentials: true }
     );
@@ -34,7 +33,6 @@ describe('aiService (API mode)', () => {
 
   it('generateCodeStream parses SSE events', async () => {
     vi.resetModules();
-    process.env.VITE_BACKEND_URL = 'https://backend.example.com';
     const { aiService } = await import('./aiService');
 
     const encoder = new TextEncoder();

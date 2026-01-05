@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { ProjectFile } from '@/types';
-import { API_BASE_URL } from '@/config';
+
+// HARDCODED FOR PRODUCTION FIX
+const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
+// const API_BASE_URL = 'http://localhost:3001';
 
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 

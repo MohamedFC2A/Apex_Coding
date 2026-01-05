@@ -1,7 +1,12 @@
 import axios from 'axios';
-import { API_BASE_URL } from '@/config';
 import { ProjectFile } from '@/types';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
+
+// HARDCODED FOR PRODUCTION FIX
+const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
+
+// NOTE: For local development, you will need to uncomment localhost manually later.
+// const API_BASE_URL = 'http://localhost:3001';
 
 interface AIResponse {
   plan: string;

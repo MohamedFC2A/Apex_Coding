@@ -2,23 +2,20 @@
 // Monolithic server to avoid ESM/dist path issues on Vercel.
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
+const OpenAIImport = require('openai');
 require('dotenv').config();
 
 const app = express();
 
-// RELAXED CORS CONFIGURATION
-// Note: You cannot use `origin: '*'` together with `credentials: true` in browsers.
-// This configuration allows any origin and echoes it back when present (works with credentials).
-const corsOptions = {
-  origin: (origin, callback) => callback(null, true),
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true
-};
-app.use(cors(corsOptions));
-// Handle Preflight requests explicitly
-app.options('*', cors(corsOptions));
+// Open CORS completely (no cookies required for this app)
+app.use(
+  cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  })
+);
+app.options('*', cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -26,9 +23,18 @@ app.get('/', (req, res) => {
   res.status(200).send('Apex Coding Backend is Running!');
 });
 
+const OpenAI = OpenAIImport.default || OpenAIImport;
+
 const normalizeDeepSeekBaseUrl = (raw) => {
   const base = String(raw || 'https://api.deepseek.com').trim().replace(/\/+$/, '');
   return base.endsWith('/v1') ? base : `${base}/v1`;
+};
+
+const getClient = () => {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error('API Key missing on Backend');
+  const baseURL = normalizeDeepSeekBaseUrl(process.env.DEEPSEEK_BASE_URL);
+  return new OpenAI({ baseURL, apiKey });
 };
 
 const cleanAndParseJSON = (text) => {
@@ -46,40 +52,28 @@ const cleanAndParseJSON = (text) => {
   }
 };
 
-const getDeepSeekClient = () => {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) throw new Error('API Key missing on Backend');
-  const baseURL = normalizeDeepSeekBaseUrl(process.env.DEEPSEEK_BASE_URL);
-  return { apiKey, baseURL };
-};
-
 // 2. AI Plan Route
 app.post('/api/ai/plan', async (req, res) => {
   try {
     const { prompt } = req.body || {};
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    const { apiKey, baseURL } = getDeepSeekClient();
+    const client = getClient();
+    const completion = await client.chat.completions.create({
+      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+      temperature: 0.0,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a Software Architect. Return ONLY raw JSON with shape {"steps":[{"id":"1","title":"..."}]}. No markdown.'
+        },
+        { role: 'user', content: `Create a project plan for: ${prompt}` }
+      ]
+    });
 
-    const response = await axios.post(
-      `${baseURL}/chat/completions`,
-      {
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
-        temperature: 0.0,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a Software Architect. Return ONLY raw JSON with shape {"steps":[{"id":"1","title":"..."}]}. No markdown.'
-          },
-          { role: 'user', content: `Create a project plan for: ${prompt}` }
-        ]
-      },
-      { headers: { Authorization: `Bearer ${apiKey}` } }
-    );
-
-    const content = response?.data?.choices?.[0]?.message?.content || '';
+    const content = completion?.choices?.[0]?.message?.content || '';
     const parsed = cleanAndParseJSON(content);
     const stepsRaw = Array.isArray(parsed) ? parsed : parsed?.steps;
     const steps = Array.isArray(stepsRaw) ? stepsRaw : [];
@@ -111,21 +105,17 @@ app.post('/api/ai/generate', async (req, res) => {
     const { prompt } = req.body || {};
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    const { apiKey, baseURL } = getDeepSeekClient();
-    const response = await axios.post(
-      `${baseURL}/chat/completions`,
-      {
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
-        temperature: 0.0,
-        messages: [
-          { role: 'system', content: CODE_SYSTEM_PROMPT },
-          { role: 'user', content: prompt }
-        ]
-      },
-      { headers: { Authorization: `Bearer ${apiKey}` } }
-    );
+    const client = getClient();
+    const completion = await client.chat.completions.create({
+      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+      temperature: 0.0,
+      messages: [
+        { role: 'system', content: CODE_SYSTEM_PROMPT },
+        { role: 'user', content: prompt }
+      ]
+    });
 
-    const content = response?.data?.choices?.[0]?.message?.content || '';
+    const content = completion?.choices?.[0]?.message?.content || '';
     const payload = cleanAndParseJSON(content);
     res.json(payload);
   } catch (error) {
@@ -134,29 +124,28 @@ app.post('/api/ai/generate', async (req, res) => {
   }
 });
 
-// 4. Streaming generate (SSE -> client)
+// 4. Streaming generate (raw stream: model deltas only)
 app.post('/api/ai/generate-stream', async (req, res) => {
-  let upstream = null;
-
   try {
-    const { prompt } = req.body || {};
+    const { prompt, thinkingMode } = req.body || {};
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    const { apiKey, baseURL } = getDeepSeekClient();
+    const client = getClient();
 
-    res.setHeader('Content-Type', 'text/event-stream');
+    // Vercel streaming headers
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-    const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-    res.write(`event: meta\ndata: ${JSON.stringify({ provider: 'deepseek', model, baseURL })}\n\n`);
-    res.write(`event: status\ndata: ${JSON.stringify({ phase: 'thinking', message: 'Thinking…' })}\n\n`);
+    const model = thinkingMode
+      ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
+      : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
 
     const ac = new AbortController();
     req.on('close', () => ac.abort());
 
-    upstream = await axios.post(
-      `${baseURL}/chat/completions`,
+    const stream = await client.chat.completions.create(
       {
         model,
         temperature: 0.0,
@@ -166,78 +155,21 @@ app.post('/api/ai/generate-stream', async (req, res) => {
           { role: 'user', content: prompt }
         ]
       },
-      {
-        responseType: 'stream',
-        signal: ac.signal,
-        headers: { Authorization: `Bearer ${apiKey}` }
-      }
+      { signal: ac.signal }
     );
 
-    res.write(`event: status\ndata: ${JSON.stringify({ phase: 'streaming', message: 'Generating…' })}\n\n`);
-
-    let buffer = '';
-    let fullText = '';
-
-    upstream.data.on('data', (chunk) => {
-      buffer += chunk.toString('utf8');
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) continue;
-        const data = trimmed.slice('data:'.length).trim();
-        if (data === '[DONE]') return;
-
-        let parsed;
-        try {
-          parsed = JSON.parse(data);
-        } catch {
-          continue;
-        }
-
-        const delta = parsed?.choices?.[0]?.delta || {};
-        const reasoning = delta?.reasoning_content;
-        if (typeof reasoning === 'string' && reasoning.length > 0) {
-          res.write(`event: reasoning\ndata: ${JSON.stringify({ chunk: reasoning })}\n\n`);
-        }
-
-        const content = delta?.content;
-        if (typeof content === 'string' && content.length > 0) {
-          fullText += content;
-          res.write(`event: token\ndata: ${JSON.stringify({ chunk: content })}\n\n`);
-        }
+    for await (const chunk of stream) {
+      const delta = chunk?.choices?.[0]?.delta || {};
+      const content = delta?.content;
+      if (typeof content === 'string' && content.length > 0) {
+        res.write(content);
       }
-    });
+    }
 
-    upstream.data.on('end', () => {
-      try {
-        res.write(`event: status\ndata: ${JSON.stringify({ phase: 'validating', message: 'Validating…' })}\n\n`);
-        const payload = cleanAndParseJSON(fullText);
-        res.write(`event: json\ndata: ${JSON.stringify({ payload })}\n\n`);
-        res.write(`event: status\ndata: ${JSON.stringify({ phase: 'done', message: 'Complete' })}\n\n`);
-        res.end();
-      } catch (e) {
-        res.write(`event: status\ndata: ${JSON.stringify({ phase: 'error', message: 'Invalid JSON from AI' })}\n\n`);
-        res.end();
-      }
-    });
-
-    upstream.data.on('error', (err) => {
-      if (ac.signal.aborted) return;
-      console.error('DeepSeek stream error:', err?.message || err);
-      res.write(`event: status\ndata: ${JSON.stringify({ phase: 'error', message: 'Upstream stream error' })}\n\n`);
-      res.end();
-    });
+    res.end();
   } catch (error) {
     console.error('AI Stream Error:', error?.message || error);
     if (!res.headersSent) return res.status(500).json({ error: error?.message || 'Streaming failed' });
-    try {
-      res.write(`event: status\ndata: ${JSON.stringify({ phase: 'error', message: error?.message || 'Streaming failed' })}\n\n`);
-    } catch {
-      // ignore
-    }
     res.end();
   }
 });

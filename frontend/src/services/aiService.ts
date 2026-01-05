@@ -1,12 +1,8 @@
-import axios from 'axios';
 import { ProjectFile } from '@/types';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 
 // HARDCODED FOR PRODUCTION FIX
 const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
-
-// NOTE: For local development, you will need to uncomment localhost manually later.
-// const API_BASE_URL = 'http://localhost:3001';
 
 interface AIResponse {
   plan: string;
@@ -19,49 +15,48 @@ interface AIResponse {
 
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 
+const cleanAndParseJSON = (text: string) => {
+  const raw = String(text ?? '').trim();
+  if (raw.length === 0) throw new Error('Empty AI response');
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const match = raw.match(/```json\s*([\s\S]*?)\s*```/i) || raw.match(/```\s*([\s\S]*?)\s*```/);
+    if (match?.[1]) return JSON.parse(match[1]);
+
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) return JSON.parse(raw.slice(start, end + 1));
+
+    throw new Error('No valid JSON found in response');
+  }
+};
+
 const getErrorMessage = (err: any, fallback: string) => {
   return (
-    err?.response?.data?.error ||
-    err?.response?.data?.message ||
+    err?.error ||
     err?.message ||
     fallback
   );
 };
 
-const parseSseEvent = (rawEvent: string) => {
-  const lines = rawEvent
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .filter((line) => line.length > 0 && !line.startsWith(':'));
-
-  let eventName = 'message';
-  const dataLines: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith('event:')) {
-      eventName = line.slice('event:'.length).trim();
-      continue;
-    }
-    if (line.startsWith('data:')) {
-      dataLines.push(line.slice('data:'.length).trimStart());
-      continue;
-    }
-  }
-
-  const dataRaw = dataLines.join('\n');
-  return { eventName, dataRaw };
-};
-
 export const aiService = {
   async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
     try {
-      const response = await axios.post(
-        apiUrl('/api/ai/plan'),
-        { prompt, thinkingMode },
-        { withCredentials: true }
-      );
+      const response = await fetch(apiUrl('/api/ai/plan'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, thinkingMode })
+      });
 
-      const steps = Array.isArray(response.data?.steps) ? response.data.steps : [];
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(text || `Plan failed (${response.status})`);
+      }
+
+      const data: any = await response.json();
+      const steps = Array.isArray(data?.steps) ? data.steps : [];
       return { steps };
     } catch (error: any) {
       console.error('Plan Error Details:', error);
@@ -71,13 +66,18 @@ export const aiService = {
 
   async generateCode(prompt: string): Promise<AIResponse> {
     try {
-      const response = await axios.post(
-        apiUrl('/api/ai/generate'),
-        { prompt },
-        { withCredentials: true }
-      );
+      const response = await fetch(apiUrl('/api/ai/generate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
 
-      const data: any = response.data;
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(text || `Generate failed (${response.status})`);
+      }
+
+      const data: any = await response.json();
 
       if (data?.files) {
         data.files = data.files.map((file: ProjectFile) => ({
@@ -117,10 +117,12 @@ export const aiService = {
       const architectMode = Boolean(options.architectMode);
       const includeReasoning = Boolean(options.includeReasoning);
 
+      onMeta({ provider: 'vercel-backend', baseURL: API_BASE_URL, thinkingMode, architectMode });
+      onStatus('streaming', 'Generating…');
+
       const response = await fetch(apiUrl('/api/ai/generate-stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
           prompt,
           thinkingMode,
@@ -132,17 +134,8 @@ export const aiService = {
 
       if (!response.ok) {
         let message = `Streaming failed (${response.status})`;
-        try {
-          const errorJson = await response.json();
-          message = errorJson?.error || errorJson?.message || message;
-        } catch {
-          try {
-            const errorText = await response.text();
-            if (errorText) message = errorText;
-          } catch {
-            // ignore
-          }
-        }
+        const errorText = await response.text().catch(() => '');
+        if (errorText) message = errorText;
         throw new Error(message);
       }
 
@@ -151,39 +144,27 @@ export const aiService = {
 
       const reader = body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let fullText = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-
-        let boundaryIndex = buffer.indexOf('\n\n');
-        while (boundaryIndex !== -1) {
-          const rawEvent = buffer.slice(0, boundaryIndex);
-          buffer = buffer.slice(boundaryIndex + 2);
-          boundaryIndex = buffer.indexOf('\n\n');
-
-          const { eventName, dataRaw } = parseSseEvent(rawEvent);
-          if (!dataRaw) continue;
-
-          let data: any;
-          try {
-            data = JSON.parse(dataRaw);
-          } catch {
-            continue;
-          }
-
-          if (eventName === 'meta') onMeta(data);
-          if (eventName === 'status') onStatus(data.phase, data.message);
-          if (eventName === 'reasoning' && includeReasoning) onReasoning(String(data.chunk || ''));
-          if (eventName === 'token') onToken(String(data.chunk || ''));
-          if (eventName === 'json') onJSON(data.payload);
-        }
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk.length === 0) continue;
+        fullText += chunk;
+        onToken(chunk);
       }
 
       onStatus('done', 'Complete');
+
+      try {
+        const payload = cleanAndParseJSON(fullText);
+        onJSON(payload);
+      } catch (e: any) {
+        throw new Error(e?.message || 'Failed to parse streamed JSON');
+      }
+
       onComplete();
     } catch (err: any) {
       onError(err?.message || 'Streaming failed');

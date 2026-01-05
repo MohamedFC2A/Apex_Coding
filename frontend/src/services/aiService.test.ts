@@ -1,50 +1,46 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('axios', () => ({
-  default: {
-    post: vi.fn()
-  }
-}));
-
-import axios from 'axios';
-
 describe('aiService (API mode)', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('generatePlan calls backend endpoint', async () => {
     vi.resetModules();
     const { aiService } = await import('./aiService');
 
-    (axios.post as any).mockResolvedValueOnce({
-      data: { steps: [{ id: '1', title: 'Test step' }] }
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ steps: [{ id: '1', title: 'Test step' }] })
     });
+    (globalThis as any).fetch = fetchMock;
 
     const res = await aiService.generatePlan('test prompt', false);
 
-    expect(axios.post).toHaveBeenCalledWith(
-      'https://apex-coding-backend.vercel.app/api/ai/plan',
-      { prompt: 'test prompt', thinkingMode: false },
-      { withCredentials: true }
-    );
+    expect(fetchMock).toHaveBeenCalledWith('https://apex-coding-backend.vercel.app/api/ai/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'test prompt', thinkingMode: false })
+    });
     expect(res.steps).toEqual([{ id: '1', title: 'Test step' }]);
   });
 
-  it('generateCodeStream parses SSE events', async () => {
+  it('generateCodeStream streams raw JSON', async () => {
     vi.resetModules();
     const { aiService } = await import('./aiService');
 
     const encoder = new TextEncoder();
-    const sse = [
-      'event: meta\ndata: {"model":"deepseek-chat"}\n\n',
-      'event: token\ndata: {"chunk":"abc"}\n\n',
-      'event: json\ndata: {"payload":{"project_files":[],"metadata":{"language":"x","framework":"y"},"instructions":"ok"}}\n\n'
-    ].join('');
+    const jsonText = JSON.stringify({
+      project_files: [],
+      metadata: { language: 'x', framework: 'y' },
+      instructions: 'ok'
+    });
 
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode(sse));
+        controller.enqueue(encoder.encode(jsonText.slice(0, 10)));
+        controller.enqueue(encoder.encode(jsonText.slice(10)));
         controller.close();
       }
     });
@@ -80,8 +76,8 @@ describe('aiService (API mode)', () => {
     );
 
     expect(fetchMock).toHaveBeenCalled();
-    expect(metas[0]).toMatchObject({ model: 'deepseek-chat' });
-    expect(tokens).toEqual(['abc']);
+    expect(metas[0]).toMatchObject({ provider: 'vercel-backend' });
+    expect(tokens.join('')).toBe(jsonText);
     expect(jsonPayloads[0]).toMatchObject({ instructions: 'ok' });
     expect(statuses.some((s) => s.phase === 'done')).toBe(true);
     expect(completed).toBe(1);

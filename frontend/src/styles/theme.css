@@ -1,0 +1,36 @@
+:root {
+  --nexus-deepest: #000000;
+  --nexus-dark: #0a0a0a;
+  --nexus-darker: #0f0f0f;
+  --nexus-medium: #1a1a1a;
+  --primary-color: #8b5cf6;
+  
+  --glass-opacity: 0.15;
+  --glass-blur: 60px;
+  --border-opacity: 0.12;
+  --border-white: rgba(255, 255, 255, 0.12);
+  --border-white-hover: rgba(255, 255, 255, 0.20);
+  
+  --highlight-white: rgba(255, 255, 255, 0.06);
+  --highlight-white-strong: rgba(255, 255, 255, 0.10);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.02) 0%, transparent 60%),
+    radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.015) 0%, transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.01) 0%, transparent 80%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}

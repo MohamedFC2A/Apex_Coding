@@ -1,0 +1,298 @@
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { FileSystem } from '@/types';
+import { useAIStore } from '@/stores/aiStore';
+import { usePreviewStore } from '@/stores/previewStore';
+import { DEFAULT_ROOT_PACKAGE_JSON, ensureWebContainer, installDependencies, resetWebContainerState, startServer, syncFileSystem } from '@/services/webcontainer';
+import { stripAnsi } from '@/utils/ansi';
+
+type RuntimeStatus = 'idle' | 'booting' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
+
+type WebContainerContextValue = {
+  status: RuntimeStatus;
+  url: string | null;
+  error: string | null;
+  deployAndRun: () => Promise<void>;
+  runProject: () => Promise<void>;
+  restart: () => Promise<void>;
+};
+
+const WebContainerContext = createContext<WebContainerContextValue | null>(null);
+
+const normalizeFileSystem = (files: FileSystem | []) => (Array.isArray(files) ? {} : files);
+
+const isTreeEmpty = (tree: FileSystem) => Object.keys(tree).length === 0;
+
+const createLineBuffer = (onLine: (line: string) => void) => {
+  let buffer = '';
+  return (chunk: string) => {
+    buffer += stripAnsi(chunk);
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.length > 0) onLine(trimmed);
+    }
+  };
+};
+
+const shouldSuppressLine = (line: string) => {
+  const lower = line.toLowerCase();
+  if (lower.includes('deprecated')) return true;
+  if (lower.includes('npm fund')) return true;
+  if (lower.includes('looking for funding')) return true;
+  return false;
+};
+
+const getPackageDir = (path: string) => {
+  const parts = path.split('/');
+  if (parts.length <= 1) return '.';
+  return parts.slice(0, -1).join('/');
+};
+
+const resolveStartCommand = (fileMap: Map<string, string>) => {
+  const rootPackage = fileMap.get('package.json');
+  if (rootPackage) {
+    try {
+      const parsed = JSON.parse(rootPackage);
+      const scripts = parsed?.scripts || {};
+      if (scripts?.start) return { command: 'npm', args: ['run', 'start'], cwd: '.' };
+    } catch {
+      // fall through
+    }
+  }
+
+  if (fileMap.has('backend/server.js')) {
+    return { command: 'node', args: ['backend/server.js'], cwd: '.' };
+  }
+
+  if (fileMap.has('backend/src/server.js')) {
+    return { command: 'node', args: ['backend/src/server.js'], cwd: '.' };
+  }
+
+  return null;
+};
+
+export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { files, isPreviewOpen, isGenerating, appendThinkingContent } = useAIStore();
+  const { addLog, setPreviewUrl, setRuntimeStatus } = usePreviewStore();
+
+  const [status, setStatus] = useState<RuntimeStatus>('idle');
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const serverListenerAttachedRef = useRef(false);
+  const serverStartedRef = useRef(false);
+  const urlsByPortRef = useRef<Record<number, string>>({});
+  const pendingRef = useRef<Promise<void> | null>(null);
+
+  const updateStatus = useCallback(
+    (next: RuntimeStatus, message?: string) => {
+      setStatus(next);
+      setRuntimeStatus(next, message || null);
+    },
+    [setRuntimeStatus]
+  );
+
+  const updateUrl = useCallback(
+    (nextUrl: string | null) => {
+      setUrl(nextUrl);
+      setPreviewUrl(nextUrl);
+    },
+    [setPreviewUrl]
+  );
+
+  const attachServerReady = useCallback(async () => {
+    if (serverListenerAttachedRef.current) return;
+    const container = await ensureWebContainer();
+    container.on('server-ready', (port, serverUrl) => {
+      urlsByPortRef.current[port] = serverUrl;
+      const preferredUrl =
+        urlsByPortRef.current[5173] || urlsByPortRef.current[3111] || urlsByPortRef.current[3000] || serverUrl;
+      updateUrl(preferredUrl);
+      updateStatus('ready', `Server ready on port ${port}`);
+      addLog({
+        timestamp: Date.now(),
+        type: 'success',
+        message: `Server ready on port ${port}`,
+        source: 'webcontainer'
+      });
+    });
+    serverListenerAttachedRef.current = true;
+  }, [addLog, updateStatus, updateUrl]);
+
+  const waitForServerReady = useCallback(
+    (timeoutMs: number, ports: number[]) =>
+      new Promise<void>((resolve, reject) => {
+        const start = Date.now();
+        const tick = () => {
+          const urls = urlsByPortRef.current;
+          const ready = ports.some((port) => Boolean(urls[port]));
+          if (ready) return resolve();
+          if (Date.now() - start > timeoutMs) {
+            return reject(new Error('WebContainer server-ready timeout (10s). Check root /package.json scripts and ports 5173/3111.'));
+          }
+          setTimeout(tick, 120);
+        };
+        tick();
+      }),
+    []
+  );
+
+  const installPackages = useCallback(
+    async (packagePaths: string[]) => {
+      if (packagePaths.length === 0) return;
+      updateStatus('installing', 'Installing dependencies...');
+      appendThinkingContent('[webcontainer] Installing dependencies...\n');
+
+      const logLine = createLineBuffer((line) => {
+        if (shouldSuppressLine(line)) return;
+        appendThinkingContent(`${line}\n`);
+        addLog({ timestamp: Date.now(), type: 'info', message: line, source: 'npm' });
+      });
+
+      for (const pkgPath of packagePaths) {
+        const cwd = getPackageDir(pkgPath);
+        const { exitCode } = await installDependencies(cwd, logLine);
+        if (exitCode !== 0) {
+          throw new Error(`npm install failed in ${cwd} (exit ${exitCode})`);
+        }
+      }
+    },
+    [addLog, appendThinkingContent, updateStatus]
+  );
+
+  const bootAndRun = useCallback(
+    async (forceRestart: boolean) => {
+      const tree = normalizeFileSystem(files);
+      if (!isPreviewOpen || isTreeEmpty(tree)) return;
+
+      setError(null);
+      if (!serverStartedRef.current || forceRestart) updateUrl(null);
+      updateStatus('booting', 'Booting container...');
+
+      await ensureWebContainer();
+      await attachServerReady();
+      urlsByPortRef.current = {};
+
+      updateStatus('mounting', 'Syncing files...');
+      const { changedPackages, injectedRootPackage, invalidPackageJsonPaths, fileMap } = await syncFileSystem(tree, {
+        ensureRootPackageJson: true,
+        rootPackageJson: DEFAULT_ROOT_PACKAGE_JSON
+      });
+      if (injectedRootPackage) {
+        appendThinkingContent('[webcontainer] Injected root /package.json (missing).\\n');
+      }
+      if (invalidPackageJsonPaths.length > 0) {
+        appendThinkingContent(
+          `[webcontainer] Skipped invalid package.json: ${invalidPackageJsonPaths.join(', ')}\\n`
+        );
+      }
+      const fatalInvalid = invalidPackageJsonPaths.filter((p) => p !== 'package.json');
+      if (fatalInvalid.length > 0) {
+        throw new Error(`Invalid package.json generated: ${fatalInvalid.join(', ')}`);
+      }
+
+      const readyPackages = changedPackages.filter((path) => (fileMap.get(path) || '').trim().length > 10);
+      await installPackages(readyPackages);
+
+      if (serverStartedRef.current && !forceRestart) {
+        updateStatus('ready', 'Server running.');
+        return;
+      }
+
+      const startCommand = resolveStartCommand(fileMap);
+      if (!startCommand) {
+        updateStatus('idle', 'Waiting for entrypoint...');
+        return;
+      }
+
+      updateStatus('starting', 'Starting server...');
+      const logLine = createLineBuffer((line) => {
+        if (shouldSuppressLine(line)) return;
+        addLog({ timestamp: Date.now(), type: 'info', message: line, source: 'server' });
+      });
+
+      const process = await startServer(startCommand.command, startCommand.args, {
+        cwd: startCommand.cwd,
+        onOutput: logLine,
+        force: forceRestart
+      });
+
+      serverStartedRef.current = true;
+
+      await Promise.race([
+        waitForServerReady(10_000, [5173, 3111, 3000]),
+        process.exit.then((code) => {
+          throw new Error(`Server process exited (${code}). Check logs for details.`);
+        })
+      ]);
+    },
+    [addLog, appendThinkingContent, attachServerReady, files, isPreviewOpen, installPackages, updateStatus, updateUrl]
+  );
+
+  useEffect(() => {
+    if (!isPreviewOpen) {
+      updateStatus('idle');
+      updateUrl(null);
+      return;
+    }
+
+    const tree = normalizeFileSystem(files);
+    if (isTreeEmpty(tree)) {
+      resetWebContainerState();
+      serverStartedRef.current = false;
+      updateStatus('idle');
+      updateUrl(null);
+      return;
+    }
+  }, [files, isPreviewOpen, updateStatus, updateUrl]);
+
+  const deployAndRun = useCallback(async () => {
+    if (isGenerating) {
+      updateStatus('idle', 'Waiting for code generation to finish...');
+      appendThinkingContent('[webcontainer] Waiting for code generation to finish...\\n');
+      return;
+    }
+
+    const apiKeyPresent = Boolean((import.meta as any)?.env?.VITE_WC_CLIENT_ID);
+    if (apiKeyPresent) {
+      appendThinkingContent('[webcontainer] Authenticated with Enterprise API Key.\\n');
+    }
+
+    if (pendingRef.current) return pendingRef.current;
+
+    pendingRef.current = bootAndRun(true)
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        updateStatus('error', message);
+        throw err;
+      })
+      .finally(() => {
+        pendingRef.current = null;
+      });
+
+    return pendingRef.current;
+  }, [appendThinkingContent, bootAndRun, isGenerating, updateStatus]);
+
+  const runProject = useCallback(async () => {
+    serverStartedRef.current = false;
+    await deployAndRun();
+  }, [deployAndRun]);
+
+  const restart = runProject;
+
+  return (
+    <WebContainerContext.Provider value={{ status, url, error, deployAndRun, runProject, restart }}>
+      {children}
+    </WebContainerContext.Provider>
+  );
+};
+
+export const useWebContainer = () => {
+  const ctx = useContext(WebContainerContext);
+  if (!ctx) {
+    throw new Error('useWebContainer must be used within WebContainerProvider');
+  }
+  return ctx;
+};

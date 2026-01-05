@@ -105,6 +105,7 @@ const normalizeBaseURL = (raw: string | undefined, fallback: string) => {
 const getApiKey = () => {
   const key = (import.meta as any)?.env?.VITE_DEEPSEEK_API_KEY as string | undefined;
   if (!key || key.trim().length === 0) {
+    console.error('CRITICAL: VITE_DEEPSEEK_API_KEY is missing!');
     throw new Error('API Key not configured in Settings');
   }
   return key.trim();
@@ -133,26 +134,44 @@ const getClient = () => {
   return cachedClient;
 };
 
-const tryParseJSON = (raw: string) => {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) throw new Error('Empty AI response');
-
-  const noFences = trimmed
-    .replace(/^```(?:json)?/i, '')
-    .replace(/```$/i, '')
-    .trim();
+const cleanAndParseJSON = (text: string) => {
+  const raw = String(text ?? '').trim();
+  if (raw.length === 0) throw new Error('Empty AI response');
 
   try {
-    return JSON.parse(noFences);
+    return JSON.parse(raw);
   } catch {
-    const start = noFences.indexOf('{');
-    const end = noFences.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-      const slice = noFences.slice(start, end + 1);
-      return JSON.parse(slice);
+    const fenced =
+      raw.match(/```json\s*([\s\S]*?)\s*```/i) ||
+      raw.match(/```\s*([\s\S]*?)\s*```/);
+
+    if (fenced?.[1]) {
+      return JSON.parse(fenced[1]);
     }
-    throw new Error('Failed to parse JSON response');
+
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      return JSON.parse(raw.substring(start, end + 1));
+    }
+
+    throw new Error('No valid JSON found in response');
   }
+};
+
+const getApiKeyStatusLabel = () => {
+  const key = (import.meta as any)?.env?.VITE_DEEPSEEK_API_KEY as string | undefined;
+  return key && key.trim().length > 0 ? 'Loaded' : 'Missing';
+};
+
+const getErrorMessage = (err: any, fallback: string) => {
+  return (
+    err?.message ||
+    err?.error?.message ||
+    err?.response?.data?.error?.message ||
+    err?.response?.data?.message ||
+    fallback
+  );
 };
 
 const buildRules = (architectMode: boolean) =>
@@ -162,60 +181,92 @@ const buildRules = (architectMode: boolean) =>
 
 export const aiService = {
   async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
-    const client = getClient();
-    const model = getModel(thinkingMode);
+    console.log('Using API Key:', getApiKeyStatusLabel());
 
-    const completion = await client.chat.completions.create({
-      model,
-      temperature: 0.0,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: PLAN_SYSTEM_PROMPT },
-        { role: 'user', content: prompt }
-      ]
-    });
+    try {
+      const client = getClient();
+      const model = getModel(thinkingMode);
 
-    const content = completion.choices?.[0]?.message?.content ?? '';
-    const parsed = tryParseJSON(content);
+      const requestBase = {
+        model,
+        temperature: 0.0,
+        messages: [
+          { role: 'system' as const, content: PLAN_SYSTEM_PROMPT },
+          { role: 'user' as const, content: prompt }
+        ]
+      };
 
-    const stepsRaw = Array.isArray(parsed) ? parsed : parsed?.steps;
-    const steps = Array.isArray(stepsRaw)
-      ? stepsRaw
-          .map((s: any, index: number) => ({
-            id: String(s?.id ?? index + 1),
-            title: String(s?.title ?? s?.text ?? s?.step ?? '').trim()
-          }))
-          .filter((s) => s.title.length > 0)
-      : [];
+      let completion: any;
 
-    return { steps };
+      try {
+        completion = await client.chat.completions.create({
+          ...requestBase,
+          response_format: { type: 'json_object' }
+        });
+      } catch (err: any) {
+        console.error('Plan Error Details (response_format attempt):', err);
+        completion = await client.chat.completions.create(requestBase as any);
+      }
+
+      const content = completion?.choices?.[0]?.message?.content ?? '';
+      let parsed: any;
+
+      try {
+        parsed = cleanAndParseJSON(content);
+      } catch (err: any) {
+        console.error('Plan Parse Error Details:', err, { contentPreview: String(content).slice(0, 500) });
+        throw new Error(getErrorMessage(err, 'Failed to parse plan JSON'));
+      }
+
+      const stepsRaw = Array.isArray(parsed) ? parsed : parsed?.steps;
+      const steps = Array.isArray(stepsRaw)
+        ? stepsRaw
+            .map((s: any, index: number) => ({
+              id: String(s?.id ?? index + 1),
+              title: String(s?.title ?? s?.text ?? s?.step ?? '').trim()
+            }))
+            .filter((s) => s.title.length > 0)
+        : [];
+
+      return { steps };
+    } catch (error: any) {
+      console.error('Plan Error Details:', error);
+      throw new Error(getErrorMessage(error, 'Failed to generate plan'));
+    }
   },
 
   async generateCode(prompt: string): Promise<AIResponse> {
-    const client = getClient();
-    const model = getModel(false);
-    const rules = buildRules(false);
+    console.log('Using API Key:', getApiKeyStatusLabel());
 
-    const completion = await client.chat.completions.create({
-      model,
-      temperature: 0.0,
-      messages: [
-        { role: 'system', content: rules },
-        { role: 'user', content: prompt }
-      ]
-    });
+    try {
+      const client = getClient();
+      const model = getModel(false);
+      const rules = buildRules(false);
 
-    const content = completion.choices?.[0]?.message?.content ?? '';
-    const data: any = tryParseJSON(content);
+      const completion = await client.chat.completions.create({
+        model,
+        temperature: 0.0,
+        messages: [
+          { role: 'system', content: rules },
+          { role: 'user', content: prompt }
+        ]
+      });
 
-    if (data?.files) {
-      data.files = data.files.map((file: ProjectFile) => ({
-        ...file,
-        language: file.language || getLanguageFromExtension(file.path || file.name || '')
-      }));
+      const content = completion.choices?.[0]?.message?.content ?? '';
+      const data: any = cleanAndParseJSON(content);
+
+      if (data?.files) {
+        data.files = data.files.map((file: ProjectFile) => ({
+          ...file,
+          language: file.language || getLanguageFromExtension(file.path || file.name || '')
+        }));
+      }
+
+      return data as AIResponse;
+    } catch (error: any) {
+      console.error('Generate Code Error Details:', error);
+      throw new Error(getErrorMessage(error, 'Failed to generate code'));
     }
-
-    return data as AIResponse;
   },
 
   async generateCodeStream(
@@ -282,7 +333,7 @@ export const aiService = {
 
       onStatus('done', 'Complete');
 
-      const payload = tryParseJSON(fullText);
+      const payload = cleanAndParseJSON(fullText);
       onJSON(payload);
       onComplete();
     } catch (err: any) {
@@ -291,4 +342,3 @@ export const aiService = {
     }
   }
 };
-

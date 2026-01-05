@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { FileSystem, GenerationStatus, ProjectFile } from '@/types';
 import { useProjectStore } from '@/stores/projectStore';
+import { aiService } from '@/services/aiService';
 
 type ModelMode = 'fast' | 'thinking';
 export type FileStreamStatus = 'ready' | 'queued' | 'writing';
@@ -386,18 +387,7 @@ export const useAIStore = create<AIState>()(
         set({ isPlanning: true, error: null });
         try {
           const thinkingMode = get().modelMode === 'thinking';
-          const res = await fetch('/api/ai/plan', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, thinkingMode, history: get().chatHistory })
-          });
-
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
-            throw new Error(body?.message || body?.error || `Plan request failed (${res.status})`);
-          }
-
-          const data = await res.json().catch(() => ({}));
+          const data = await aiService.generatePlan(prompt, thinkingMode);
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
 
           const planSteps: PlanStep[] = rawSteps

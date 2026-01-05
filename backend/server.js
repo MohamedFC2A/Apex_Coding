@@ -59,26 +59,37 @@ app.post('/api/ai/plan', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     const client = getClient();
-    const completion = await client.chat.completions.create({
+    const request = {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.0,
-      response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
           content:
-            'You are a Software Architect. Return ONLY raw JSON with shape {"steps":[{"id":"1","title":"..."}]}. No markdown.'
+            "You are a Software Architect. Output ONLY raw JSON (no markdown) with shape {\"title\":\"...\",\"steps\":[{\"id\":\"1\",\"title\":\"...\"}]}."
         },
-        { role: 'user', content: `Create a project plan for: ${prompt}` }
+        { role: 'user', content: prompt }
       ]
-    });
+    };
+
+    let completion;
+    try {
+      completion = await client.chat.completions.create({
+        ...request,
+        response_format: { type: 'json_object' }
+      });
+    } catch (err) {
+      // Some OpenAI-compatible endpoints may not support response_format
+      completion = await client.chat.completions.create(request);
+    }
 
     const content = completion?.choices?.[0]?.message?.content || '';
     const parsed = cleanAndParseJSON(content);
     const stepsRaw = Array.isArray(parsed) ? parsed : parsed?.steps;
     const steps = Array.isArray(stepsRaw) ? stepsRaw : [];
+    const title = typeof parsed?.title === 'string' ? parsed.title : 'Architecture Plan';
 
-    res.json({ steps });
+    res.json({ title, steps });
   } catch (error) {
     console.error('AI Plan Error:', error?.message || error);
     res.status(500).json({ error: error?.message || 'Plan generation failed' });

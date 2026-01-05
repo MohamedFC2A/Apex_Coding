@@ -44,7 +44,9 @@ const getErrorMessage = (err: any, fallback: string) => {
 export const aiService = {
   async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
     try {
-      const response = await fetch(apiUrl('/api/ai/plan'), {
+      const PLAN_URL = `${API_BASE_URL}/api/ai/plan`;
+
+      const response = await fetch(PLAN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, thinkingMode })

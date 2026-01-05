@@ -37,10 +37,17 @@ describe('aiService (API mode)', () => {
       instructions: 'ok'
     });
 
+    const sse = [
+      `event: meta\ndata: ${JSON.stringify({ provider: 'deepseek', model: 'deepseek-chat' })}\n\n`,
+      `event: token\ndata: ${JSON.stringify({ chunk: jsonText.slice(0, 10) })}\n\n`,
+      `: keep-alive\n\n`,
+      `event: token\ndata: ${JSON.stringify({ chunk: jsonText.slice(10) })}\n\n`,
+      `event: status\ndata: ${JSON.stringify({ phase: 'done', message: 'Complete' })}\n\n`
+    ].join('');
+
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode(jsonText.slice(0, 10)));
-        controller.enqueue(encoder.encode(jsonText.slice(10)));
+        controller.enqueue(encoder.encode(sse));
         controller.close();
       }
     });

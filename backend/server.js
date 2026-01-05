@@ -33,7 +33,7 @@ const normalizeDeepSeekBaseUrl = (raw) => {
 const getClient = () => {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error('API Key missing on Backend');
-  const baseURL = normalizeDeepSeekBaseUrl(process.env.DEEPSEEK_BASE_URL);
+  const baseURL = normalizeDeepSeekBaseUrl(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com');
   return new OpenAI({ baseURL, apiKey });
 };
 
@@ -50,6 +50,22 @@ const cleanAndParseJSON = (text) => {
     if (start !== -1 && end !== -1 && end > start) return JSON.parse(raw.slice(start, end + 1));
     throw e;
   }
+};
+
+const getErrorDetails = (error) => {
+  const status = error?.status || error?.response?.status;
+  const message =
+    error?.error?.message ||
+    error?.response?.data?.error?.message ||
+    error?.response?.data?.message ||
+    error?.message ||
+    'Unknown error';
+  return { status, message };
+};
+
+const writeSse = (res, eventName, data) => {
+  res.write(`event: ${eventName}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
 };
 
 // 2. AI Plan Route
@@ -114,9 +130,11 @@ app.post('/api/ai/plan', async (req, res) => {
 
     res.json({ title, steps });
   } catch (error) {
-    console.error('AI Plan Error:', error?.message || error);
+    const details = getErrorDetails(error);
+    console.error('AI Plan Error:', details.message);
     // Fallback plan instead of crashing
-    res.json({
+    res.status(500).json({
+      error: details.message,
       title: 'Plan Generation Failed',
       steps: [{ id: '1', title: 'Error parsing AI response. Please try again.' }]
     });
@@ -162,18 +180,19 @@ app.post('/api/ai/generate', async (req, res) => {
   }
 });
 
-// 4. Streaming generate (raw stream: model deltas only)
+// 4. Streaming generate (SSE) with keep-alive comments to prevent Vercel idle aborts.
 app.post('/api/ai/generate-stream', async (req, res) => {
   try {
-    const { prompt, thinkingMode } = req.body || {};
+    const { prompt, thinkingMode, includeReasoning } = req.body || {};
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     const client = getClient();
 
     // Vercel streaming headers
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
     const model = thinkingMode
@@ -183,31 +202,63 @@ app.post('/api/ai/generate-stream', async (req, res) => {
     const ac = new AbortController();
     req.on('close', () => ac.abort());
 
-    const stream = await client.chat.completions.create(
-      {
-        model,
-        temperature: 0.0,
-        stream: true,
-        messages: [
-          { role: 'system', content: CODE_SYSTEM_PROMPT },
-          { role: 'user', content: prompt }
-        ]
-      },
-      { signal: ac.signal }
-    );
+    // Keep-alive comments so proxies don't kill the connection for inactivity.
+    const keepAliveTimer = setInterval(() => {
+      try {
+        res.write(': keep-alive\n\n');
+      } catch {
+        // ignore
+      }
+    }, 15000);
+
+    req.on('close', () => clearInterval(keepAliveTimer));
+
+    writeSse(res, 'meta', {
+      provider: 'deepseek',
+      model,
+      baseURL: 'https://api.deepseek.com'
+    });
+    writeSse(res, 'status', { phase: 'streaming', message: 'Generating…' });
+
+    const request = {
+      model,
+      stream: true,
+      messages: [
+        { role: 'system', content: CODE_SYSTEM_PROMPT },
+        { role: 'user', content: prompt }
+      ]
+    };
+    // deepseek-reasoner rejects sampling params; keep the payload minimal.
+    if (model !== 'deepseek-reasoner') {
+      request.temperature = 0.0;
+    }
+
+    const stream = await client.chat.completions.create(request, { signal: ac.signal });
 
     for await (const chunk of stream) {
       const delta = chunk?.choices?.[0]?.delta || {};
       const content = delta?.content;
       if (typeof content === 'string' && content.length > 0) {
-        res.write(content);
+        writeSse(res, 'token', { chunk: content });
+      }
+      const reasoning = delta?.reasoning_content;
+      if (includeReasoning && typeof reasoning === 'string' && reasoning.length > 0) {
+        writeSse(res, 'reasoning', { chunk: reasoning });
       }
     }
 
+    clearInterval(keepAliveTimer);
+    writeSse(res, 'status', { phase: 'done', message: 'Complete' });
     res.end();
   } catch (error) {
-    console.error('AI Stream Error:', error?.message || error);
+    const details = getErrorDetails(error);
+    console.error('AI Stream Error:', details.message);
     if (!res.headersSent) return res.status(500).json({ error: error?.message || 'Streaming failed' });
+    try {
+      writeSse(res, 'status', { phase: 'error', message: details.message });
+    } catch {
+      // ignore
+    }
     res.end();
   }
 });

@@ -122,6 +122,30 @@ export const aiService = {
       onMeta({ provider: 'vercel-backend', baseURL: API_BASE_URL, thinkingMode, architectMode });
       onStatus('streaming', 'Generating…');
 
+      const parseSseEvent = (rawEvent: string) => {
+        const lines = rawEvent
+          .split('\n')
+          .map((line) => line.trimEnd())
+          .filter((line) => line.length > 0 && !line.startsWith(':'));
+
+        let eventName = 'message';
+        const dataLines: string[] = [];
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            eventName = line.slice('event:'.length).trim();
+            continue;
+          }
+          if (line.startsWith('data:')) {
+            dataLines.push(line.slice('data:'.length).trimStart());
+            continue;
+          }
+        }
+
+        const dataRaw = dataLines.join('\n');
+        return { eventName, dataRaw };
+      };
+
       const response = await fetch(apiUrl('/api/ai/generate-stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -147,24 +171,57 @@ export const aiService = {
       const reader = body.getReader();
       const decoder = new TextDecoder();
       let fullText = '';
+      let buffer = '';
+      let gotJsonEvent = false;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        if (chunk.length === 0) continue;
-        fullText += chunk;
-        onToken(chunk);
+        buffer += decoder.decode(value, { stream: true });
+
+        let boundaryIndex = buffer.indexOf('\n\n');
+        while (boundaryIndex !== -1) {
+          const rawEvent = buffer.slice(0, boundaryIndex);
+          buffer = buffer.slice(boundaryIndex + 2);
+          boundaryIndex = buffer.indexOf('\n\n');
+
+          const { eventName, dataRaw } = parseSseEvent(rawEvent);
+          if (!dataRaw) continue;
+
+          let data: any;
+          try {
+            data = JSON.parse(dataRaw);
+          } catch {
+            continue;
+          }
+
+          if (eventName === 'meta') onMeta(data);
+          if (eventName === 'status') onStatus(String(data.phase || 'streaming'), String(data.message || ''));
+          if (eventName === 'reasoning' && includeReasoning) _onReasoning(String(data.chunk || ''));
+          if (eventName === 'token') {
+            const tokenChunk = String(data.chunk || '');
+            if (tokenChunk.length > 0) {
+              fullText += tokenChunk;
+              onToken(tokenChunk);
+            }
+          }
+          if (eventName === 'json') {
+            gotJsonEvent = true;
+            onJSON(data.payload);
+          }
+        }
       }
 
       onStatus('done', 'Complete');
 
-      try {
-        const payload = cleanAndParseJSON(fullText);
-        onJSON(payload);
-      } catch (e: any) {
-        throw new Error(e?.message || 'Failed to parse streamed JSON');
+      if (!gotJsonEvent) {
+        try {
+          const payload = cleanAndParseJSON(fullText);
+          onJSON(payload);
+        } catch (e: any) {
+          throw new Error(e?.message || 'Failed to parse streamed JSON');
+        }
       }
 
       onComplete();

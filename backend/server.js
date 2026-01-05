@@ -56,6 +56,7 @@ const cleanAndParseJSON = (text) => {
 app.post('/api/ai/plan', async (req, res) => {
   try {
     const { prompt } = req.body || {};
+    console.log('[plan] Generating plan for prompt:', typeof prompt === 'string' ? prompt.slice(0, 500) : prompt);
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     const client = getClient();
@@ -66,7 +67,7 @@ app.post('/api/ai/plan', async (req, res) => {
         {
           role: 'system',
           content:
-            "You are a Software Architect. Output ONLY raw JSON (no markdown) with shape {\"title\":\"...\",\"steps\":[{\"id\":\"1\",\"title\":\"...\"}]}."
+            "You are a Software Architect. Output ONLY raw JSON (no markdown, no code fences) with shape {\"title\":\"...\",\"steps\":[{\"id\":\"1\",\"title\":\"...\"}]}."
         },
         { role: 'user', content: prompt }
       ]
@@ -83,16 +84,42 @@ app.post('/api/ai/plan', async (req, res) => {
       completion = await client.chat.completions.create(request);
     }
 
-    const content = completion?.choices?.[0]?.message?.content || '';
+    let content = completion?.choices?.[0]?.message?.content || '';
+    console.log('[plan] Raw AI output preview:', String(content).slice(0, 800));
+
+    // Sanitize markdown fences if the model wraps JSON.
+    content = String(content)
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
+
+    if (content.length === 0) throw new Error('Empty AI response');
+
     const parsed = cleanAndParseJSON(content);
     const stepsRaw = Array.isArray(parsed) ? parsed : parsed?.steps;
-    const steps = Array.isArray(stepsRaw) ? stepsRaw : [];
+    const steps = Array.isArray(stepsRaw)
+      ? stepsRaw
+          .map((step, index) => {
+            if (typeof step === 'string') {
+              const title = step.trim();
+              return title ? { id: String(index + 1), title } : null;
+            }
+            const title = String(step?.title ?? step?.text ?? step?.step ?? '').trim();
+            if (!title) return null;
+            return { id: String(step?.id ?? index + 1), title };
+          })
+          .filter(Boolean)
+      : [];
     const title = typeof parsed?.title === 'string' ? parsed.title : 'Architecture Plan';
 
     res.json({ title, steps });
   } catch (error) {
     console.error('AI Plan Error:', error?.message || error);
-    res.status(500).json({ error: error?.message || 'Plan generation failed' });
+    // Fallback plan instead of crashing
+    res.json({
+      title: 'Plan Generation Failed',
+      steps: [{ id: '1', title: 'Error parsing AI response. Please try again.' }]
+    });
   }
 });
 

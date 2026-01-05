@@ -102,7 +102,7 @@ export const aiService = {
     onMeta: (meta: any) => void,
     onJSON: (payload: any) => void,
     onError: (error: string) => void,
-    onReasoning: (chunk: string) => void,
+    _onReasoning: (chunk: string) => void,
     onComplete: () => void,
     thinkingModeOrOptions:
       | boolean

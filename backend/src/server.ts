@@ -13,12 +13,19 @@ import { logger } from './utils/logger.js';
 const app = express();
 const PORT = config.port;
 
-// Apply CORS – allow origins from FRONTEND_ORIGIN (comma-separated). In dev, allow all origins.
+// Apply CORS – allow origins from FRONTEND_URL/FRONTEND_ORIGIN (comma-separated). In dev, allow all origins.
 const normalizeOrigin = (value: string) => value.trim().replace(/\/+$/, '');
-const allowedOrigins = (process.env.FRONTEND_ORIGIN || '')
-  .split(',')
-  .map(normalizeOrigin)
-  .filter(Boolean);
+const allowedOrigins = Array.from(
+  new Set(
+    [
+      'http://localhost:5173',
+      ...(process.env.FRONTEND_URL || '').split(','),
+      ...(process.env.FRONTEND_ORIGIN || '').split(',')
+    ]
+      .map(normalizeOrigin)
+      .filter(Boolean)
+  )
+);
 const nodeEnv = process.env.NODE_ENV || 'development';
 const allowAllOrigins = allowedOrigins.length === 0;
 if (nodeEnv === 'production' && allowAllOrigins) {

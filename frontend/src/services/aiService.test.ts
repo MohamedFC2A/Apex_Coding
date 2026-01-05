@@ -1,73 +1,92 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const hoisted = vi.hoisted(() => {
-  return {
-    create: vi.fn()
-  };
-});
-
-vi.mock('openai', () => {
-  class OpenAI {
-    chat = {
-      completions: {
-        create: hoisted.create
-      }
-    };
-    constructor(_opts: any) {}
+vi.mock('axios', () => ({
+  default: {
+    post: vi.fn()
   }
-  return { default: OpenAI };
-});
+}));
 
-import { aiService } from './aiService';
+import axios from 'axios';
 
-describe('aiService (serverless)', () => {
+describe('aiService (API mode)', () => {
   beforeEach(() => {
-    hoisted.create.mockReset();
-    (import.meta as any).env = (import.meta as any).env || {};
-    (import.meta as any).env.VITE_DEEPSEEK_API_KEY = 'test-key';
-    (import.meta as any).env.VITE_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
-    (import.meta as any).env.VITE_DEEPSEEK_MODEL = 'deepseek-chat';
+    vi.clearAllMocks();
   });
 
-  it('generatePlan parses JSON', async () => {
-    hoisted.create.mockResolvedValue({
-      choices: [{ message: { content: '{"steps":[{"id":"1","title":"Do thing"}]}' } }]
+  it('generatePlan calls backend endpoint', async () => {
+    vi.resetModules();
+    process.env.VITE_BACKEND_URL = 'https://backend.example.com';
+    const { aiService } = await import('./aiService');
+
+    (axios.post as any).mockResolvedValueOnce({
+      data: { steps: [{ id: '1', title: 'Test step' }] }
     });
 
-    const res = await aiService.generatePlan('test');
-    expect(res.steps).toEqual([{ id: '1', title: 'Do thing' }]);
+    const res = await aiService.generatePlan('test prompt', false);
+
+    expect(axios.post).toHaveBeenCalledWith(
+      'https://backend.example.com/api/ai/plan',
+      { prompt: 'test prompt', thinkingMode: false },
+      { withCredentials: true }
+    );
+    expect(res.steps).toEqual([{ id: '1', title: 'Test step' }]);
   });
 
-  it('generateCodeStream emits tokens and final JSON', async () => {
-    async function* stream() {
-      yield { choices: [{ delta: { content: '{\"project_files\":[]}' } }] };
-    }
-    hoisted.create.mockResolvedValue(stream());
+  it('generateCodeStream parses SSE events', async () => {
+    vi.resetModules();
+    process.env.VITE_BACKEND_URL = 'https://backend.example.com';
+    const { aiService } = await import('./aiService');
 
-    const onToken = vi.fn();
-    const onStatus = vi.fn();
-    const onMeta = vi.fn();
-    const onJSON = vi.fn();
-    const onError = vi.fn();
-    const onReasoning = vi.fn();
-    const onComplete = vi.fn();
+    const encoder = new TextEncoder();
+    const sse = [
+      'event: meta\ndata: {"model":"deepseek-chat"}\n\n',
+      'event: token\ndata: {"chunk":"abc"}\n\n',
+      'event: json\ndata: {"payload":{"project_files":[],"metadata":{"language":"x","framework":"y"},"instructions":"ok"}}\n\n'
+    ].join('');
+
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(sse));
+        controller.close();
+      }
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: stream
+    });
+    (globalThis as any).fetch = fetchMock;
+
+    const tokens: string[] = [];
+    const metas: any[] = [];
+    const statuses: any[] = [];
+    const jsonPayloads: any[] = [];
+    let completed = 0;
+    let errorMessage = '';
 
     await aiService.generateCodeStream(
       'prompt',
-      onToken,
-      onStatus,
-      onMeta,
-      onJSON,
-      onError,
-      onReasoning,
-      onComplete,
-      false
+      (t) => tokens.push(t),
+      (phase, message) => statuses.push({ phase, message }),
+      (m) => metas.push(m),
+      (p) => jsonPayloads.push(p),
+      (e) => {
+        errorMessage = e;
+      },
+      () => {},
+      () => {
+        completed += 1;
+      },
+      { thinkingMode: false, architectMode: false, includeReasoning: false, history: [] }
     );
 
-    expect(onToken).toHaveBeenCalled();
-    expect(onJSON).toHaveBeenCalledWith({ project_files: [] });
-    expect(onError).not.toHaveBeenCalled();
-    expect(onComplete).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
+    expect(metas[0]).toMatchObject({ model: 'deepseek-chat' });
+    expect(tokens).toEqual(['abc']);
+    expect(jsonPayloads[0]).toMatchObject({ instructions: 'ok' });
+    expect(statuses.some((s) => s.phase === 'done')).toBe(true);
+    expect(completed).toBe(1);
+    expect(errorMessage).toBe('');
   });
 });
-

@@ -180,23 +180,23 @@ app.post('/api/ai/generate', async (req, res) => {
   }
 });
 
-// 4. Streaming generate (SSE) with keep-alive comments to prevent Vercel idle aborts.
+// 4. Streaming generate (SSE headers + immediate keep-alive, raw token chunks)
 app.post('/api/ai/generate-stream', async (req, res) => {
+  // 1. Force headers to prevent Vercel from buffering or closing the connection
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // CRITICAL for Vercel
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  // 2. IMMEDIATE Keep-Alive Payload (tells proxies "data is coming")
+  res.write(': \n\n');
+
   try {
-    const { prompt, thinkingMode, includeReasoning } = req.body || {};
+    const { prompt, thinkingMode } = req.body || {};
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
     const client = getClient();
-
-    // Vercel streaming headers
-    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    if (typeof res.flushHeaders === 'function') res.flushHeaders();
-
-    // IMMEDIATE PING: prevent serverless/proxy idle timeout while DeepSeek "thinks"
-    res.write(': keep-alive\n\n');
 
     const model = thinkingMode
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
@@ -205,61 +205,32 @@ app.post('/api/ai/generate-stream', async (req, res) => {
     const ac = new AbortController();
     req.on('close', () => ac.abort());
 
-    // Keep-alive comments so proxies don't kill the connection for inactivity.
-    const keepAliveTimer = setInterval(() => {
-      try {
-        res.write(': keep-alive\n\n');
-      } catch {
-        // ignore
-      }
-    }, 15000);
-
-    req.on('close', () => clearInterval(keepAliveTimer));
-
-    writeSse(res, 'meta', {
-      provider: 'deepseek',
-      model,
-      baseURL: 'https://api.deepseek.com'
-    });
-    writeSse(res, 'status', { phase: 'streaming', message: 'Generating…' });
-
-    const request = {
-      model,
-      stream: true,
-      messages: [
-        { role: 'system', content: CODE_SYSTEM_PROMPT },
-        { role: 'user', content: prompt }
-      ]
-    };
-    // deepseek-reasoner rejects sampling params; keep the payload minimal.
-    if (model !== 'deepseek-reasoner') {
-      request.temperature = 0.0;
-    }
-
-    const stream = await client.chat.completions.create(request, { signal: ac.signal });
+    const stream = await client.chat.completions.create(
+      {
+        model,
+        messages: [
+          { role: 'system', content: CODE_SYSTEM_PROMPT },
+          { role: 'user', content: prompt }
+        ],
+        stream: true
+      },
+      { signal: ac.signal }
+    );
 
     for await (const chunk of stream) {
-      const delta = chunk?.choices?.[0]?.delta || {};
-      const content = delta?.content;
-      if (typeof content === 'string' && content.length > 0) {
-        writeSse(res, 'token', { chunk: content });
-      }
-      const reasoning = delta?.reasoning_content;
-      if (includeReasoning && typeof reasoning === 'string' && reasoning.length > 0) {
-        writeSse(res, 'reasoning', { chunk: reasoning });
+      const content = chunk?.choices?.[0]?.delta?.content || '';
+      if (content) {
+        // Write directly to the response buffer
+        res.write(content);
       }
     }
 
-    clearInterval(keepAliveTimer);
-    writeSse(res, 'status', { phase: 'done', message: 'Complete' });
     res.end();
   } catch (error) {
     const details = getErrorDetails(error);
-    console.error('AI Stream Error:', details.message);
-    if (!res.headersSent) return res.status(500).json({ error: error?.message || 'Streaming failed' });
+    console.error('Streaming error:', details.message);
     try {
-      writeSse(res, 'status', { phase: 'error', message: details.message });
-      writeSse(res, 'error', { message: details.message });
+      res.write(`\n\n[ERROR]: ${details.message}`);
     } catch {
       // ignore
     }

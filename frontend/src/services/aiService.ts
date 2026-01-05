@@ -180,7 +180,23 @@ export const aiService = {
         const { done, value } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+        const decoded = decoder.decode(value, { stream: true });
+        if (decoded.length === 0) continue;
+
+        // If backend sends raw chunks (not SSE framed), forward immediately.
+        const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
+        if (!looksLikeSse && buffer.length === 0) {
+          // Strip SSE comment keep-alives like ": \n\n" if present.
+          const cleaned = decoded.replace(/^:[^\n]*\n+/gm, '');
+          if (cleaned.trim().length > 0) {
+            sawAnyToken = true;
+            fullText += cleaned;
+            onToken(cleaned);
+          }
+          continue;
+        }
+
+        buffer += decoded;
 
         let boundaryIndex = buffer.indexOf('\n\n');
         while (boundaryIndex !== -1) {
@@ -217,6 +233,17 @@ export const aiService = {
           if (eventName === 'json') {
             gotJsonEvent = true;
             onJSON(data.payload);
+          }
+        }
+
+        // If we have a buffer that isn't SSE-framed, treat it as raw content.
+        if (!gotJsonEvent && buffer.length > 0 && !/(^|\n)event:\s/.test(buffer) && !/(^|\n)data:\s/.test(buffer)) {
+          const cleaned = buffer.replace(/^:[^\n]*\n+/gm, '');
+          buffer = '';
+          if (cleaned.trim().length > 0) {
+            sawAnyToken = true;
+            fullText += cleaned;
+            onToken(cleaned);
           }
         }
       }

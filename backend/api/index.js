@@ -1,9 +1,10 @@
-// backend/server.js (Vercel Serverless, CommonJS)
-// Monolithic server to avoid ESM/dist path issues on Vercel.
+// backend/api/index.js (Vercel Serverless, CommonJS)
 const express = require('express');
 const cors = require('cors');
 const OpenAIImport = require('openai');
 require('dotenv').config();
+
+const OpenAI = OpenAIImport.default || OpenAIImport;
 
 const app = express();
 
@@ -19,11 +20,30 @@ app.options('*', cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-app.get('/', (req, res) => {
-  res.status(200).send('Apex Coding Backend is Running!');
+// When using Vercel rewrites to route /api/* to /api/index.js, the runtime may rewrite the path.
+// Prefer the original URL headers when present.
+app.use((req, _res, next) => {
+  const candidate =
+    req.headers['x-vercel-original-url'] ||
+    req.headers['x-original-url'] ||
+    req.headers['x-rewrite-url'] ||
+    req.headers['x-forwarded-uri'];
+
+  if (typeof candidate === 'string' && candidate.startsWith('/')) {
+    req.url = candidate;
+  }
+
+  // Strip leading /api so routes can be declared once.
+  if (req.url.startsWith('/api/')) {
+    req.url = req.url.slice(4) || '/';
+  }
+
+  next();
 });
 
-const OpenAI = OpenAIImport.default || OpenAIImport;
+app.get('/', (_req, res) => {
+  res.status(200).send('Apex Coding Backend is Running!');
+});
 
 const normalizeDeepSeekBaseUrl = (raw) => {
   const base = String(raw || 'https://api.deepseek.com').trim().replace(/\/+$/, '');
@@ -63,13 +83,26 @@ const getErrorDetails = (error) => {
   return { status, message };
 };
 
-const writeSse = (res, eventName, data) => {
-  res.write(`event: ${eventName}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
-};
+// Prompts
+const PLAN_SYSTEM_PROMPT =
+  "You are a Software Architect. Output ONLY raw JSON (no markdown, no code fences) with shape {\"title\":\"...\",\"steps\":[{\"id\":\"1\",\"title\":\"...\"}]}.";
 
-// 2. AI Plan Route
-app.post('/api/ai/plan', async (req, res) => {
+const CODE_SYSTEM_PROMPT = `
+You are an expert full-stack code generator.
+Return ONLY a single valid JSON object (no markdown), with this shape:
+{
+  "project_files": [{ "name": "path/file.ext", "content": "..." }],
+  "metadata": { "language": "string", "framework": "string" },
+  "instructions": "string"
+}
+Rules:
+- Output ONLY JSON. No code fences.
+- Escape content correctly in JSON strings.
+- Include complete file contents (no placeholders).
+`.trim();
+
+// /ai/plan (mapped from /api/ai/plan by the middleware above)
+app.post('/ai/plan', async (req, res) => {
   try {
     const { prompt } = req.body || {};
     console.log('[plan] Generating plan for prompt:', typeof prompt === 'string' ? prompt.slice(0, 500) : prompt);
@@ -80,11 +113,7 @@ app.post('/api/ai/plan', async (req, res) => {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.0,
       messages: [
-        {
-          role: 'system',
-          content:
-            "You are a Software Architect. Output ONLY raw JSON (no markdown, no code fences) with shape {\"title\":\"...\",\"steps\":[{\"id\":\"1\",\"title\":\"...\"}]}."
-        },
+        { role: 'system', content: PLAN_SYSTEM_PROMPT },
         { role: 'user', content: prompt }
       ]
     };
@@ -95,20 +124,14 @@ app.post('/api/ai/plan', async (req, res) => {
         ...request,
         response_format: { type: 'json_object' }
       });
-    } catch (err) {
-      // Some OpenAI-compatible endpoints may not support response_format
+    } catch {
       completion = await client.chat.completions.create(request);
     }
 
     let content = completion?.choices?.[0]?.message?.content || '';
     console.log('[plan] Raw AI output preview:', String(content).slice(0, 800));
 
-    // Sanitize markdown fences if the model wraps JSON.
-    content = String(content)
-      .replace(/```json/gi, '')
-      .replace(/```/g, '')
-      .trim();
-
+    content = String(content).replace(/```json/gi, '').replace(/```/g, '').trim();
     if (content.length === 0) throw new Error('Empty AI response');
 
     const parsed = cleanAndParseJSON(content);
@@ -126,13 +149,12 @@ app.post('/api/ai/plan', async (req, res) => {
           })
           .filter(Boolean)
       : [];
-    const title = typeof parsed?.title === 'string' ? parsed.title : 'Architecture Plan';
 
+    const title = typeof parsed?.title === 'string' ? parsed.title : 'Architecture Plan';
     res.json({ title, steps });
   } catch (error) {
     const details = getErrorDetails(error);
     console.error('AI Plan Error:', details.message);
-    // Fallback plan instead of crashing
     res.status(500).json({
       error: details.message,
       title: 'Plan Generation Failed',
@@ -141,22 +163,8 @@ app.post('/api/ai/plan', async (req, res) => {
   }
 });
 
-const CODE_SYSTEM_PROMPT = `
-You are an expert full-stack code generator.
-Return ONLY a single valid JSON object (no markdown), with this shape:
-{
-  "project_files": [{ "name": "path/file.ext", "content": "..." }],
-  "metadata": { "language": "string", "framework": "string" },
-  "instructions": "string"
-}
-Rules:
-- Output ONLY JSON. No code fences.
-- Escape content correctly in JSON strings.
-- Include complete file contents (no placeholders).
-`.trim();
-
-// 3. Non-streaming generate (optional)
-app.post('/api/ai/generate', async (req, res) => {
+// /ai/generate (mapped from /api/ai/generate)
+app.post('/ai/generate', async (req, res) => {
   try {
     const { prompt } = req.body || {};
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
@@ -175,13 +183,14 @@ app.post('/api/ai/generate', async (req, res) => {
     const payload = cleanAndParseJSON(content);
     res.json(payload);
   } catch (error) {
-    console.error('AI Generate Error:', error?.message || error);
-    res.status(500).json({ error: error?.message || 'Generation failed' });
+    const details = getErrorDetails(error);
+    console.error('AI Generate Error:', details.message);
+    res.status(500).json({ error: details.message });
   }
 });
 
-// 4. Streaming generate (SSE headers + immediate keep-alive, raw token chunks)
-app.post('/api/ai/generate-stream', async (req, res) => {
+// /ai/generate-stream (mapped from /api/ai/generate-stream)
+app.post('/ai/generate-stream', async (req, res) => {
   // 1. Force headers to prevent Vercel from buffering or closing the connection
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -189,8 +198,8 @@ app.post('/api/ai/generate-stream', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no'); // CRITICAL for Vercel
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-  // 2. IMMEDIATE Keep-Alive Payload (tells proxies "data is coming")
-  res.write(': \n\n');
+  // 2. IMMEDIATE Keep-Alive Payload
+  res.write(': keep-alive\n\n');
 
   try {
     const { prompt, thinkingMode } = req.body || {};
@@ -202,29 +211,38 @@ app.post('/api/ai/generate-stream', async (req, res) => {
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
       : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
 
-    const ac = new AbortController();
-    req.on('close', () => ac.abort());
+    // Keep-alive while the upstream model is still "thinking" (before first token).
+    let hasStartedStreaming = false;
+    const keepAliveTimer = setInterval(() => {
+      if (hasStartedStreaming) return;
+      try {
+        res.write(': keep-alive\n\n');
+      } catch {
+        // ignore
+      }
+    }, 10000);
 
-    const stream = await client.chat.completions.create(
-      {
-        model,
-        messages: [
-          { role: 'system', content: CODE_SYSTEM_PROMPT },
-          { role: 'user', content: prompt }
-        ],
-        stream: true
-      },
-      { signal: ac.signal }
-    );
+    const stream = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: CODE_SYSTEM_PROMPT },
+        { role: 'user', content: prompt }
+      ],
+      stream: true
+    });
 
     for await (const chunk of stream) {
       const content = chunk?.choices?.[0]?.delta?.content || '';
       if (content) {
-        // Write directly to the response buffer
+        if (!hasStartedStreaming) {
+          hasStartedStreaming = true;
+          clearInterval(keepAliveTimer);
+        }
         res.write(content);
       }
     }
 
+    clearInterval(keepAliveTimer);
     res.end();
   } catch (error) {
     const details = getErrorDetails(error);
@@ -238,10 +256,5 @@ app.post('/api/ai/generate-stream', async (req, res) => {
   }
 });
 
-// IMPORTANT: Do NOT use app.listen in production for Vercel
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => console.log(`Local Server running on ${PORT}`));
-}
-
+// Vercel requires exporting the app instance (no app.listen)
 module.exports = app;

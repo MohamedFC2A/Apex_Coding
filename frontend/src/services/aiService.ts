@@ -149,6 +149,7 @@ export const aiService = {
       const response = await fetch(apiUrl('/api/ai/generate-stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        mode: 'cors',
         body: JSON.stringify({
           prompt,
           thinkingMode,
@@ -259,6 +260,10 @@ export const aiService = {
       }
 
       if (!gotJsonEvent) {
+        const errorMarkerIndex = fullText.indexOf('[ERROR]:');
+        if (errorMarkerIndex !== -1) {
+          throw new Error(fullText.slice(errorMarkerIndex + '[ERROR]:'.length).trim() || 'Backend error');
+        }
         try {
           const payload = cleanAndParseJSON(fullText);
           onJSON(payload);

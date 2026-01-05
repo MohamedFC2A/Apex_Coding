@@ -130,13 +130,13 @@ Generated with NEXUS AI CODING - 100% Offline AI-Powered Development Platform
 
   private getRunCommands(stack: string): string {
     if (stack.includes('React')) {
-      return '```bash\n# from the project root\nnpm start\n```\n\nThe client will be available at http://localhost:5173 and the API at http://localhost:3111';
+      return '```bash\n# from the project root\nnpm start\n```\n\nThe client will be available at http://<host>:5173 and the API at http://<host>:3111';
     } else if (stack.includes('Node')) {
       return '```bash\n# from the project root\nnpm start\n```\n\nThe server will start on the configured port (default: 3111)';
     } else if (stack.includes('Flask')) {
-      return '```bash\npython app.py\n```\n\nThe server will start on http://localhost:5000';
+      return '```bash\npython app.py\n```\n\nThe server will start on http://<host>:5000';
     } else if (stack.includes('FastAPI')) {
-      return '```bash\nuvicorn main:app --reload\n```\n\nThe API will be available at http://localhost:8000';
+      return '```bash\nuvicorn main:app --reload\n```\n\nThe API will be available at http://<host>:8000';
     }
     return 'Open index.html in your web browser';
   }

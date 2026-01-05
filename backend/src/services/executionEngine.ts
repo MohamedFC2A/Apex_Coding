@@ -168,7 +168,7 @@ export default defineConfig({
           resolve({
             success: true,
             port,
-            url: `http://localhost:${port}`,
+            url: `http://0.0.0.0:${port}`,
             output
           });
         }, 3000);
@@ -231,7 +231,7 @@ export default defineConfig({
         resolve({
           success: true,
           port,
-          url: `http://localhost:${port}`,
+          url: `http://0.0.0.0:${port}`,
           output
         });
       }, 2000);
@@ -291,7 +291,7 @@ export default defineConfig({
         resolve({
           success: true,
           port,
-          url: `http://localhost:${port}`,
+          url: `http://0.0.0.0:${port}`,
           output
         });
       }, 2000);

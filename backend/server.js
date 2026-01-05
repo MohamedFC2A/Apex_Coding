@@ -195,6 +195,9 @@ app.post('/api/ai/generate-stream', async (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no');
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
+    // IMMEDIATE PING: prevent serverless/proxy idle timeout while DeepSeek "thinks"
+    res.write(': keep-alive\n\n');
+
     const model = thinkingMode
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
       : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
@@ -256,6 +259,7 @@ app.post('/api/ai/generate-stream', async (req, res) => {
     if (!res.headersSent) return res.status(500).json({ error: error?.message || 'Streaming failed' });
     try {
       writeSse(res, 'status', { phase: 'error', message: details.message });
+      writeSse(res, 'error', { message: details.message });
     } catch {
       // ignore
     }

@@ -25,7 +25,7 @@ process.on('unhandledRejection', (reason, promise) => {
 // Local dev still starts the HTTP server normally.
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, async () => {
-    logger.info(`[NEXUS] Backend server running on http://localhost:${PORT}`);
+    logger.info(`[NEXUS] Backend server listening on port ${PORT}`);
     logger.info(`[NEXUS] Environment: ${process.env.NODE_ENV || 'development'}`);
     logger.info(`[NEXUS] LLM provider: ${config.llm.provider}`);
     logger.info(

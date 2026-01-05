@@ -3,7 +3,6 @@ import { ProjectFile, ExecutionResult, ProjectStack } from '@/types';
 
 // HARDCODED FOR PRODUCTION FIX
 const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
-// const API_BASE_URL = 'http://localhost:3001';
 
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 

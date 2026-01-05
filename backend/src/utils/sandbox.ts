@@ -26,7 +26,7 @@ export function getSafeSpawnOptions(workDir: string): SpawnOptions {
     env: {
       ...process.env,
       NODE_ENV: 'sandbox',
-      // Limit to localhost only
+      // Disable proxies for sandboxed execution
       NO_PROXY: '*',
       HTTP_PROXY: '',
       HTTPS_PROXY: ''

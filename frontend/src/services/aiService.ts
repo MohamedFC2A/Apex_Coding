@@ -173,6 +173,8 @@ export const aiService = {
       let fullText = '';
       let buffer = '';
       let gotJsonEvent = false;
+      let sawAnyToken = false;
+      let backendErrorMessage = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -197,11 +199,17 @@ export const aiService = {
           }
 
           if (eventName === 'meta') onMeta(data);
-          if (eventName === 'status') onStatus(String(data.phase || 'streaming'), String(data.message || ''));
+          if (eventName === 'status') {
+            const phase = String(data.phase || 'streaming');
+            const message = String(data.message || '');
+            onStatus(phase, message);
+            if (phase === 'error' && message) backendErrorMessage = message;
+          }
           if (eventName === 'reasoning' && includeReasoning) _onReasoning(String(data.chunk || ''));
           if (eventName === 'token') {
             const tokenChunk = String(data.chunk || '');
             if (tokenChunk.length > 0) {
+              sawAnyToken = true;
               fullText += tokenChunk;
               onToken(tokenChunk);
             }
@@ -214,6 +222,14 @@ export const aiService = {
       }
 
       onStatus('done', 'Complete');
+
+      if (!gotJsonEvent && !sawAnyToken) {
+        throw new Error('Backend connection failed or timed out');
+      }
+
+      if (!gotJsonEvent && backendErrorMessage) {
+        throw new Error(backendErrorMessage);
+      }
 
       if (!gotJsonEvent) {
         try {

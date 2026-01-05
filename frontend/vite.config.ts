@@ -11,8 +11,7 @@ export default defineConfig(({ mode }) => {
   const rootEnv = loadEnv(mode, workspaceRoot, '');
   const backendEnv = loadEnv(mode, backendRoot, '');
 
-  const backendPort = backendEnv.PORT || rootEnv.PORT || '3001';
-  const backendTarget = `http://localhost:${backendPort}`;
+  const backendTarget = 'https://apex-coding-backend.vercel.app';
 
   return {
     envDir: workspaceRoot,

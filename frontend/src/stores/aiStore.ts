@@ -59,6 +59,7 @@ interface AIStoreState {
   isGenerating: boolean;
   isPlanning: boolean;
   thinkingContent: string;
+  systemConsoleContent: string;
   generationStatus: GenerationStatus;
   error: string | null;
   isPreviewOpen: boolean;
@@ -92,6 +93,8 @@ interface AIStoreActions {
   setIsPlanning: (isPlanning: boolean) => void;
   appendThinkingContent: (chunk: string) => void;
   clearThinkingContent: () => void;
+  appendSystemConsoleContent: (chunk: string) => void;
+  clearSystemConsoleContent: () => void;
   setGenerationStatus: (status: GenerationStatus) => void;
   setError: (error: string | null) => void;
   setIsPreviewOpen: (open: boolean) => void;
@@ -332,6 +335,7 @@ const buildInitialState = (): AIStoreState => ({
   isGenerating: false,
   isPlanning: false,
   thinkingContent: '',
+  systemConsoleContent: '',
   generationStatus: {
     isGenerating: false,
     currentStep: 'idle' as const,
@@ -442,6 +446,13 @@ export const useAIStore = create<AIState>()(
 
       clearThinkingContent: () => set({ thinkingContent: '' }),
 
+      appendSystemConsoleContent: (chunk) =>
+        set((state) => ({
+          systemConsoleContent: state.systemConsoleContent + chunk
+        })),
+
+      clearSystemConsoleContent: () => set({ systemConsoleContent: '' }),
+
       setGenerationStatus: (status) => set({ generationStatus: status }),
 
       setError: (error) => set({ error }),
@@ -502,6 +513,7 @@ export const useAIStore = create<AIState>()(
           decisionTrace: '',
           streamText: '',
           thinkingContent: '',
+          systemConsoleContent: '',
           fileStatuses: {},
           writingFilePath: null,
           sections: {},
@@ -530,6 +542,7 @@ export const useAIStore = create<AIState>()(
           decisionTrace: '',
           streamText: '',
           thinkingContent: '',
+          systemConsoleContent: '',
           fileStatuses: {},
           writingFilePath: null,
           sections: {},

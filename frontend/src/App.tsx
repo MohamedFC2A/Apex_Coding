@@ -353,6 +353,7 @@ function App() {
     isGenerating,
     isPlanning,
     thinkingContent,
+    systemConsoleContent,
     isPreviewOpen,
     setPrompt,
     setIsGenerating,
@@ -362,6 +363,8 @@ function App() {
     updateLastToken,
     clearThinkingContent,
     appendThinkingContent,
+    clearSystemConsoleContent,
+    appendSystemConsoleContent,
     setPlanSteps,
     generatePlan,
     clearFileStatuses,
@@ -400,12 +403,15 @@ function App() {
   const [brainOpen, setBrainOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
+  const [resumeInfo, setResumeInfo] = useState<{ lastFilePath: string; streamTail: string } | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const fileFlushTimerRef = useRef<number | null>(null);
   const fileChunkBuffersRef = useRef<Map<string, string>>(new Map());
   const tokenBeatTimerRef = useRef<number | null>(null);
   const reasoningFlushTimerRef = useRef<number | null>(null);
   const reasoningBufferRef = useRef('');
+  const streamTailRef = useRef('');
+  const lastCompletedFileRef = useRef('');
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
@@ -414,10 +420,7 @@ function App() {
     return 'idle';
   }, [files.length, isGenerating, isPlanning]);
 
-  const isThinkingVisible = useMemo(
-    () => (isGenerating && modelMode === 'thinking') || thinkingContent.trim().length > 0,
-    [isGenerating, modelMode, thinkingContent]
-  );
+  const isConsoleVisible = true;
 
   useEffect(() => {
     if (isGenerating) return;
@@ -507,11 +510,27 @@ function App() {
     promptOverride?: string,
     options?: { skipPlanning?: boolean; preserveProjectMeta?: boolean }
   ) => {
-    const basePrompt = (promptOverride ?? prompt).trim();
-    if (!basePrompt || isPlanning || isGenerating) return;
+    const rawPrompt = (promptOverride ?? prompt).trim();
+    if (!rawPrompt || isPlanning || isGenerating) return;
 
-    const skipPlanning = options?.skipPlanning === true;
-    const preserveProjectMeta = options?.preserveProjectMeta === true;
+    const resumeRequested = /^(continue|resume|go on)\b/i.test(rawPrompt);
+    const canResume = resumeRequested && Boolean(resumeInfo?.streamTail || resumeInfo?.lastFilePath);
+
+    const basePrompt = canResume
+      ? [
+          'Continue the previous generation WITHOUT rewriting files already produced.',
+          resumeInfo?.lastFilePath ? `Last completed file received was: ${resumeInfo.lastFilePath}` : '',
+          resumeInfo?.streamTail
+            ? `The stream ended mid-JSON. Continue and COMPLETE the JSON starting from this tail (may be truncated):\n${resumeInfo.streamTail}`
+            : '',
+          'Return ONLY a single valid JSON object with the same schema: {"project_files":[{"name":"...","content":"..."}], "metadata": {...}, "instructions":"..."}.'
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : rawPrompt;
+
+    const skipPlanning = canResume || options?.skipPlanning === true;
+    const preserveProjectMeta = canResume || options?.preserveProjectMeta === true;
 
     if (architectMode && !skipPlanning) {
       const currentPlanSteps = useAIStore.getState().planSteps;
@@ -535,9 +554,13 @@ function App() {
     setSections({});
     setStreamText('');
     clearThinkingContent();
-    appendThinkingContent('[webcontainer] Waiting for code generation to finish...\n');
+    clearSystemConsoleContent();
+    appendSystemConsoleContent('[webcontainer] Waiting for code generation to finish...\n');
     setBrainOpen(false);
     setThinkingStatus('Initializing…');
+    setResumeInfo(null);
+    streamTailRef.current = '';
+    lastCompletedFileRef.current = '';
     clearFileStatuses();
     setWritingFilePath(null);
     if (!preserveProjectMeta) resetProject();
@@ -606,7 +629,10 @@ function App() {
           );
           scheduleFileFlush();
         },
-        onFileComplete: () => {
+        onFileComplete: (path) => {
+          const resolvedPath = resolveGeneratedPath(path);
+          lastCompletedFileRef.current = resolvedPath;
+
           if (!useAIStore.getState().architectMode) return;
           const next = useAIStore.getState().planSteps.find((s) => !s.completed);
           if (next) useAIStore.getState().setPlanStepCompleted(next.id, true);
@@ -620,6 +646,7 @@ function App() {
       await aiService.generateCodeStream(
         basePrompt,
         (token) => {
+          streamTailRef.current = (streamTailRef.current + token).slice(-8000);
           router.push(token);
           scheduleTokenBeat();
         },
@@ -634,8 +661,30 @@ function App() {
           if (meta?.model) {
             addLog({ timestamp: Date.now(), type: 'info', message: `Model: ${meta.model}` });
           }
+          if (meta?.checkpoint?.lastCompletedFilePath) {
+            lastCompletedFileRef.current = String(meta.checkpoint.lastCompletedFilePath);
+          }
         },
         (payload) => {
+          if (payload?.metadata?.partial) {
+            flushFileBuffers();
+            if (fileFlushTimerRef.current) {
+              window.clearTimeout(fileFlushTimerRef.current);
+              fileFlushTimerRef.current = null;
+            }
+
+            setResumeInfo({
+              lastFilePath: lastCompletedFileRef.current,
+              streamTail: streamTailRef.current
+            });
+            setError('Stream ended before valid JSON completed. Click Resume or type "continue".');
+            addLog({ timestamp: Date.now(), type: 'error', message: 'Partial JSON received (checkpoint mode).' });
+            setIsGenerating(false);
+            setThinkingStatus('');
+            generationSucceeded = false;
+            return;
+          }
+
           flushFileBuffers();
           if (fileFlushTimerRef.current) {
             window.clearTimeout(fileFlushTimerRef.current);
@@ -682,12 +731,22 @@ function App() {
           setIsGenerating(false);
           setThinkingStatus('');
           generationSucceeded = true;
+          setResumeInfo(null);
 
         },
         (err) => {
           flushFileBuffers();
-          setError(typeof err === 'string' ? err : 'Generation failed');
+          const message = typeof err === 'string' ? err : 'Generation failed';
+          setError(message);
           addLog({ timestamp: Date.now(), type: 'error', message: `Generation failed: ${String(err)}` });
+
+          if (/json|parse|truncat|abort|timeout/i.test(message)) {
+            setResumeInfo({
+              lastFilePath: lastCompletedFileRef.current,
+              streamTail: streamTailRef.current
+            });
+          }
+
           setIsGenerating(false);
           setThinkingStatus('');
         },
@@ -710,7 +769,7 @@ function App() {
           setIsGenerating(false);
           setThinkingStatus('');
           if (generationSucceeded) {
-            appendThinkingContent('[webcontainer] Code Complete. Writing to Container...\n');
+            appendSystemConsoleContent('[webcontainer] Code Complete. Writing to Container...\n');
             setTimeout(() => {
               void deployAndRun();
             }, 0);
@@ -765,7 +824,8 @@ function App() {
     setWritingFilePath,
     updateFile,
     upsertFile,
-    upsertFileNode
+    upsertFileNode,
+    resumeInfo
   ]);
 
   const buildFixPrompt = useCallback(
@@ -862,9 +922,30 @@ function App() {
             <div style={{ fontWeight: 800, marginBottom: 2 }}>Error</div>
             <div style={{ color: 'rgba(255,255,255,0.78)', fontSize: 13 }}>{error}</div>
           </div>
+          {resumeInfo && (
+            <button
+              type="button"
+              onClick={() => void handleGenerate('continue', { skipPlanning: true, preserveProjectMeta: true })}
+              style={{
+                borderRadius: 999,
+                border: '1px solid rgba(255,255,255,0.22)',
+                background: 'rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.88)',
+                padding: '8px 12px',
+                cursor: 'pointer',
+                fontWeight: 800,
+                letterSpacing: '0.02em',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Resume
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setError(null)}
+            onClick={() => {
+              setError(null);
+            }}
             style={{
               border: 0,
               background: 'transparent',
@@ -999,10 +1080,13 @@ function App() {
       </DrawerPanel>
 
       <BrainConsole
-        visible={isThinkingVisible}
+        visible={isConsoleVisible}
         open={brainOpen}
         onToggle={() => setBrainOpen((v) => !v)}
-        content={thinkingContent}
+        thought={thinkingContent}
+        status={thinkingStatus}
+        error={error}
+        logs={systemConsoleContent}
       />
       </Root>
     </>

@@ -73,7 +73,7 @@ const resolveStartCommand = (fileMap: Map<string, string>) => {
 };
 
 export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { files, isPreviewOpen, isGenerating, appendThinkingContent } = useAIStore();
+  const { files, isPreviewOpen, isGenerating, appendSystemConsoleContent } = useAIStore();
   const { addLog, setPreviewUrl, setRuntimeStatus } = usePreviewStore();
 
   const [status, setStatus] = useState<RuntimeStatus>('idle');
@@ -142,11 +142,11 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     async (packagePaths: string[]) => {
       if (packagePaths.length === 0) return;
       updateStatus('installing', 'Installing dependencies...');
-      appendThinkingContent('[webcontainer] Installing dependencies...\n');
+      appendSystemConsoleContent('[webcontainer] Installing dependencies...\n');
 
       const logLine = createLineBuffer((line) => {
         if (shouldSuppressLine(line)) return;
-        appendThinkingContent(`${line}\n`);
+        appendSystemConsoleContent(`${line}\n`);
         addLog({ timestamp: Date.now(), type: 'info', message: line, source: 'npm' });
       });
 
@@ -158,7 +158,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       }
     },
-    [addLog, appendThinkingContent, updateStatus]
+    [addLog, appendSystemConsoleContent, updateStatus]
   );
 
   const bootAndRun = useCallback(
@@ -180,10 +180,10 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         rootPackageJson: DEFAULT_ROOT_PACKAGE_JSON
       });
       if (injectedRootPackage) {
-        appendThinkingContent('[webcontainer] Injected root /package.json (missing).\\n');
+        appendSystemConsoleContent('[webcontainer] Injected root /package.json (missing).\\n');
       }
       if (invalidPackageJsonPaths.length > 0) {
-        appendThinkingContent(
+        appendSystemConsoleContent(
           `[webcontainer] Skipped invalid package.json: ${invalidPackageJsonPaths.join(', ')}\\n`
         );
       }
@@ -227,7 +227,16 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         })
       ]);
     },
-    [addLog, appendThinkingContent, attachServerReady, files, isPreviewOpen, installPackages, updateStatus, updateUrl]
+    [
+      addLog,
+      appendSystemConsoleContent,
+      attachServerReady,
+      files,
+      isPreviewOpen,
+      installPackages,
+      updateStatus,
+      updateUrl
+    ]
   );
 
   useEffect(() => {
@@ -250,13 +259,13 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const deployAndRun = useCallback(async () => {
     if (isGenerating) {
       updateStatus('idle', 'Waiting for code generation to finish...');
-      appendThinkingContent('[webcontainer] Waiting for code generation to finish...\\n');
+      appendSystemConsoleContent('[webcontainer] Waiting for code generation to finish...\\n');
       return;
     }
 
     const apiKeyPresent = Boolean((import.meta as any)?.env?.VITE_WC_CLIENT_ID);
     if (apiKeyPresent) {
-      appendThinkingContent('[webcontainer] Authenticated with Enterprise API Key.\\n');
+      appendSystemConsoleContent('[webcontainer] Authenticated with Enterprise API Key.\\n');
     }
 
     if (pendingRef.current) return pendingRef.current;
@@ -273,7 +282,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
 
     return pendingRef.current;
-  }, [appendThinkingContent, bootAndRun, isGenerating, updateStatus]);
+  }, [appendSystemConsoleContent, bootAndRun, isGenerating, updateStatus]);
 
   const runProject = useCallback(async () => {
     serverStartedRef.current = false;

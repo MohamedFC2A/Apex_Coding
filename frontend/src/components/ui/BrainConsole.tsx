@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import styled, { css, keyframes } from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Terminal } from 'lucide-react';
 import { stripAnsi } from '@/utils/ansi';
 
 const Sheet = styled(motion.div)<{ $open: boolean }>`
@@ -88,23 +88,24 @@ interface BrainConsoleProps {
   visible: boolean;
   open: boolean;
   onToggle: () => void;
-  content: string;
+  thought: string;
+  status: string;
+  error: string | null;
+  logs: string;
 }
 
-export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onToggle, content }) => {
+export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onToggle, thought, status, error, logs }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [content, open]);
+  }, [error, logs, open, status, thought]);
 
-  const display = useMemo(() => {
-    const trimmed = content.trim();
-    const looksLikeJSON = trimmed.startsWith('{') && trimmed.includes('"project_files"');
-    const cleaned = stripAnsi(looksLikeJSON ? '' : trimmed);
-    return cleaned;
-  }, [content]);
+  const cleanedThought = useMemo(() => stripAnsi((thought || '').trim()), [thought]);
+  const cleanedLogs = useMemo(() => stripAnsi((logs || '').trim()), [logs]);
+  const cleanedError = useMemo(() => stripAnsi((error || '').trim()), [error]);
+  const cleanedStatus = useMemo(() => stripAnsi((status || '').trim()), [status]);
 
   return (
     <AnimatePresence>
@@ -117,22 +118,31 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onTog
           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
         >
           <Header type="button" onClick={onToggle} aria-expanded={open}>
-            <Brain size={16} />
-            Brain Console
+            <Terminal size={16} />
+            System Console
             <span style={{ marginLeft: 'auto', opacity: 0.8 }}>
               {open ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </span>
           </Header>
           {open && (
             <Body>
-              {display.length === 0 ? (
-                <Empty>Waiting for reasoning_content…</Empty>
-              ) : (
-                <>
-                  <Prefix>[THOUGHT]</Prefix>{' '}
-                  <span>{display}</span>
-                  <Cursor />
-                </>
+              <div>
+                <Prefix>[STATUS]</Prefix> <span>{cleanedStatus || 'Idle'}</span>
+              </div>
+              {cleanedError.length > 0 && (
+                <div style={{ marginTop: 8, color: 'rgba(248,113,113,0.95)' }}>
+                  <Prefix>[ERROR]</Prefix> <span>{cleanedError}</span>
+                </div>
+              )}
+              <div style={{ marginTop: 10 }}>
+                <Prefix>[THOUGHT]</Prefix>{' '}
+                {cleanedThought.length === 0 ? <Empty>Reasoning not available.</Empty> : <span>{cleanedThought}</span>}
+                <Cursor />
+              </div>
+              {cleanedLogs.length > 0 && (
+                <div style={{ marginTop: 12, opacity: 0.92 }}>
+                  {cleanedLogs}
+                </div>
               )}
               <div ref={bottomRef} />
             </Body>

@@ -1,5 +1,6 @@
 import { ProjectFile } from '@/types';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
+import { createProjectJSONStreamRouter } from '@/services/projectStreamRouter';
 
 // HARDCODED FOR PRODUCTION FIX
 const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
@@ -122,6 +123,35 @@ export const aiService = {
       onMeta({ provider: 'vercel-backend', baseURL: API_BASE_URL, thinkingMode, architectMode });
       onStatus('streaming', 'Generating…');
 
+      // Streaming checkpoint extraction: capture complete `{"name": "...", "content": "..."}` objects
+      // from the JSON stream without requiring the full JSON payload to parse successfully.
+      const partialFileOrder: string[] = [];
+      const partialFileContents = new Map<string, string>();
+      const partialFileCompleted = new Set<string>();
+      let lastCompletedFilePath = '';
+
+      const checkpointRouter = createProjectJSONStreamRouter({
+        onFileDiscovered: (path) => {
+          const key = String(path || '').trim();
+          if (!key) return;
+          if (!partialFileContents.has(key)) {
+            partialFileOrder.push(key);
+            partialFileContents.set(key, '');
+          }
+        },
+        onFileChunk: (path, chunk) => {
+          const key = String(path || '').trim();
+          if (!key) return;
+          partialFileContents.set(key, (partialFileContents.get(key) || '') + chunk);
+        },
+        onFileComplete: (path) => {
+          const key = String(path || '').trim();
+          if (!key) return;
+          partialFileCompleted.add(key);
+          lastCompletedFilePath = key;
+        }
+      });
+
       const parseSseEvent = (rawEvent: string) => {
         const lines = rawEvent
           .split('\n')
@@ -192,6 +222,7 @@ export const aiService = {
           if (cleaned.trim().length > 0) {
             sawAnyToken = true;
             fullText += cleaned;
+            checkpointRouter.push(cleaned);
             onToken(cleaned);
           }
           continue;
@@ -228,6 +259,7 @@ export const aiService = {
             if (tokenChunk.length > 0) {
               sawAnyToken = true;
               fullText += tokenChunk;
+              checkpointRouter.push(tokenChunk);
               onToken(tokenChunk);
             }
           }
@@ -244,6 +276,7 @@ export const aiService = {
           if (cleaned.trim().length > 0) {
             sawAnyToken = true;
             fullText += cleaned;
+            checkpointRouter.push(cleaned);
             onToken(cleaned);
           }
         }
@@ -268,7 +301,26 @@ export const aiService = {
           const payload = cleanAndParseJSON(fullText);
           onJSON(payload);
         } catch (e: any) {
-          throw new Error(e?.message || 'Failed to parse streamed JSON');
+          const completedFiles = partialFileOrder
+            .filter((path) => partialFileCompleted.has(path))
+            .map((path) => ({ name: path, content: partialFileContents.get(path) || '' }));
+
+          if (completedFiles.length > 0) {
+            onMeta({
+              checkpoint: {
+                partial: true,
+                completedFiles: completedFiles.length,
+                lastCompletedFilePath: lastCompletedFilePath || completedFiles[completedFiles.length - 1]?.name || ''
+              }
+            });
+            onJSON({
+              project_files: completedFiles,
+              metadata: { partial: true },
+              instructions: ''
+            });
+          } else {
+            throw new Error(e?.message || 'Failed to parse streamed JSON');
+          }
         }
       }
 

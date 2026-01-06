@@ -198,18 +198,35 @@ app.post('/ai/generate-stream', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no'); // CRITICAL for Vercel
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
+  const writeEvent = (event, payload) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  const writeStatus = (phase, message) => {
+    writeEvent('status', { phase, message });
+  };
+
   // 2. IMMEDIATE Keep-Alive Payload
   res.write(': keep-alive\n\n');
 
   try {
-    const { prompt, thinkingMode } = req.body || {};
-    if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+    const { prompt, thinkingMode, includeReasoning } = req.body || {};
+    if (!prompt) {
+      res.status(400);
+      writeStatus('error', 'Prompt is required');
+      res.end();
+      return;
+    }
 
     const client = getClient();
 
     const model = thinkingMode
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
       : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
+
+    writeEvent('meta', { provider: 'deepseek', model, thinkingMode: Boolean(thinkingMode) });
+    writeStatus(thinkingMode ? 'thinking' : 'streaming', thinkingMode ? 'Thinking…' : 'Generating…');
 
     // Keep-alive while the upstream model is still "thinking" (before first token).
     let hasStartedStreaming = false;
@@ -222,33 +239,115 @@ app.post('/ai/generate-stream', async (req, res) => {
       }
     }, 10000);
 
-    const stream = await client.chat.completions.create({
+    const request = {
       model,
       messages: [
         { role: 'system', content: CODE_SYSTEM_PROMPT },
         { role: 'user', content: prompt }
       ],
       stream: true
-    });
+    };
+
+    let stream;
+    try {
+      stream = await client.chat.completions.create({
+        ...request,
+        response_format: { type: 'json_object' }
+      });
+    } catch {
+      stream = await client.chat.completions.create(request);
+    }
+
+    const isReasoner = model === 'deepseek-reasoner';
+    const wantReasoning = Boolean(includeReasoning) && isReasoner;
+    let contentBuffer = '';
+    let routingReasoningAsContent = false;
+    let holdingJsonCandidate = false;
+    let jsonHold = '';
+    let reasoningProbe = '';
 
     for await (const chunk of stream) {
-      const content = chunk?.choices?.[0]?.delta?.content || '';
-      if (content) {
+      const delta = chunk?.choices?.[0]?.delta || {};
+      const reasoningChunk = delta?.reasoning_content;
+      const contentChunk = delta?.content;
+
+      if (typeof reasoningChunk === 'string' && reasoningChunk.length > 0) {
+        if (wantReasoning && !routingReasoningAsContent && contentBuffer.length === 0) {
+          // Some DeepSeek deployments stream the final JSON in `reasoning_content`.
+          reasoningProbe = (reasoningProbe + reasoningChunk).slice(0, 1200);
+          const probeTrimmed = reasoningProbe.trimStart();
+          if (!holdingJsonCandidate && probeTrimmed.startsWith('{')) holdingJsonCandidate = true;
+
+          if (holdingJsonCandidate) {
+            jsonHold += reasoningChunk;
+            const holdProbe = jsonHold.slice(0, 2200).trimStart();
+
+            if (holdProbe.includes('"project_files"')) {
+              routingReasoningAsContent = true;
+              holdingJsonCandidate = false;
+              writeStatus('streaming', 'Generating…');
+              if (!hasStartedStreaming) {
+                hasStartedStreaming = true;
+                clearInterval(keepAliveTimer);
+              }
+              contentBuffer += jsonHold;
+              writeEvent('token', { chunk: jsonHold });
+              jsonHold = '';
+            } else if (jsonHold.length > 1800 && !holdProbe.includes('"project_files"')) {
+              holdingJsonCandidate = false;
+              writeEvent('reasoning', { chunk: jsonHold });
+              jsonHold = '';
+            }
+            continue;
+          }
+        }
+
+        if (routingReasoningAsContent) {
+          if (!hasStartedStreaming) {
+            hasStartedStreaming = true;
+            clearInterval(keepAliveTimer);
+          }
+          contentBuffer += reasoningChunk;
+          writeEvent('token', { chunk: reasoningChunk });
+        } else if (wantReasoning) {
+          writeEvent('reasoning', { chunk: reasoningChunk });
+        }
+      }
+
+      if (typeof contentChunk === 'string' && contentChunk.length > 0) {
+        if (holdingJsonCandidate && jsonHold.length > 0) {
+          holdingJsonCandidate = false;
+          if (wantReasoning) writeEvent('reasoning', { chunk: jsonHold });
+          jsonHold = '';
+        }
+
         if (!hasStartedStreaming) {
           hasStartedStreaming = true;
           clearInterval(keepAliveTimer);
+          writeStatus('streaming', 'Generating…');
         }
-        res.write(content);
+
+        contentBuffer += contentChunk;
+        writeEvent('token', { chunk: contentChunk });
       }
     }
 
     clearInterval(keepAliveTimer);
+
+    try {
+      const payload = cleanAndParseJSON(contentBuffer);
+      writeEvent('json', { payload });
+    } catch {
+      // Let the frontend rely on checkpoint extraction/resume.
+    }
+
+    writeStatus('done', 'Complete');
     res.end();
   } catch (error) {
     const details = getErrorDetails(error);
     console.error('Streaming error:', details.message);
     try {
-      res.write(`\n\n[ERROR]: ${details.message}`);
+      writeStatus('error', details.message);
     } catch {
       // ignore
     }

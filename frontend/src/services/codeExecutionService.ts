@@ -1,8 +1,7 @@
 import axios from 'axios';
 import { ProjectFile, ExecutionResult, ProjectStack } from '@/types';
 
-// HARDCODED FOR PRODUCTION FIX
-const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
+const API_BASE_URL = (import.meta as any)?.env?.VITE_BACKEND_URL || '/api';
 
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 
@@ -14,7 +13,7 @@ export const codeExecutionService = {
     entryPoint?: string
   ): Promise<ExecutionResult> {
     try {
-      const response = await axios.post(apiUrl('/api/execute/run'), {
+      const response = await axios.post(apiUrl('/execute/run'), {
         projectId,
         files,
         stack,
@@ -33,7 +32,7 @@ export const codeExecutionService = {
   
   async stopExecution(projectId: string): Promise<void> {
     try {
-      await axios.post(apiUrl('/api/execute/stop'), { projectId });
+      await axios.post(apiUrl('/execute/stop'), { projectId });
     } catch (error) {
       console.error('Failed to stop execution:', error);
     }
@@ -41,7 +40,7 @@ export const codeExecutionService = {
   
   async getPortAllocations(): Promise<any> {
     try {
-      const response = await axios.get(apiUrl('/api/execute/ports'));
+      const response = await axios.get(apiUrl('/execute/ports'));
       return response.data;
     } catch (error) {
       console.error('Failed to get port allocations:', error);

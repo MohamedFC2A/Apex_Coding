@@ -1,8 +1,7 @@
 import { ProjectFile } from '@/types';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 
-// HARDCODED FOR PRODUCTION FIX
-const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
+const API_BASE_URL = (import.meta as any)?.env?.VITE_BACKEND_URL || '/api';
 
 interface AIResponse {
   plan: string;
@@ -13,7 +12,8 @@ interface AIResponse {
   description: string;
 }
 
-const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+const apiUrl = (path: string) =>
+  `${String(API_BASE_URL).replace(/\/+$/, '')}${path.startsWith('/') ? '' : '/'}${path}`;
 
 const getErrorMessage = (err: any, fallback: string) => {
   return (
@@ -26,7 +26,7 @@ const getErrorMessage = (err: any, fallback: string) => {
 export const aiService = {
   async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
     try {
-      const PLAN_URL = `${API_BASE_URL}/api/ai/plan`;
+      const PLAN_URL = apiUrl('/ai/plan');
 
       const response = await fetch(PLAN_URL, {
         method: 'POST',
@@ -50,7 +50,7 @@ export const aiService = {
 
   async generateCode(prompt: string): Promise<AIResponse> {
     try {
-      const response = await fetch(apiUrl('/api/ai/generate'), {
+      const response = await fetch(apiUrl('/ai/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
@@ -383,7 +383,7 @@ export const aiService = {
       };
 
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
-        const response = await fetch(apiUrl('/api/ai/generate'), {
+        const response = await fetch(apiUrl('/ai/generate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           mode: 'cors',

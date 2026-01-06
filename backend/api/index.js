@@ -18,6 +18,18 @@ app.use(
   })
 );
 app.options('*', cors());
+
+// Ensure basic CORS headers for all requests (including when proxies bypass some middleware).
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -35,6 +47,9 @@ app.use((req, _res, next) => {
   }
 
   // Strip leading /api so routes can be declared once.
+  if (req.url === '/api') {
+    req.url = '/';
+  }
   if (req.url.startsWith('/api/')) {
     req.url = req.url.slice(4) || '/';
   }
@@ -44,6 +59,29 @@ app.use((req, _res, next) => {
 
 app.get('/', (_req, res) => {
   res.status(200).send('Apex Coding Backend is Running!');
+});
+
+// Unified /api handler (allows frontend to POST to `/api` and select an action).
+// Supports: { action: 'plan' | 'generate', ... }
+app.post(['/', '/api'], async (req, res, next) => {
+  try {
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    if (!action) return next();
+
+    if (action === 'plan') {
+      req.url = '/ai/plan';
+      return next();
+    }
+
+    if (action === 'generate') {
+      req.url = '/ai/generate';
+      return next();
+    }
+
+    return res.status(400).json({ error: `Unknown action: ${action}` });
+  } catch (err) {
+    return next(err);
+  }
 });
 
 // /download/zip (mapped from /api/download/zip by the middleware above)

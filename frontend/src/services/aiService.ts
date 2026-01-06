@@ -26,12 +26,12 @@ const getErrorMessage = (err: any, fallback: string) => {
 export const aiService = {
   async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
     try {
-      const PLAN_URL = apiUrl('/ai/plan');
+      const PLAN_URL = apiUrl('');
 
       const response = await fetch(PLAN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, thinkingMode })
+        body: JSON.stringify({ action: 'plan', prompt, thinkingMode })
       });
 
       if (!response.ok) {
@@ -50,10 +50,10 @@ export const aiService = {
 
   async generateCode(prompt: string): Promise<AIResponse> {
     try {
-      const response = await fetch(apiUrl('/ai/generate'), {
+      const response = await fetch(apiUrl(''), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ action: 'generate', prompt })
       });
 
       if (!response.ok) {
@@ -383,11 +383,12 @@ export const aiService = {
       };
 
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
-        const response = await fetch(apiUrl('/ai/generate'), {
+        const response = await fetch(apiUrl(''), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           mode: 'cors',
           body: JSON.stringify({
+            action: 'generate',
             prompt: streamPrompt,
             thinkingMode,
             architectMode,

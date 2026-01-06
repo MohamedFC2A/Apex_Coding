@@ -1,10 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { ChevronDown, ChevronRight, FilePlus, Folder, FolderPlus, FileText } from 'lucide-react';
+import { ChevronDown, ChevronRight, Database, FileText, Folder, Settings } from 'lucide-react';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { FileSystem } from '@/types';
-import { getLanguageFromExtension } from '@/utils/stackDetector';
+
+type SidebarTab = 'files' | 'database';
 
 type NodeStatus = 'ready' | 'queued' | 'writing';
 
@@ -53,27 +54,32 @@ const HeaderTitle = styled.div`
   color: rgba(255, 255, 255, 0.84);
 `;
 
-const HeaderActions = styled.div`
-  display: inline-flex;
-  align-items: center;
+const Tabs = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 `;
 
-const HeaderActionButton = styled.button`
-  width: 32px;
+const TabButton = styled.button<{ $active?: boolean }>`
   height: 32px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.80);
-  display: grid;
-  place-items: center;
+  border-radius: 14px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.28)' : 'rgba(255, 255, 255, 0.10)')};
+  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.10)' : 'rgba(255, 255, 255, 0.03)')};
+  color: ${(p) => (p.$active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.70)')};
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.16);
+    border-color: rgba(168, 85, 247, 0.22);
+    background: rgba(255, 255, 255, 0.05);
     transform: translateY(-1px);
   }
 `;
@@ -149,6 +155,34 @@ const EmptyState = styled.div`
   text-align: center;
 `;
 
+const Footer = styled.div`
+  flex-shrink: 0;
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(13, 17, 23, 0.25);
+  display: flex;
+  justify-content: flex-end;
+`;
+
+const FooterButton = styled.button`
+  width: 36px;
+  height: 36px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.78);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+    transform: translateY(-1px);
+  }
+`;
+
 const getStatusColor = (status: NodeStatus) => {
   if (status === 'writing') return 'rgba(250, 204, 21, 0.95)';
   if (status === 'queued') return 'rgba(59, 130, 246, 0.95)';
@@ -156,6 +190,21 @@ const getStatusColor = (status: NodeStatus) => {
 };
 
 const normalizeFileSystem = (files: FileSystem | []) => (Array.isArray(files) ? {} : files);
+
+const treeHasAnyPathPrefix = (tree: FileSystem, prefix: string, basePath = ''): boolean => {
+  for (const [name, entry] of Object.entries(tree)) {
+    const path = basePath ? `${basePath}/${name}` : name;
+    if (path.startsWith(prefix)) return true;
+    if (entry.directory && treeHasAnyPathPrefix(entry.directory, prefix, path)) return true;
+  }
+  return false;
+};
+
+const treeHasPackageDependency = (tree: FileSystem, dependency: string): boolean => {
+  const packageNode = tree['package.json']?.file?.contents;
+  if (typeof packageNode === 'string' && packageNode.includes(`"${dependency}"`)) return true;
+  return false;
+};
 
 const buildTreeNodes = (tree: FileSystem, basePath = ''): TreeNode[] => {
   const entries = Object.entries(tree).map(([name, entry]) => {
@@ -257,43 +306,14 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
 
 export interface SidebarProps {
   className?: string;
+  onOpenSettings?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ className }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) => {
+  const [tab, setTab] = useState<SidebarTab>('files');
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({});
   const { files, fileStatuses, writingFilePath } = useAIStore();
-  const { activeFile, setActiveFile } = useProjectStore();
-
-  const handleNewFile = () => {
-    const input = window.prompt('New file path (e.g. src/App.tsx):');
-    const rawPath = String(input || '').trim();
-    if (!rawPath) return;
-
-    const resolved = useAIStore.getState().resolveFilePath(rawPath) || rawPath;
-    useAIStore.getState().upsertFileNode(resolved, '');
-
-    const projectStore = useProjectStore.getState();
-    const exists = projectStore.files.some((f) => (f.path || f.name) === resolved);
-    if (!exists) {
-      const name = resolved.split('/').pop() || resolved;
-      projectStore.upsertFile({ name, path: resolved, content: '', language: getLanguageFromExtension(resolved) });
-    }
-
-    projectStore.setActiveFile(resolved);
-  };
-
-  const handleNewFolder = () => {
-    const input = window.prompt('New folder path (e.g. src/components):');
-    const rawPath = String(input || '').trim().replace(/\/+$/, '');
-    if (!rawPath) return;
-
-    useAIStore.getState().upsertDirectoryNode(rawPath);
-
-    const resolved = useAIStore.getState().resolveFilePath(`${rawPath}/__dir__`).replace(/\/__dir__$/, '');
-    if (resolved) {
-      setOpenNodes((prev) => ({ ...prev, [resolved]: true }));
-    }
-  };
+  const { activeFile, setActiveFile, files: flatFiles } = useProjectStore();
 
   const toggleNode = useCallback((path: string) => {
     setOpenNodes((prev) => ({
@@ -311,7 +331,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ className }) => {
     [fileStatuses, writingFilePath]
   );
 
-  const tree = useMemo(() => buildTreeNodes(normalizeFileSystem(files)), [files]);
+  const fsTree = useMemo(() => normalizeFileSystem(files), [files]);
+  const tree = useMemo(() => buildTreeNodes(fsTree), [fsTree]);
+  const convexEnabled = useMemo(() => {
+    if (treeHasAnyPathPrefix(fsTree, 'convex/')) return true;
+    if (treeHasAnyPathPrefix(fsTree, 'frontend/convex/')) return true;
+    if (treeHasPackageDependency(fsTree, 'convex')) return true;
+
+    const rootPkg = flatFiles.find((f) => (f.path || f.name) === 'package.json')?.content || '';
+    if (rootPkg.includes('"convex"')) return true;
+    return false;
+  }, [flatFiles, fsTree]);
 
   const renderTree = () => {
     if (tree.length === 0) {
@@ -336,20 +366,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ className }) => {
     <Shell className={className}>
       <Header>
         <HeaderRow>
-          <HeaderTitle>PROJECT EXPLORER</HeaderTitle>
-          <HeaderActions>
-            <HeaderActionButton type="button" onClick={handleNewFolder} aria-label="New folder" title="New folder">
-              <FolderPlus size={16} />
-            </HeaderActionButton>
-            <HeaderActionButton type="button" onClick={handleNewFile} aria-label="New file" title="New file">
-              <FilePlus size={16} />
-            </HeaderActionButton>
-          </HeaderActions>
+          <HeaderTitle>SIDEBAR</HeaderTitle>
         </HeaderRow>
+        <Tabs>
+          <TabButton type="button" $active={tab === 'files'} onClick={() => setTab('files')} aria-label="Files">
+            Files
+          </TabButton>
+          <TabButton type="button" $active={tab === 'database'} onClick={() => setTab('database')} aria-label="Database">
+            Database
+          </TabButton>
+        </Tabs>
       </Header>
       <Body>
-        <TreeContainer className="scrollbar-thin scrollbar-glass">{renderTree()}</TreeContainer>
+        {tab === 'files' ? (
+          <TreeContainer className="scrollbar-thin scrollbar-glass">{renderTree()}</TreeContainer>
+        ) : (
+          <TreeContainer className="scrollbar-thin scrollbar-glass">
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Database size={16} />
+                <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                  Database
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.70)', lineHeight: 1.5 }}>
+                {convexEnabled ? 'Convex detected. Database is configured for this project.' : 'No Database Required.'}
+              </div>
+            </div>
+          </TreeContainer>
+        )}
       </Body>
+      <Footer>
+        <FooterButton type="button" aria-label="Settings" title="Settings" onClick={onOpenSettings}>
+          <Settings size={16} />
+        </FooterButton>
+      </Footer>
     </Shell>
   );
 };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { AlertCircle, Eye, EyeOff, Github, History, ListTodo, Menu, Settings, X } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, History, ListTodo, Menu, X } from 'lucide-react';
 
 import { useAIStore } from './stores/aiStore';
 import { useProjectStore } from './stores/projectStore';
@@ -250,10 +250,6 @@ const BrandSubtitle = styled.div`
   color: rgba(255, 255, 255, 0.55);
 `;
 
-const BrandAccent = styled.span`
-  color: rgba(250, 204, 21, 0.92);
-`;
-
 const StatusPill = styled.div<{ $active?: boolean }>`
   padding: 7px 10px;
   border-radius: 999px;
@@ -305,24 +301,6 @@ const PreviewToggleButton = styled.button`
 
   @media (max-width: 768px) {
     display: none;
-  }
-`;
-
-const RepoButton = styled.button`
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.8);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-
-  &:hover {
-    border-color: rgba(168, 85, 247, 0.28);
-    background: rgba(255, 255, 255, 0.08);
   }
 `;
 
@@ -1355,21 +1333,11 @@ function App() {
           <HeaderLeft>
             <BrandStack>
               <BrandTitle>NEXUS APEX</BrandTitle>
-              <BrandSubtitle>
-                A <BrandAccent>Matany</BrandAccent> Product
-              </BrandSubtitle>
+              <BrandSubtitle>{projectName?.trim() || 'Untitled Project'}</BrandSubtitle>
             </BrandStack>
             <StatusPill $active={isGenerating}>{isGenerating ? thinkingStatus || 'Working…' : 'Ready'}</StatusPill>
           </HeaderLeft>
           <HeaderRight>
-            <RepoButton
-              type="button"
-              title="Repo Linked: MohamedFC2A/nexus-apex-coding"
-              aria-label="Open GitHub repository"
-              onClick={() => window.open('https://github.com/MohamedFC2A/nexus-apex-coding', '_blank', 'noopener,noreferrer')}
-            >
-              <Github size={18} />
-            </RepoButton>
             <HeaderIconButton
               type="button"
               onClick={() => setHistoryOpen((v) => !v)}
@@ -1377,14 +1345,6 @@ function App() {
               title="History"
             >
               <History size={18} />
-            </HeaderIconButton>
-            <HeaderIconButton
-              type="button"
-              onClick={() => setSettingsOpen((v) => !v)}
-              aria-label={settingsOpen ? 'Close project settings' : 'Open project settings'}
-              title="Project settings"
-            >
-              <Settings size={18} />
             </HeaderIconButton>
             <PreviewToggleButton
               type="button"
@@ -1462,7 +1422,7 @@ function App() {
 
         <MainWorkspace $previewOpen={isPreviewOpen}>
           <DesktopSidebar>
-            <Sidebar />
+            <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
           </DesktopSidebar>
           <PanelSlot $mobileActive={mobileTab === 'editor'}>
             <CodeEditor showFileTree={false} />
@@ -1481,7 +1441,7 @@ function App() {
             <X size={16} />
           </DrawerClose>
         </DrawerHeader>
-        <Sidebar />
+        <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
       </DrawerPanel>
 
       <OverlayScrim

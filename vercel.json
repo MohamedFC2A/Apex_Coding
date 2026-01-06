@@ -1,10 +1,5 @@
 {
   "version": 2,
-  "functions": {
-    "backend/api/index.js": {
-      "runtime": "nodejs20.x"
-    }
-  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/backend/api/index.js" },
     { "source": "/(.*)", "destination": "/frontend/dist/$1" }

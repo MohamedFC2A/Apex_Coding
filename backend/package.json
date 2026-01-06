@@ -2,6 +2,7 @@
   "name": "nexus-ai-coding-backend",
   "version": "1.0.0",
   "scripts": {
+    "build": "echo \"Backend Ready\"",
     "dev": "node api/index.js",
     "start": "node api/index.js"
   },

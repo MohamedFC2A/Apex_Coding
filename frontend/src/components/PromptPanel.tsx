@@ -243,11 +243,11 @@ export const PromptPanel: React.FC = () => {
 
           if (typeof error === 'string') {
             if (error.includes('DEEPSEEK_NOT_CONFIGURED')) {
-              errorMessage = 'DeepSeek is not configured. Please add DEEPSEEK_API_KEY to your .env file.';
+              errorMessage = 'DeepSeek is not configured. Set DEEPSEEK_API_KEY in the backend environment (Vercel project env vars or backend/.env for local dev).';
             } else if (error.includes('AI_CONN_REFUSED')) {
               errorMessage = 'Cannot connect to DeepSeek API. Please check your network connection.';
             } else if (error.includes('Invalid API key')) {
-              errorMessage = 'Invalid API key. Please check your DEEPSEEK_API_KEY in .env file.';
+              errorMessage = 'Invalid API key. Check DEEPSEEK_API_KEY in the backend environment (Vercel project env vars or backend/.env).';
             }
           }
 
@@ -435,7 +435,7 @@ export const PromptPanel: React.FC = () => {
               <div className="flex flex-col">
                 <p className="text-xs text-white/80 mb-1">{error}</p>
                 <p className="text-xs text-white/60">
-                  Ensure a valid <code>DEEPSEEK_API_KEY</code> is set in <code>.env</code>.
+                  The browser never sees your key. Configure <code>DEEPSEEK_API_KEY</code> on the backend (Vercel env vars or <code>backend/.env</code>).
                 </p>
               </div>
             </div>

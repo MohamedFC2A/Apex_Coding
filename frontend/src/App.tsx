@@ -350,6 +350,7 @@ function App() {
     interactionMode,
     isGenerating,
     isPlanning,
+    lastTokenAt,
     thinkingContent,
     systemConsoleContent,
     isPreviewOpen,
@@ -395,13 +396,12 @@ function App() {
     setProjectId,
     setProjectName
   } = useProjectStore();
-  const { setPreviewUrl, addLog } = usePreviewStore();
+  const { setPreviewUrl, addLog, runtimeStatus, runtimeMessage } = usePreviewStore();
 
   const [thinkingStatus, setThinkingStatus] = useState('');
   const [brainOpen, setBrainOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
-  const [resumeRequest, setResumeRequest] = useState<{ path: string; line: number } | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const fileFlushTimerRef = useRef<number | null>(null);
   const fileChunkBuffersRef = useRef<Map<string, string>>(new Map());
@@ -419,6 +419,17 @@ function App() {
   }, [files.length, isGenerating, isPlanning]);
 
   const isConsoleVisible = true;
+
+  const systemHealth = useMemo(() => {
+    const now = Date.now();
+    const tokenGapMs = lastTokenAt > 0 ? now - lastTokenAt : 0;
+    const streamOk = !isGenerating || (lastTokenAt > 0 && tokenGapMs < 8000);
+    const previewOk = runtimeStatus !== 'error';
+
+    if (!streamOk) return 'DEGRADED: stream stalled';
+    if (!previewOk) return `DEGRADED: preview ${runtimeMessage || 'error'}`;
+    return 'OK';
+  }, [isGenerating, lastTokenAt, runtimeMessage, runtimeStatus]);
 
   const stamp = () => new Date().toLocaleTimeString([], { hour12: false });
   const logSystem = useCallback(
@@ -575,7 +586,6 @@ function App() {
     logSystem('[webcontainer] Waiting for code generation to finish...');
     setBrainOpen(false);
     setThinkingStatus('Initializing…');
-    setResumeRequest(null);
     streamCharCountRef.current = 0;
     streamLastLogAtRef.current = Date.now();
     clearFileStatuses();
@@ -608,6 +618,7 @@ function App() {
     try {
       let generationSucceeded = false;
       const filePathMap = new Map<string, string>();
+      const partialPaths = new Set<string>();
       const resolveGeneratedPath = (rawPath: string) => {
         if (filePathMap.has(rawPath)) return filePathMap.get(rawPath) as string;
         const normalized = resolveFilePath(rawPath);
@@ -631,6 +642,92 @@ function App() {
           break;
         }
         return lines.join('\n') + (lines.length > 0 ? '\n' : '');
+      };
+
+      const BRANDING_FOOTER = `<footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
+  © 2026 Nexus Apex. All rights reserved. Made by NEXUS_APEX_CODING | Built by Matany Labs
+</footer>`;
+
+      const injectBrandingFooter = (html: string) => {
+        const signature = '© 2026 Nexus Apex.';
+        if (html.includes(signature)) return html;
+
+        const footerBlock = `\n${BRANDING_FOOTER}\n`;
+        const bodyCloseMatch = html.match(/<\/body\s*>/i);
+        if (bodyCloseMatch && typeof bodyCloseMatch.index === 'number') {
+          const idx = bodyCloseMatch.index;
+          return html.slice(0, idx) + footerBlock + html.slice(idx);
+        }
+
+        const htmlCloseMatch = html.match(/<\/html\s*>/i);
+        if (htmlCloseMatch && typeof htmlCloseMatch.index === 'number') {
+          const idx = htmlCloseMatch.index;
+          return html.slice(0, idx) + footerBlock + html.slice(idx);
+        }
+
+        return html + footerBlock;
+      };
+
+      const healHtmlDocument = (html: string) => {
+        const text = String(html || '');
+        const voidTags = new Set([
+          'area',
+          'base',
+          'br',
+          'col',
+          'embed',
+          'hr',
+          'img',
+          'input',
+          'link',
+          'meta',
+          'param',
+          'source',
+          'track',
+          'wbr'
+        ]);
+
+        const stack: string[] = [];
+        const tagRe = /<\/?([a-zA-Z][\w:-]*)\b[^>]*>/g;
+        let match: RegExpExecArray | null;
+        while ((match = tagRe.exec(text)) !== null) {
+          const full = match[0] || '';
+          const name = (match[1] || '').toLowerCase();
+          if (!name) continue;
+          if (full.startsWith('<!--') || full.startsWith('<!')) continue;
+          if (voidTags.has(name) || full.endsWith('/>')) continue;
+
+          if (full.startsWith('</')) {
+            const idx = stack.lastIndexOf(name);
+            if (idx !== -1) stack.splice(idx, 1);
+            continue;
+          }
+
+          stack.push(name);
+        }
+
+        if (stack.length === 0) return text;
+        const closers = stack.reverse().map((name) => `</${name}>`).join('');
+        return `${text}\n${closers}\n`;
+      };
+
+      const finalizeHtmlFile = (path: string, partial: boolean) => {
+        const existing = useProjectStore.getState().files.find((f) => (f.path || f.name) === path);
+        if (!existing) return;
+
+        const cleaned = stripPartialMarkerAtEnd(existing.content || '');
+        const healed = partial ? healHtmlDocument(cleaned) : cleaned;
+        const branded = injectBrandingFooter(healed);
+        const finalText = partial ? `${branded}\n<!-- [[PARTIAL_FILE_CLOSED]] -->\n` : branded;
+
+        updateFile(path, finalText);
+        upsertFileNode(path, finalText);
+        upsertFile({
+          name: existing.name,
+          path,
+          content: finalText,
+          language: getLanguageFromExtension(path)
+        });
       };
 
       const handleFileEvent = (event: {
@@ -690,16 +787,16 @@ function App() {
           setFileStatus(resolvedPath, 'ready');
           if (useAIStore.getState().writingFilePath === resolvedPath) setWritingFilePath(null);
 
+          if (resolvedPath.toLowerCase().endsWith('.html')) {
+            finalizeHtmlFile(resolvedPath, Boolean(event.partial));
+          }
+
           if (event.partial) {
+            partialPaths.add(resolvedPath);
             const msg = `Stream interrupted: ${resolvedPath} cut at line ${event.line || '?'}`;
-            logSystem(`[ERROR] ${msg}`);
-            setError(msg);
-            if (typeof event.line === 'number' && event.line > 0) {
-              setResumeRequest({ path: resolvedPath, line: event.line });
-            } else {
-              setResumeRequest({ path: resolvedPath, line: 1 });
-            }
+            logSystem(`[STATUS] ${msg} (healed & auto-resuming)`);
           } else {
+            partialPaths.delete(resolvedPath);
             logSystem(`[STATUS] Completed ${resolvedPath}`);
           }
 
@@ -779,10 +876,14 @@ function App() {
           setThinkingStatus('');
           generationSucceeded = useProjectStore.getState().files.length > 0;
           if (generationSucceeded) {
-            logSystem('[webcontainer] Code Complete. Writing to Container...');
-            setTimeout(() => {
-              void deployAndRun();
-            }, 0);
+            if (partialPaths.size > 0) {
+              logSystem(`[webcontainer] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume...`);
+            } else {
+              logSystem('[webcontainer] Code Complete. Writing to Container...');
+              setTimeout(() => {
+                void deployAndRun();
+              }, 0);
+            }
           }
         },
         { thinkingMode: isThinkingMode, architectMode, includeReasoning: isThinkingMode, typingMs: 26, onFileEvent: handleFileEvent }
@@ -920,28 +1021,6 @@ function App() {
     setInteractionMode,
     setPrompt
   ]);
-
-  const handleFixResume = useCallback(() => {
-    if (!resumeRequest) return;
-    if (isGenerating || isPlanning) return;
-
-    const filesNow = useProjectStore.getState().files;
-    const fileList = filesNow
-      .map((f) => f.path || f.name)
-      .filter((p): p is string => Boolean(p))
-      .slice(0, 120);
-
-    const resumePrompt = [
-      'SYSTEM: Resume the previous cut-off generation using ONLY the File-Marker protocol.',
-      `The last file ${resumeRequest.path} was cut off at line ${resumeRequest.line}. Continue exactly from line ${resumeRequest.line + 1}.`,
-      fileList.length > 0 ? `Do NOT repeat these existing files unless continuing the cut file: ${fileList.join(', ')}` : '',
-      'Output only file markers and code. No filler.'
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    void handleGenerate(resumePrompt, { skipPlanning: true, preserveProjectMeta: true });
-  }, [handleGenerate, isGenerating, isPlanning, resumeRequest]);
 
   return (
     <>
@@ -1096,12 +1175,12 @@ function App() {
         visible={isConsoleVisible}
         open={brainOpen}
         onToggle={() => setBrainOpen((v) => !v)}
+        health={systemHealth}
         thought={thinkingContent}
         status={thinkingStatus}
         error={error}
         logs={systemConsoleContent}
-        canFixResume={Boolean(resumeRequest)}
-        onFixResume={handleFixResume}
+        canFixResume={false}
       />
       </Root>
     </>

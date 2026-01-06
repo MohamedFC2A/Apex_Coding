@@ -88,6 +88,7 @@ interface BrainConsoleProps {
   visible: boolean;
   open: boolean;
   onToggle: () => void;
+  health?: string;
   thought: string;
   status: string;
   error: string | null;
@@ -96,7 +97,7 @@ interface BrainConsoleProps {
   onFixResume?: () => void;
 }
 
-export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onToggle, thought, status, error, logs, canFixResume, onFixResume }) => {
+export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onToggle, health, thought, status, error, logs, canFixResume, onFixResume }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -108,6 +109,12 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onTog
   const cleanedLogs = useMemo(() => stripAnsi((logs || '').trim()), [logs]);
   const cleanedError = useMemo(() => stripAnsi((error || '').trim()), [error]);
   const cleanedStatus = useMemo(() => stripAnsi((status || '').trim()), [status]);
+  const cleanedHealth = useMemo(() => stripAnsi((health || '').trim()), [health]);
+  const healthColor = cleanedHealth.startsWith('OK')
+    ? 'rgba(34,197,94,0.92)'
+    : cleanedHealth.length === 0
+      ? 'rgba(255,255,255,0.55)'
+      : 'rgba(250,204,21,0.92)';
 
   return (
     <AnimatePresence>
@@ -128,6 +135,11 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onTog
           </Header>
           {open && (
             <Body>
+              {cleanedHealth.length > 0 && (
+                <div style={{ marginBottom: 6, color: healthColor }}>
+                  <Prefix>[HEALTH]</Prefix> <span>{cleanedHealth}</span>
+                </div>
+              )}
               <div>
                 <Prefix>[STATUS]</Prefix> <span>{cleanedStatus || 'Idle'}</span>
               </div>

@@ -194,6 +194,10 @@ CRITICAL OUTPUT RULES (NON-NEGOTIABLE):
 - Output MUST be plain text only (no JSON, no arrays, no markdown, no code fences).
 - You MUST use the File-Marker protocol for EVERY file.
 - No filler text. Output ONLY file markers and file contents.
+- If you output any HTML (any *.html file), you MUST include this exact footer immediately before the closing </body> tag (even for Hello World):
+<footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
+  © 2026 Nexus Apex. All rights reserved. Made by NEXUS_APEX_CODING | Built by Matany Labs
+</footer>
 
 File-Marker protocol:
 [[START_FILE: path/to/file.ext]]
@@ -324,6 +328,8 @@ app.post('/ai/generate-stream', async (req, res) => {
 
   let keepAliveTimer = null;
   let abortTimer = null;
+  let tokenFlushTimer = null;
+  let thoughtFlushTimer = null;
 
   try {
     const { prompt, thinkingMode, includeReasoning } = req.body || {};
@@ -383,13 +389,51 @@ app.post('/ai/generate-stream', async (req, res) => {
     const isReasoner = model === 'deepseek-reasoner';
     const wantReasoning = Boolean(includeReasoning) && isReasoner;
 
+    // Buffer small deltas to reduce fragmented delivery / aborted requests.
+    let tokenBuffer = '';
+    let thoughtBuffer = '';
+    const flushTokenBuffer = () => {
+      if (!tokenBuffer) return;
+      writeSse('token', tokenBuffer);
+      tokenBuffer = '';
+    };
+    const flushThoughtBuffer = () => {
+      if (!thoughtBuffer) return;
+      if (wantReasoning) writeSse('thought', thoughtBuffer);
+      thoughtBuffer = '';
+    };
+    const scheduleTokenFlush = () => {
+      if (tokenFlushTimer) return;
+      tokenFlushTimer = setTimeout(() => {
+        tokenFlushTimer = null;
+        try {
+          flushTokenBuffer();
+        } catch {
+          // ignore
+        }
+      }, 20);
+    };
+    const scheduleThoughtFlush = () => {
+      if (thoughtFlushTimer) return;
+      thoughtFlushTimer = setTimeout(() => {
+        thoughtFlushTimer = null;
+        try {
+          flushThoughtBuffer();
+        } catch {
+          // ignore
+        }
+      }, 30);
+    };
+
     for await (const chunk of stream) {
       const delta = chunk?.choices?.[0]?.delta || {};
       const reasoningChunk = delta?.reasoning_content;
       const contentChunk = delta?.content;
 
       if (typeof reasoningChunk === 'string' && reasoningChunk.length > 0) {
-        if (wantReasoning) writeSse('thought', reasoningChunk);
+        thoughtBuffer += reasoningChunk;
+        if (thoughtBuffer.length > 2200) flushThoughtBuffer();
+        else scheduleThoughtFlush();
       }
 
       if (typeof contentChunk === 'string' && contentChunk.length > 0) {
@@ -399,9 +443,16 @@ app.post('/ai/generate-stream', async (req, res) => {
           writeStatus('streaming', 'Generating…');
         }
 
-        writeSse('token', contentChunk);
+        tokenBuffer += contentChunk;
+        if (tokenBuffer.length > 4096) flushTokenBuffer();
+        else scheduleTokenFlush();
       }
     }
+
+    if (tokenFlushTimer) clearTimeout(tokenFlushTimer);
+    if (thoughtFlushTimer) clearTimeout(thoughtFlushTimer);
+    flushThoughtBuffer();
+    flushTokenBuffer();
 
     if (keepAliveTimer) clearInterval(keepAliveTimer);
     if (abortTimer) clearTimeout(abortTimer);
@@ -427,6 +478,20 @@ app.post('/ai/generate-stream', async (req, res) => {
     if (abortTimer) {
       try {
         clearTimeout(abortTimer);
+      } catch {
+        // ignore
+      }
+    }
+    if (tokenFlushTimer) {
+      try {
+        clearTimeout(tokenFlushTimer);
+      } catch {
+        // ignore
+      }
+    }
+    if (thoughtFlushTimer) {
+      try {
+        clearTimeout(thoughtFlushTimer);
       } catch {
         // ignore
       }

@@ -472,7 +472,7 @@ export const aiService = {
         return { markerParser };
       };
 
-      const maxResumeAttempts = 1;
+      const maxResumeAttempts = 2;
 
       const first = await runStreamOnce(prompt);
       const cut = first.markerParser.finalize();

@@ -32,6 +32,12 @@ const sheen = keyframes`
   100% { transform: translateX(160%); opacity: 0; }
 `;
 
+const mercuryPulse = keyframes`
+  0% { opacity: 0.85; filter: saturate(1.0); }
+  50% { opacity: 1; filter: saturate(1.15); }
+  100% { opacity: 0.85; filter: saturate(1.0); }
+`;
+
 const pendingStyles = css`
   border-color: rgba(255, 255, 255, 0.16);
   opacity: 0.6;
@@ -52,9 +58,9 @@ const Panel = styled.div`
   display: flex;
   flex-direction: column;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(24px);
   box-shadow:
     0 22px 60px rgba(0, 0, 0, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.10);
@@ -118,8 +124,7 @@ const ProgressFill = styled.div<{ $pct: number }>`
     rgba(34, 211, 238, 0.92)
   );
   background-size: 220% 100%;
-  animation: ${liquidFlow} 1.9s linear infinite;
-  box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+  animation: ${liquidFlow} 2.2s linear infinite, ${mercuryPulse} 2.6s ease-in-out infinite;
   transition: width 240ms ease;
 
   &::after {
@@ -132,7 +137,7 @@ const ProgressFill = styled.div<{ $pct: number }>`
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
     filter: blur(2px);
     animation: ${sheen} 1.5s linear infinite;
-    opacity: 0.35;
+    opacity: 0.22;
     pointer-events: none;
   }
 `;

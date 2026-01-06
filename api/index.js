@@ -1,11 +1,8 @@
-// backend/api/index.js (Vercel Serverless, CommonJS)
+// api/index.js (Vercel Serverless, CommonJS)
 const express = require('express');
 const cors = require('cors');
-const OpenAIImport = require('openai');
 const JSZip = require('jszip');
 require('dotenv').config();
-
-const OpenAI = OpenAIImport.default || OpenAIImport;
 
 const app = express();
 
@@ -115,11 +112,95 @@ const normalizeDeepSeekBaseUrl = (raw) => {
   return base.endsWith('/v1') ? base : `${base}/v1`;
 };
 
-const getClient = () => {
+const getDeepSeekConfig = () => {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error('API Key missing on Backend');
   const baseURL = normalizeDeepSeekBaseUrl(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com');
-  return new OpenAI({ baseURL, apiKey });
+  return { apiKey, baseURL };
+};
+
+const deepSeekCreateChatCompletion = async (payload, options = {}) => {
+  const { apiKey, baseURL } = getDeepSeekConfig();
+  const res = await fetch(`${baseURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(payload),
+    signal: options.signal
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `DeepSeek request failed (${res.status})`);
+  }
+
+  return res.json();
+};
+
+async function* readSseDataMessages(readableStream) {
+  const reader = readableStream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf('\n\n');
+
+      const lines = rawEvent.split(/\r?\n/);
+      const dataLines = [];
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          const rest = line.slice('data:'.length);
+          dataLines.push(rest.startsWith(' ') ? rest.slice(1) : rest);
+        }
+      }
+
+      if (dataLines.length > 0) yield dataLines.join('\n');
+    }
+  }
+}
+
+async function* deepSeekStreamChatCompletion(payload, options = {}) {
+  const { apiKey, baseURL } = getDeepSeekConfig();
+  const res = await fetch(`${baseURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({ ...payload, stream: true }),
+    signal: options.signal
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `DeepSeek stream failed (${res.status})`);
+  }
+
+  if (!res.body) throw new Error('DeepSeek stream failed: empty response body');
+
+  for await (const dataText of readSseDataMessages(res.body)) {
+    const text = String(dataText || '').trim();
+    if (!text) continue;
+    if (text === '[DONE]') break;
+
+    try {
+      const parsed = JSON.parse(text);
+      yield parsed;
+    } catch {
+      // ignore non-JSON lines
+    }
+  }
 };
 
 const cleanAndParseJSON = (text) => {
@@ -281,7 +362,6 @@ app.post('/ai/plan', async (req, res) => {
     console.log('[plan] Generating plan for prompt:', typeof prompt === 'string' ? prompt.slice(0, 500) : prompt);
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    const client = getClient();
     const request = {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.0,
@@ -293,12 +373,12 @@ app.post('/ai/plan', async (req, res) => {
 
     let completion;
     try {
-      completion = await client.chat.completions.create({
+      completion = await deepSeekCreateChatCompletion({
         ...request,
         response_format: { type: 'json_object' }
       });
     } catch {
-      completion = await client.chat.completions.create(request);
+      completion = await deepSeekCreateChatCompletion(request);
     }
 
     let content = completion?.choices?.[0]?.message?.content || '';
@@ -361,8 +441,6 @@ app.post(['/ai/generate', '/generate'], async (req, res) => {
       return;
     }
 
-    const client = getClient();
-
     const model = thinkingMode
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
       : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
@@ -398,13 +476,7 @@ app.post(['/ai/generate', '/generate'], async (req, res) => {
       signal: abortController.signal
     };
 
-    let stream;
-    try {
-      stream = await client.chat.completions.create(request);
-    } catch {
-      stream = await client.chat.completions.create(request);
-    }
-
+    const stream = deepSeekStreamChatCompletion(request, { signal: abortController.signal });
     for await (const chunk of stream) {
       const delta = chunk?.choices?.[0]?.delta || {};
       const contentChunk = delta?.content;
@@ -482,8 +554,6 @@ app.post('/ai/generate-stream', async (req, res) => {
       return;
     }
 
-    const client = getClient();
-
     const model = thinkingMode
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
       : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
@@ -521,12 +591,7 @@ app.post('/ai/generate-stream', async (req, res) => {
       signal: abortController.signal
     };
 
-    let stream;
-    try {
-      stream = await client.chat.completions.create(request);
-    } catch {
-      stream = await client.chat.completions.create(request);
-    }
+    const stream = deepSeekStreamChatCompletion(request, { signal: abortController.signal });
 
     const isReasoner = model === 'deepseek-reasoner';
     const wantReasoning = Boolean(includeReasoning) && isReasoner;

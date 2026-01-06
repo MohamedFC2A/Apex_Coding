@@ -39,8 +39,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
   const currentFileLanguage = currentFile
     ? currentFile.language || getLanguageFromExtension(currentFile.path || currentFile.name || '')
     : 'plaintext';
-  const debouncedValueTimerRef = useRef<number | null>(null);
-  const [debouncedValue, setDebouncedValue] = React.useState('');
+  const typingTimerRef = useRef<number | null>(null);
+  const targetContentRef = useRef('');
+  const [typedValue, setTypedValue] = React.useState('');
 
   useEffect(() => {
     if (!activeFile) return;
@@ -123,30 +124,59 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
   const storeContent = currentFile?.content ?? '';
 
   useEffect(() => {
-    if (!isGenerating) {
-      setDebouncedValue(storeContent);
+    targetContentRef.current = storeContent;
+  }, [storeContent]);
+
+  useEffect(() => {
+    if (!currentFile) {
+      setTypedValue('');
       return;
     }
 
-    if (debouncedValueTimerRef.current) window.clearTimeout(debouncedValueTimerRef.current);
-    debouncedValueTimerRef.current = window.setTimeout(() => {
-      debouncedValueTimerRef.current = null;
-      setDebouncedValue(storeContent);
-    }, 100);
+    if (!isGenerating) {
+      if (typingTimerRef.current) {
+        window.clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+      setTypedValue(storeContent);
+      return;
+    }
+
+    // During generation, render a "typewriter" view that gently trails the real file content.
+    setTypedValue((prev) => (targetContentRef.current.startsWith(prev) ? prev : targetContentRef.current));
+
+    if (!typingTimerRef.current) {
+      typingTimerRef.current = window.setInterval(() => {
+        setTypedValue((prev) => {
+          const target = targetContentRef.current;
+          if (prev === target) return prev;
+
+          const step = 140;
+          const nextBoundary = target.indexOf('\n', prev.length);
+          const maxNext = Math.min(prev.length + step, target.length);
+          const nextLen =
+            nextBoundary !== -1 && nextBoundary < maxNext
+              ? Math.min(nextBoundary + 1, target.length)
+              : maxNext;
+
+          return target.slice(0, nextLen);
+        });
+      }, 22);
+    }
 
     return () => {
-      if (debouncedValueTimerRef.current) {
-        window.clearTimeout(debouncedValueTimerRef.current);
-        debouncedValueTimerRef.current = null;
+      if (typingTimerRef.current) {
+        window.clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
       }
     };
-  }, [isGenerating, storeContent, activeFile]);
+  }, [activeFile, currentFile, isGenerating]);
 
   const editorValue = useMemo(() => {
     if (isStreamingView) return streamText;
     if (!currentFile) return undefined;
-    return isGenerating ? debouncedValue : storeContent;
-  }, [currentFile, debouncedValue, isGenerating, isStreamingView, storeContent, streamText]);
+    return isGenerating ? typedValue : storeContent;
+  }, [currentFile, isGenerating, isStreamingView, storeContent, streamText, typedValue]);
 
   return (
     <GlassCard className="h-full flex flex-col overflow-hidden">

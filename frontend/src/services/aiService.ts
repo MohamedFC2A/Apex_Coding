@@ -16,24 +16,6 @@ interface AIResponse {
 
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 
-const cleanAndParseJSON = (text: string) => {
-  const raw = String(text ?? '').trim();
-  if (raw.length === 0) throw new Error('Empty AI response');
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const match = raw.match(/```json\s*([\s\S]*?)\s*```/i) || raw.match(/```\s*([\s\S]*?)\s*```/);
-    if (match?.[1]) return JSON.parse(match[1]);
-
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start !== -1 && end !== -1 && end > start) return JSON.parse(raw.slice(start, end + 1));
-
-    throw new Error('No valid JSON found in response');
-  }
-};
-
 const getErrorMessage = (err: any, fallback: string) => {
   return (
     err?.error ||
@@ -123,32 +105,34 @@ export const aiService = {
       onMeta({ provider: 'vercel-backend', baseURL: API_BASE_URL, thinkingMode, architectMode });
       onStatus('streaming', 'Generating…');
 
-      // Streaming checkpoint extraction: capture complete `{"name": "...", "content": "..."}` objects
-      // from the JSON stream without requiring the full JSON payload to parse successfully.
-      const partialFileOrder: string[] = [];
-      const partialFileContents = new Map<string, string>();
-      const partialFileCompleted = new Set<string>();
+      // Streaming checkpoint extraction (incremental parser):
+      // We track files as they complete and use that to auto-resume if the stream truncates.
+      // This avoids relying on `JSON.parse()` of a potentially truncated full payload.
+      const completedFiles = new Set<string>();
+      const discoveredFiles = new Set<string>();
       let lastCompletedFilePath = '';
+      let currentWritingFilePath = '';
+
+      const streamTailMax = 5000;
+      let streamTail = '';
 
       const checkpointRouter = createProjectJSONStreamRouter({
         onFileDiscovered: (path) => {
           const key = String(path || '').trim();
           if (!key) return;
-          if (!partialFileContents.has(key)) {
-            partialFileOrder.push(key);
-            partialFileContents.set(key, '');
-          }
+          discoveredFiles.add(key);
         },
-        onFileChunk: (path, chunk) => {
+        onFileStatus: (path, status) => {
           const key = String(path || '').trim();
           if (!key) return;
-          partialFileContents.set(key, (partialFileContents.get(key) || '') + chunk);
+          if (status === 'writing') currentWritingFilePath = key;
         },
         onFileComplete: (path) => {
           const key = String(path || '').trim();
           if (!key) return;
-          partialFileCompleted.add(key);
+          completedFiles.add(key);
           lastCompletedFilePath = key;
+          if (currentWritingFilePath === key) currentWritingFilePath = '';
         }
       });
 
@@ -176,152 +160,178 @@ export const aiService = {
         return { eventName, dataRaw };
       };
 
-      const response = await fetch(apiUrl('/api/ai/generate-stream'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        mode: 'cors',
-        body: JSON.stringify({
+      const buildResumePrompt = () => {
+        const completed = Array.from(completedFiles).slice(-40);
+        const discovered = Array.from(discoveredFiles).slice(-40);
+        const tail = streamTail.slice(-2200);
+
+        return [
           prompt,
-          thinkingMode,
-          architectMode,
-          includeReasoning,
-          history: options.history || []
-        })
-      });
+          '',
+          'SYSTEM: Your previous response was truncated mid-stream and did not finish a valid JSON object.',
+          lastCompletedFilePath ? `Last completed file: ${lastCompletedFilePath}` : '',
+          currentWritingFilePath ? `Last file in progress: ${currentWritingFilePath}` : '',
+          completed.length > 0 ? `Already completed files (DO NOT repeat): ${completed.join(', ')}` : '',
+          discovered.length > 0 ? `Files already discovered (avoid repeating): ${discovered.join(', ')}` : '',
+          tail.length > 0 ? `Last JSON tail received (may be truncated):\n${tail}` : '',
+          '',
+          'Return ONLY the missing files as a single VALID JSON object with this schema:',
+          '{"project_files":[{"name":"...","content":"..."}],"metadata":{"resume":true},"instructions":""}',
+          '',
+          'Do NOT include files already completed. Do NOT add markdown or code fences.'
+        ]
+          .filter(Boolean)
+          .join('\n');
+      };
 
-      if (!response.ok) {
-        let message = `Streaming failed (${response.status})`;
-        const errorText = await response.text().catch(() => '');
-        if (errorText) message = errorText;
-        throw new Error(message);
-      }
+      const runStreamOnce = async (streamPrompt: string) => {
+        const response = await fetch(apiUrl('/api/ai/generate-stream'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          mode: 'cors',
+          body: JSON.stringify({
+            prompt: streamPrompt,
+            thinkingMode,
+            architectMode,
+            includeReasoning,
+            history: options.history || []
+          })
+        });
 
-      const body = response.body;
-      if (!body) throw new Error('Streaming failed: empty response body');
-
-      const reader = body.getReader();
-      const decoder = new TextDecoder();
-      let fullText = '';
-      let buffer = '';
-      let gotJsonEvent = false;
-      let sawAnyToken = false;
-      let backendErrorMessage = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const decoded = decoder.decode(value, { stream: true });
-        if (decoded.length === 0) continue;
-
-        // If backend sends raw chunks (not SSE framed), forward immediately.
-        const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
-        if (!looksLikeSse && buffer.length === 0) {
-          // Strip SSE comment keep-alives like ": \n\n" if present.
-          const cleaned = decoded.replace(/^:[^\n]*\n+/gm, '');
-          if (cleaned.trim().length > 0) {
-            sawAnyToken = true;
-            fullText += cleaned;
-            checkpointRouter.push(cleaned);
-            onToken(cleaned);
-          }
-          continue;
+        if (!response.ok) {
+          let message = `Streaming failed (${response.status})`;
+          const errorText = await response.text().catch(() => '');
+          if (errorText) message = errorText;
+          throw new Error(message);
         }
 
-        buffer += decoded;
+        const body = response.body;
+        if (!body) throw new Error('Streaming failed: empty response body');
 
-        let boundaryIndex = buffer.indexOf('\n\n');
-        while (boundaryIndex !== -1) {
-          const rawEvent = buffer.slice(0, boundaryIndex);
-          buffer = buffer.slice(boundaryIndex + 2);
-          boundaryIndex = buffer.indexOf('\n\n');
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let gotJsonEvent = false;
+        let sawAnyToken = false;
+        let backendErrorMessage = '';
+        let sawDoneStatus = false;
 
-          const { eventName, dataRaw } = parseSseEvent(rawEvent);
-          if (!dataRaw) continue;
+        const consumeToken = (tokenChunk: string) => {
+          if (!tokenChunk) return;
+          sawAnyToken = true;
+          streamTail = (streamTail + tokenChunk).slice(-streamTailMax);
+          checkpointRouter.push(tokenChunk);
+          onToken(tokenChunk);
+        };
 
-          let data: any;
-          try {
-            data = JSON.parse(dataRaw);
-          } catch {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const decoded = decoder.decode(value, { stream: true });
+          if (decoded.length === 0) continue;
+
+          // If backend sends raw chunks (not SSE framed), forward immediately.
+          const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
+          if (!looksLikeSse && buffer.length === 0) {
+            const cleaned = decoded.replace(/^:[^\n]*\n+/gm, '');
+            if (cleaned.trim().length > 0) consumeToken(cleaned);
             continue;
           }
 
-          if (eventName === 'meta') onMeta(data);
-          if (eventName === 'status') {
-            const phase = String(data.phase || 'streaming');
-            const message = String(data.message || '');
-            onStatus(phase, message);
-            if (phase === 'error' && message) backendErrorMessage = message;
-          }
-          if (eventName === 'reasoning' && includeReasoning) _onReasoning(String(data.chunk || ''));
-          if (eventName === 'token') {
-            const tokenChunk = String(data.chunk || '');
-            if (tokenChunk.length > 0) {
-              sawAnyToken = true;
-              fullText += tokenChunk;
-              checkpointRouter.push(tokenChunk);
-              onToken(tokenChunk);
+          buffer += decoded;
+
+          let boundaryIndex = buffer.indexOf('\n\n');
+          while (boundaryIndex !== -1) {
+            const rawEvent = buffer.slice(0, boundaryIndex);
+            buffer = buffer.slice(boundaryIndex + 2);
+            boundaryIndex = buffer.indexOf('\n\n');
+
+            const { eventName, dataRaw } = parseSseEvent(rawEvent);
+            if (!dataRaw) continue;
+
+            let data: any;
+            try {
+              data = JSON.parse(dataRaw);
+            } catch {
+              continue;
+            }
+
+            if (eventName === 'meta') onMeta(data);
+            if (eventName === 'status') {
+              const phase = String(data.phase || 'streaming');
+              const message = String(data.message || '');
+              onStatus(phase, message);
+              if (phase === 'done') sawDoneStatus = true;
+              if (phase === 'error' && message) backendErrorMessage = message;
+            }
+            if (eventName === 'reasoning' && includeReasoning) _onReasoning(String(data.chunk || ''));
+            if (eventName === 'token') {
+              const tokenChunk = String(data.chunk || '');
+              if (tokenChunk.length > 0) consumeToken(tokenChunk);
+            }
+            if (eventName === 'json') {
+              gotJsonEvent = true;
+              onJSON(data.payload);
             }
           }
-          if (eventName === 'json') {
-            gotJsonEvent = true;
-            onJSON(data.payload);
+
+          // If we have a buffer that isn't SSE-framed, treat it as raw content.
+          if (!gotJsonEvent && buffer.length > 0 && !/(^|\n)event:\s/.test(buffer) && !/(^|\n)data:\s/.test(buffer)) {
+            const cleaned = buffer.replace(/^:[^\n]*\n+/gm, '');
+            buffer = '';
+            if (cleaned.trim().length > 0) consumeToken(cleaned);
           }
         }
 
-        // If we have a buffer that isn't SSE-framed, treat it as raw content.
-        if (!gotJsonEvent && buffer.length > 0 && !/(^|\n)event:\s/.test(buffer) && !/(^|\n)data:\s/.test(buffer)) {
-          const cleaned = buffer.replace(/^:[^\n]*\n+/gm, '');
-          buffer = '';
-          if (cleaned.trim().length > 0) {
-            sawAnyToken = true;
-            fullText += cleaned;
-            checkpointRouter.push(cleaned);
-            onToken(cleaned);
+        if (!sawDoneStatus) onStatus('done', 'Complete');
+
+        if (!gotJsonEvent && backendErrorMessage) {
+          throw new Error(backendErrorMessage);
+        }
+
+        if (!gotJsonEvent && !sawAnyToken) {
+          throw new Error('Backend connection failed or timed out');
+        }
+
+        return { gotJsonEvent };
+      };
+
+      let finalJsonReceived = false;
+      const maxResumeAttempts = 1;
+
+      for (let attempt = 0; attempt <= maxResumeAttempts; attempt++) {
+        const streamPrompt = attempt === 0 ? prompt : buildResumePrompt();
+        if (attempt > 0) {
+          checkpointRouter.reset();
+          currentWritingFilePath = '';
+          onMeta({ resume: { attempt, lastCompletedFilePath } });
+          onStatus('streaming', 'Resuming…');
+        }
+
+        const { gotJsonEvent } = await runStreamOnce(streamPrompt);
+        finalJsonReceived = finalJsonReceived || gotJsonEvent;
+
+        const incomplete =
+          (Boolean(currentWritingFilePath) && !completedFiles.has(currentWritingFilePath)) ||
+          discoveredFiles.size > completedFiles.size;
+        if (finalJsonReceived || !incomplete) break;
+      }
+
+      if (!finalJsonReceived && completedFiles.size > 0) {
+        onMeta({
+          checkpoint: {
+            partial: true,
+            completedFiles: completedFiles.size,
+            lastCompletedFilePath,
+            currentWritingFilePath
           }
-        }
-      }
-
-      onStatus('done', 'Complete');
-
-      if (!gotJsonEvent && !sawAnyToken) {
-        throw new Error('Backend connection failed or timed out');
-      }
-
-      if (!gotJsonEvent && backendErrorMessage) {
-        throw new Error(backendErrorMessage);
-      }
-
-      if (!gotJsonEvent) {
-        const errorMarkerIndex = fullText.indexOf('[ERROR]:');
-        if (errorMarkerIndex !== -1) {
-          throw new Error(fullText.slice(errorMarkerIndex + '[ERROR]:'.length).trim() || 'Backend error');
-        }
-        try {
-          const payload = cleanAndParseJSON(fullText);
-          onJSON(payload);
-        } catch (e: any) {
-          const completedFiles = partialFileOrder
-            .filter((path) => partialFileCompleted.has(path))
-            .map((path) => ({ name: path, content: partialFileContents.get(path) || '' }));
-
-          if (completedFiles.length > 0) {
-            onMeta({
-              checkpoint: {
-                partial: true,
-                completedFiles: completedFiles.length,
-                lastCompletedFilePath: lastCompletedFilePath || completedFiles[completedFiles.length - 1]?.name || ''
-              }
-            });
-            onJSON({
-              project_files: completedFiles,
-              metadata: { partial: true },
-              instructions: ''
-            });
-          } else {
-            throw new Error(e?.message || 'Failed to parse streamed JSON');
-          }
-        }
+        });
+        onJSON({
+          project_files: [],
+          metadata: { partial: true },
+          instructions: ''
+        });
       }
 
       onComplete();

@@ -36,12 +36,14 @@ describe('aiService (API mode)', () => {
       metadata: { language: 'x', framework: 'y' },
       instructions: 'ok'
     });
+    const jsonPayload = JSON.parse(jsonText);
 
     const sse = [
       `event: meta\ndata: ${JSON.stringify({ provider: 'deepseek', model: 'deepseek-chat' })}\n\n`,
       `event: token\ndata: ${JSON.stringify({ chunk: jsonText.slice(0, 10) })}\n\n`,
       `: keep-alive\n\n`,
       `event: token\ndata: ${JSON.stringify({ chunk: jsonText.slice(10) })}\n\n`,
+      `event: json\ndata: ${JSON.stringify({ payload: jsonPayload })}\n\n`,
       `event: status\ndata: ${JSON.stringify({ phase: 'done', message: 'Complete' })}\n\n`
     ].join('');
 

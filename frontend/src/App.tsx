@@ -403,15 +403,14 @@ function App() {
   const [brainOpen, setBrainOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
-  const [resumeInfo, setResumeInfo] = useState<{ lastFilePath: string; streamTail: string } | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const fileFlushTimerRef = useRef<number | null>(null);
   const fileChunkBuffersRef = useRef<Map<string, string>>(new Map());
   const tokenBeatTimerRef = useRef<number | null>(null);
   const reasoningFlushTimerRef = useRef<number | null>(null);
   const reasoningBufferRef = useRef('');
-  const streamTailRef = useRef('');
-  const lastCompletedFileRef = useRef('');
+  const streamCharCountRef = useRef(0);
+  const streamLastLogAtRef = useRef(0);
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
@@ -421,6 +420,14 @@ function App() {
   }, [files.length, isGenerating, isPlanning]);
 
   const isConsoleVisible = true;
+
+  const stamp = () => new Date().toLocaleTimeString([], { hour12: false });
+  const logSystem = useCallback(
+    (message: string) => {
+      appendSystemConsoleContent(`${stamp()} ${message}\n`);
+    },
+    [appendSystemConsoleContent]
+  );
 
   useEffect(() => {
     if (isGenerating) return;
@@ -467,11 +474,33 @@ function App() {
 
   const flushFileBuffers = useCallback(() => {
     if (fileChunkBuffersRef.current.size === 0) return;
-    const entries = Array.from(fileChunkBuffersRef.current.entries());
-    fileChunkBuffersRef.current.clear();
-    for (const [path, chunk] of entries) {
+
+    const writingPath = useAIStore.getState().writingFilePath || '';
+    const maxActive = 120;
+    const maxOther = 420;
+
+    for (const [path, buffer] of fileChunkBuffersRef.current.entries()) {
+      if (!buffer) {
+        fileChunkBuffersRef.current.delete(path);
+        continue;
+      }
+
+      const max = path === writingPath ? maxActive : maxOther;
+      const chunk = buffer.length <= max ? buffer : buffer.slice(0, max);
+      const rest = buffer.length <= max ? '' : buffer.slice(max);
+
       appendToFile(path, chunk);
       appendToFileNode(path, chunk);
+
+      if (rest.length === 0) fileChunkBuffersRef.current.delete(path);
+      else fileChunkBuffersRef.current.set(path, rest);
+    }
+
+    if (fileChunkBuffersRef.current.size > 0 && !fileFlushTimerRef.current) {
+      fileFlushTimerRef.current = window.setTimeout(() => {
+        fileFlushTimerRef.current = null;
+        flushFileBuffers();
+      }, 24);
     }
   }, [appendToFile, appendToFileNode]);
 
@@ -480,7 +509,7 @@ function App() {
     fileFlushTimerRef.current = window.setTimeout(() => {
       fileFlushTimerRef.current = null;
       flushFileBuffers();
-    }, 60);
+    }, 24);
   }, [flushFileBuffers]);
 
   const scheduleTokenBeat = useCallback(() => {
@@ -513,24 +542,9 @@ function App() {
     const rawPrompt = (promptOverride ?? prompt).trim();
     if (!rawPrompt || isPlanning || isGenerating) return;
 
-    const resumeRequested = /^(continue|resume|go on)\b/i.test(rawPrompt);
-    const canResume = resumeRequested && Boolean(resumeInfo?.streamTail || resumeInfo?.lastFilePath);
-
-    const basePrompt = canResume
-      ? [
-          'Continue the previous generation WITHOUT rewriting files already produced.',
-          resumeInfo?.lastFilePath ? `Last completed file received was: ${resumeInfo.lastFilePath}` : '',
-          resumeInfo?.streamTail
-            ? `The stream ended mid-JSON. Continue and COMPLETE the JSON starting from this tail (may be truncated):\n${resumeInfo.streamTail}`
-            : '',
-          'Return ONLY a single valid JSON object with the same schema: {"project_files":[{"name":"...","content":"..."}], "metadata": {...}, "instructions":"..."}.'
-        ]
-          .filter(Boolean)
-          .join('\n\n')
-      : rawPrompt;
-
-    const skipPlanning = canResume || options?.skipPlanning === true;
-    const preserveProjectMeta = canResume || options?.preserveProjectMeta === true;
+    const basePrompt = rawPrompt;
+    const skipPlanning = options?.skipPlanning === true;
+    const preserveProjectMeta = options?.preserveProjectMeta === true;
 
     if (architectMode && !skipPlanning) {
       const currentPlanSteps = useAIStore.getState().planSteps;
@@ -555,12 +569,12 @@ function App() {
     setStreamText('');
     clearThinkingContent();
     clearSystemConsoleContent();
-    appendSystemConsoleContent('[webcontainer] Waiting for code generation to finish...\n');
+    logSystem('[STATUS] Starting generation stream…');
+    logSystem('[webcontainer] Waiting for code generation to finish...');
     setBrainOpen(false);
     setThinkingStatus('Initializing…');
-    setResumeInfo(null);
-    streamTailRef.current = '';
-    lastCompletedFileRef.current = '';
+    streamCharCountRef.current = 0;
+    streamLastLogAtRef.current = Date.now();
     clearFileStatuses();
     setWritingFilePath(null);
     if (!preserveProjectMeta) resetProject();
@@ -601,6 +615,7 @@ function App() {
       const router = createProjectJSONStreamRouter({
         onFileDiscovered: (path) => {
           const resolvedPath = resolveGeneratedPath(path);
+          logSystem(`[STATUS] Parsed file: ${resolvedPath}`);
           upsertFileNode(resolvedPath);
           const name = resolvedPath.split('/').pop() || resolvedPath;
           const exists = useProjectStore.getState().files.some((f) => (f.path || f.name) === resolvedPath);
@@ -612,6 +627,8 @@ function App() {
           const resolvedPath = resolveGeneratedPath(path);
           setFileStatus(resolvedPath, status);
           if (status === 'writing') {
+            logSystem(`[STATUS] Writing ${resolvedPath}...`);
+            setThinkingStatus(`Writing ${resolvedPath.split('/').pop() || resolvedPath}…`);
             flushFileBuffers();
             fileChunkBuffersRef.current.delete(resolvedPath);
             updateFile(resolvedPath, '');
@@ -619,6 +636,7 @@ function App() {
             setWritingFilePath(resolvedPath);
             setActiveFile(resolvedPath);
             setMobileTab('editor');
+            setBrainOpen(true);
           }
         },
         onFileChunk: (path, chunk) => {
@@ -631,7 +649,7 @@ function App() {
         },
         onFileComplete: (path) => {
           const resolvedPath = resolveGeneratedPath(path);
-          lastCompletedFileRef.current = resolvedPath;
+          logSystem(`[STATUS] Completed ${resolvedPath}`);
 
           if (!useAIStore.getState().architectMode) return;
           const next = useAIStore.getState().planSteps.find((s) => !s.completed);
@@ -646,52 +664,44 @@ function App() {
       await aiService.generateCodeStream(
         basePrompt,
         (token) => {
-          streamTailRef.current = (streamTailRef.current + token).slice(-8000);
+          streamCharCountRef.current += token.length;
+          const now = Date.now();
+          if (now - streamLastLogAtRef.current > 900) {
+            const k = Math.round(streamCharCountRef.current / 100) / 10;
+            logSystem(`[STATUS] Received ${k}k chars...`);
+            streamLastLogAtRef.current = now;
+          }
           router.push(token);
           scheduleTokenBeat();
         },
         (phase, message) => {
-          if (phase === 'thinking') setThinkingStatus('Thinking…');
+          const writing = useAIStore.getState().writingFilePath;
+          if (writing && phase === 'streaming') {
+            setThinkingStatus(`Writing ${writing.split('/').pop() || writing}…`);
+          } else if (phase === 'thinking') setThinkingStatus('Thinking…');
           else if (phase === 'streaming') setThinkingStatus('Generating…');
           else if (phase === 'validating') setThinkingStatus('Validating…');
           else if (phase === 'done') setThinkingStatus('Complete');
           else setThinkingStatus(message);
+          if (message) logSystem(`[STATUS] ${message}`);
         },
         (meta) => {
           if (meta?.model) {
             addLog({ timestamp: Date.now(), type: 'info', message: `Model: ${meta.model}` });
           }
-          if (meta?.checkpoint?.lastCompletedFilePath) {
-            lastCompletedFileRef.current = String(meta.checkpoint.lastCompletedFilePath);
+          if (meta?.resume?.attempt) {
+            logSystem(`[STATUS] Auto-resume attempt ${meta.resume.attempt}`);
           }
         },
         (payload) => {
-          if (payload?.metadata?.partial) {
-            flushFileBuffers();
-            if (fileFlushTimerRef.current) {
-              window.clearTimeout(fileFlushTimerRef.current);
-              fileFlushTimerRef.current = null;
-            }
-
-            setResumeInfo({
-              lastFilePath: lastCompletedFileRef.current,
-              streamTail: streamTailRef.current
-            });
-            setError('Stream ended before valid JSON completed. Click Resume or type "continue".');
-            addLog({ timestamp: Date.now(), type: 'error', message: 'Partial JSON received (checkpoint mode).' });
-            setIsGenerating(false);
-            setThinkingStatus('');
-            generationSucceeded = false;
-            return;
-          }
-
           flushFileBuffers();
           if (fileFlushTimerRef.current) {
             window.clearTimeout(fileFlushTimerRef.current);
             fileFlushTimerRef.current = null;
           }
           const data = payload;
-          const convertedFiles: ProjectFile[] = (data.project_files || []).map((file: any) => {
+          const isPartial = Boolean(data?.metadata?.partial);
+          const incomingFiles: ProjectFile[] = (data.project_files || []).map((file: any) => {
             const rawPath = file.name || file.path || '';
             const resolvedPath = resolveFilePath(rawPath);
             const name = resolvedPath.split('/').pop() || resolvedPath;
@@ -703,13 +713,31 @@ function App() {
             };
           });
 
-          setFiles(convertedFiles);
-          setFileStructure(
-            convertedFiles.map((file) => ({ path: file.path || file.name, type: 'file' as const }))
-          );
-          setFilesFromProjectFiles(convertedFiles);
-          setStack(data.metadata?.language || 'Unknown');
-          setDescription(data.instructions || 'Generated by NEXUS AI CODING');
+          if (incomingFiles.length > 0) {
+            const merged = new Map<string, ProjectFile>();
+            for (const file of useProjectStore.getState().files) {
+              const key = file.path || file.name;
+              if (key) merged.set(key, file);
+            }
+            for (const file of incomingFiles) {
+              const key = file.path || file.name;
+              if (!key) continue;
+              merged.set(key, file);
+              upsertFileNode(key, file.content || '');
+              upsertFile(file);
+              updateFile(key, file.content || '');
+            }
+            const mergedFiles = Array.from(merged.values());
+            setFiles(mergedFiles);
+            setFileStructure(mergedFiles.map((file) => ({ path: file.path || file.name, type: 'file' as const })));
+            setFilesFromProjectFiles(mergedFiles);
+          }
+          if (!isPartial) {
+            setStack(data.metadata?.language || 'Unknown');
+            setDescription(data.instructions || 'Generated by NEXUS AI CODING');
+          } else {
+            logSystem('[STATUS] Stream ended early; continuing with checkpoint files.');
+          }
 
           if (!preserveProjectMeta) {
             const projectId = `project-${Date.now()}`;
@@ -723,15 +751,15 @@ function App() {
             useAIStore.getState().setPlanSteps(finalSteps);
           }
 
-          for (const file of convertedFiles) {
+          for (const file of incomingFiles) {
             const filePath = file.path || file.name;
             if (filePath) setFileStatus(filePath, 'ready');
           }
           setWritingFilePath(null);
           setIsGenerating(false);
           setThinkingStatus('');
-          generationSucceeded = true;
-          setResumeInfo(null);
+          generationSucceeded = !isPartial || useProjectStore.getState().files.length > 0;
+          logSystem(isPartial ? '[STATUS] Checkpoint finalize complete.' : '[STATUS] Final JSON received.');
 
         },
         (err) => {
@@ -739,14 +767,7 @@ function App() {
           const message = typeof err === 'string' ? err : 'Generation failed';
           setError(message);
           addLog({ timestamp: Date.now(), type: 'error', message: `Generation failed: ${String(err)}` });
-
-          if (/json|parse|truncat|abort|timeout/i.test(message)) {
-            setResumeInfo({
-              lastFilePath: lastCompletedFileRef.current,
-              streamTail: streamTailRef.current
-            });
-          }
-
+          logSystem(`[ERROR] ${message}`);
           setIsGenerating(false);
           setThinkingStatus('');
         },
@@ -768,8 +789,9 @@ function App() {
           flushReasoningBuffer();
           setIsGenerating(false);
           setThinkingStatus('');
-          if (generationSucceeded) {
-            appendSystemConsoleContent('[webcontainer] Code Complete. Writing to Container...\n');
+          const hasFilesNow = useProjectStore.getState().files.length > 0;
+          if (generationSucceeded || hasFilesNow) {
+            logSystem('[webcontainer] Code Complete. Writing to Container...');
             setTimeout(() => {
               void deployAndRun();
             }, 0);
@@ -825,7 +847,7 @@ function App() {
     updateFile,
     upsertFile,
     upsertFileNode,
-    resumeInfo
+    logSystem
   ]);
 
   const buildFixPrompt = useCallback(
@@ -922,25 +944,6 @@ function App() {
             <div style={{ fontWeight: 800, marginBottom: 2 }}>Error</div>
             <div style={{ color: 'rgba(255,255,255,0.78)', fontSize: 13 }}>{error}</div>
           </div>
-          {resumeInfo && (
-            <button
-              type="button"
-              onClick={() => void handleGenerate('continue', { skipPlanning: true, preserveProjectMeta: true })}
-              style={{
-                borderRadius: 999,
-                border: '1px solid rgba(255,255,255,0.22)',
-                background: 'rgba(255,255,255,0.08)',
-                color: 'rgba(255,255,255,0.88)',
-                padding: '8px 12px',
-                cursor: 'pointer',
-                fontWeight: 800,
-                letterSpacing: '0.02em',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              Resume
-            </button>
-          )}
           <button
             type="button"
             onClick={() => {

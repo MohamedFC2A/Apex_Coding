@@ -75,6 +75,7 @@ const resolveStartCommand = (fileMap: Map<string, string>) => {
 export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { files, isPreviewOpen, isGenerating, appendSystemConsoleContent } = useAIStore();
   const { addLog, setPreviewUrl, setRuntimeStatus } = usePreviewStore();
+  const stamp = () => new Date().toLocaleTimeString([], { hour12: false });
 
   const [status, setStatus] = useState<RuntimeStatus>('idle');
   const [url, setUrl] = useState<string | null>(null);
@@ -142,11 +143,11 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     async (packagePaths: string[]) => {
       if (packagePaths.length === 0) return;
       updateStatus('installing', 'Installing dependencies...');
-      appendSystemConsoleContent('[webcontainer] Installing dependencies...\n');
+      appendSystemConsoleContent(`${stamp()} [webcontainer] Installing dependencies...\n`);
 
       const logLine = createLineBuffer((line) => {
         if (shouldSuppressLine(line)) return;
-        appendSystemConsoleContent(`${line}\n`);
+        appendSystemConsoleContent(`${stamp()} ${line}\n`);
         addLog({ timestamp: Date.now(), type: 'info', message: line, source: 'npm' });
       });
 
@@ -180,11 +181,11 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         rootPackageJson: DEFAULT_ROOT_PACKAGE_JSON
       });
       if (injectedRootPackage) {
-        appendSystemConsoleContent('[webcontainer] Injected root /package.json (missing).\\n');
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Injected root /package.json (missing).\\n`);
       }
       if (invalidPackageJsonPaths.length > 0) {
         appendSystemConsoleContent(
-          `[webcontainer] Skipped invalid package.json: ${invalidPackageJsonPaths.join(', ')}\\n`
+          `${stamp()} [webcontainer] Skipped invalid package.json: ${invalidPackageJsonPaths.join(', ')}\\n`
         );
       }
       const fatalInvalid = invalidPackageJsonPaths.filter((p) => p !== 'package.json');
@@ -259,13 +260,13 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const deployAndRun = useCallback(async () => {
     if (isGenerating) {
       updateStatus('idle', 'Waiting for code generation to finish...');
-      appendSystemConsoleContent('[webcontainer] Waiting for code generation to finish...\\n');
+      appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for code generation to finish...\\n`);
       return;
     }
 
     const apiKeyPresent = Boolean((import.meta as any)?.env?.VITE_WC_CLIENT_ID);
     if (apiKeyPresent) {
-      appendSystemConsoleContent('[webcontainer] Authenticated with Enterprise API Key.\\n');
+      appendSystemConsoleContent(`${stamp()} [webcontainer] Authenticated with Enterprise API Key.\\n`);
     }
 
     if (pendingRef.current) return pendingRef.current;

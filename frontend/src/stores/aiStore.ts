@@ -485,6 +485,16 @@ export const useAIStore = create<AIState>()(
           ? buildTreeFromProjectFiles(projectFiles)
           : normalizeFileSystem(state.files);
 
+        const hasAnyFiles = Object.keys(snapshotFiles).length > 0;
+        const hasAnyContext =
+          hasAnyFiles ||
+          state.chatHistory.length > 0 ||
+          state.planSteps.length > 0 ||
+          state.plan.trim().length > 0 ||
+          state.lastPlannedPrompt.trim().length > 0;
+
+        if (!hasAnyContext) return;
+
         const titleSource = state.lastPlannedPrompt || state.prompt || 'Untitled Session';
         const snapshot: HistorySession = {
           id: `session-${Date.now()}`,

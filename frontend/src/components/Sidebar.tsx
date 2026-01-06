@@ -41,30 +41,12 @@ const Header = styled.div`
   background: rgba(13, 17, 23, 0.35);
 `;
 
-const BrandBlock = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  line-height: 1.05;
-`;
-
-const BrandTitle = styled.div`
-  font-weight: 900;
+const HeaderTitle = styled.div`
+  font-weight: 950;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.82);
-`;
-
-const BrandSubtitle = styled.div`
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.55);
-`;
-
-const BrandAccent = styled.span`
-  color: rgba(250, 204, 21, 0.92);
+  color: rgba(255, 255, 255, 0.84);
 `;
 
 const Tabs = styled.div`
@@ -80,18 +62,28 @@ const TabButton = styled.button<{ $active?: boolean }>`
   border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.28)' : 'rgba(255, 255, 255, 0.10)')};
   background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.10)' : 'rgba(255, 255, 255, 0.03)')};
   color: ${(p) => (p.$active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.70)')};
+  flex: 1;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
+  white-space: nowrap;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+
+  & svg {
+    flex-shrink: 0;
+  }
 
   &:hover {
     border-color: rgba(168, 85, 247, 0.22);
     background: rgba(255, 255, 255, 0.05);
+    transform: translateY(-1px);
   }
 `;
 
@@ -103,7 +95,7 @@ const Body = styled.div`
 
 const TreeContainer = styled.div`
   height: 100%;
-  padding: 10px;
+  padding: 12px 10px;
   overflow-y: auto;
 `;
 
@@ -333,12 +325,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, defaultTab = 'files
   return (
     <Shell className={className}>
       <Header>
-        <BrandBlock>
-          <BrandTitle>NEXUS AI</BrandTitle>
-          <BrandSubtitle>
-            A <BrandAccent>Matany</BrandAccent> Product
-          </BrandSubtitle>
-        </BrandBlock>
+        <HeaderTitle>Project Explorer</HeaderTitle>
         <Tabs>
           <TabButton type="button" $active={tab === 'files'} onClick={() => setTab('files')}>
             <Files size={16} />
@@ -358,7 +345,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, defaultTab = 'files
       </Header>
       <Body>
         {tab === 'files' ? (
-          <TreeContainer className="scrollbar-thin">{renderTree()}</TreeContainer>
+          <TreeContainer className="scrollbar-thin scrollbar-glass">{renderTree()}</TreeContainer>
         ) : tab === 'plan' && architectMode ? (
           <PlanChecklist
             items={planSteps}

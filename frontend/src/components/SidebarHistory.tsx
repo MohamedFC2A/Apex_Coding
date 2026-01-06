@@ -10,8 +10,8 @@ const Wrapper = styled.div`
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px;
   overflow: hidden;
 `;
 
@@ -29,17 +29,25 @@ const ActionButton = styled.button`
   color: rgba(255, 255, 255, 0.78);
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
   cursor: pointer;
+
+  & svg {
+    flex-shrink: 0;
+  }
 
   &:hover {
     border-color: rgba(34, 211, 238, 0.24);
     background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
   }
 `;
 
@@ -48,53 +56,61 @@ const SessionList = styled.div`
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   padding-right: 2px;
 `;
 
-const SessionCard = styled.div`
+const SessionCard = styled.button`
+  width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  display: grid;
-  gap: 6px;
+  padding: 10px 10px;
+  background: rgba(255, 255, 255, 0.035);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.14);
+    transform: translateY(-1px);
+  }
+`;
+
+const SessionMain = styled.div`
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 `;
 
 const SessionTitle = styled.div`
   font-size: 12px;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.88);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `;
 
 const SessionMeta = styled.div`
   font-size: 11px;
   color: rgba(255, 255, 255, 0.52);
+  white-space: nowrap;
 `;
 
-const SessionActions = styled.div`
+const RightMeta = styled.div`
   display: flex;
-  justify-content: flex-end;
-  margin-top: 6px;
-`;
-
-const RestoreButton = styled.button`
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(168, 85, 247, 0.28);
-  background: rgba(168, 85, 247, 0.10);
-  color: rgba(255, 255, 255, 0.86);
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.55);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-
-  &:hover {
-    background: rgba(168, 85, 247, 0.18);
-    border-color: rgba(168, 85, 247, 0.45);
-  }
+  white-space: nowrap;
 `;
 
 const EmptyState = styled.div`
@@ -127,9 +143,10 @@ const flattenFileSystem = (tree: FileSystem, basePath = ''): ProjectFile[] => {
   return files;
 };
 
-const formatTimestamp = (timestamp: number) => {
+const formatTime = (timestamp: number) => {
   const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? 'Unknown date' : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return '??:??';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 };
 
 export const SidebarHistory: React.FC = () => {
@@ -170,22 +187,18 @@ export const SidebarHistory: React.FC = () => {
         </ActionButton>
       </ActionRow>
 
-      <SessionList className="scrollbar-thin">
+      <SessionList className="scrollbar-thin scrollbar-glass">
         {history.length === 0 ? (
           <EmptyState>No saved sessions yet.</EmptyState>
         ) : (
           history.map((session) => {
-            const fileCount = flattenFileSystem(session.files).length;
             return (
-              <SessionCard key={session.id}>
-                <SessionTitle>{session.title || 'Untitled Session'}</SessionTitle>
-                <SessionMeta>{formatTimestamp(session.createdAt)}</SessionMeta>
-                <SessionMeta>{fileCount} files</SessionMeta>
-                <SessionActions>
-                  <RestoreButton type="button" onClick={() => handleRestore(session.id)}>
-                    Restore
-                  </RestoreButton>
-                </SessionActions>
+              <SessionCard key={session.id} type="button" onClick={() => handleRestore(session.id)}>
+                <SessionMain>
+                  <SessionTitle>{session.title || 'Untitled Session'}</SessionTitle>
+                  <SessionMeta>{formatTime(session.createdAt)}</SessionMeta>
+                </SessionMain>
+                <RightMeta>Restore</RightMeta>
               </SessionCard>
             );
           })

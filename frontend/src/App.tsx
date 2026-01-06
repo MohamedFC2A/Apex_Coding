@@ -541,6 +541,9 @@ function App() {
     const rawPrompt = (promptOverride ?? prompt).trim();
     if (!rawPrompt || isPlanning || isGenerating) return;
 
+    // Auto-save current session before generating new output.
+    useAIStore.getState().saveCurrentSession();
+
     const basePrompt = rawPrompt;
     const skipPlanning = options?.skipPlanning === true;
     const preserveProjectMeta = options?.preserveProjectMeta === true;

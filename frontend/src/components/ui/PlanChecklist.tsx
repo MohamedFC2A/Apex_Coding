@@ -21,6 +21,17 @@ const pulse = keyframes`
   }
 `;
 
+const liquidFlow = keyframes`
+  0% { background-position: 0% 50%; }
+  100% { background-position: 180% 50%; }
+`;
+
+const sheen = keyframes`
+  0% { transform: translateX(-60%); opacity: 0; }
+  20% { opacity: 0.55; }
+  100% { transform: translateX(160%); opacity: 0; }
+`;
+
 const pendingStyles = css`
   border-color: rgba(255, 255, 255, 0.16);
   opacity: 0.6;
@@ -42,7 +53,7 @@ const Panel = styled.div`
   flex-direction: column;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(18px);
   box-shadow:
     0 22px 60px rgba(0, 0, 0, 0.55),
@@ -77,15 +88,6 @@ const Body = styled.div`
 const ListContainer = styled.div`
   max-height: 400px;
   overflow-y: auto;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
-  }
 `;
 
 const Empty = styled.div`
@@ -108,9 +110,31 @@ const ProgressRail = styled.div`
 const ProgressFill = styled.div<{ $pct: number }>`
   height: 100%;
   width: ${(p) => `${Math.round(p.$pct * 100)}%`};
-  background: linear-gradient(90deg, rgba(34, 211, 238, 0.85), rgba(168, 85, 247, 0.85));
+  position: relative;
+  background: linear-gradient(
+    90deg,
+    rgba(34, 211, 238, 0.92),
+    rgba(168, 85, 247, 0.88),
+    rgba(34, 211, 238, 0.92)
+  );
+  background-size: 220% 100%;
+  animation: ${liquidFlow} 1.9s linear infinite;
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
   transition: width 240ms ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: 0;
+    width: 55%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+    filter: blur(2px);
+    animation: ${sheen} 1.5s linear infinite;
+    opacity: 0.35;
+    pointer-events: none;
+  }
 `;
 
 const ProgressMeta = styled.div`
@@ -153,7 +177,7 @@ const ItemCard = styled(motion.div)<{ $status: 'pending' | 'active' | 'done' }>`
   padding: 12px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.035);
   backdrop-filter: blur(18px);
   color: rgba(255, 255, 255, 0.86);
 
@@ -303,7 +327,7 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
       {total === 0 ? (
         <Empty>Click “Plan” to generate a step-by-step mission.</Empty>
       ) : (
-        <ListContainer className="plan-container">
+        <ListContainer className="scrollbar-thin scrollbar-glass plan-container">
           <Section>
             <SectionTitle>Frontend Architecture</SectionTitle>
             {grouped.frontend.length === 0

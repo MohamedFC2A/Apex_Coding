@@ -1,8 +1,7 @@
 import axios from 'axios';
 import { ProjectFile } from '@/types';
 
-// HARDCODED FOR PRODUCTION FIX
-const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
+const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'https://apex-coding-backend.vercel.app').replace(/\/+$/, '');
 
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 
@@ -17,10 +16,7 @@ export const downloadService = {
       const response = await axios.post(
         apiUrl('/api/download/zip'),
         {
-          files,
-          projectName,
-          description,
-          stack
+          files
         },
         {
           responseType: 'blob'

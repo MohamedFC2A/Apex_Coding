@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const OpenAIImport = require('openai');
+const JSZip = require('jszip');
 require('dotenv').config();
 
 const OpenAI = OpenAIImport.default || OpenAIImport;
@@ -45,6 +46,32 @@ app.get('/', (_req, res) => {
   res.status(200).send('Apex Coding Backend is Running!');
 });
 
+// /download/zip (mapped from /api/download/zip by the middleware above)
+app.post(['/download/zip', '/api/download/zip'], async (req, res) => {
+  try {
+    const { files } = req.body || {};
+    if (!files) return res.status(400).json({ error: 'files is required' });
+
+    const zip = new JSZip();
+    const fileCount = addFilesToZip(zip, files);
+    if (fileCount === 0) return res.status(400).json({ error: 'No files to zip' });
+
+    const buffer = await zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 }
+    });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename=apex-project.zip');
+    res.status(200).send(buffer);
+  } catch (error) {
+    const details = getErrorDetails(error);
+    console.error('ZIP generation error:', details.message);
+    res.status(500).json({ error: 'Failed to generate ZIP' });
+  }
+});
+
 const normalizeDeepSeekBaseUrl = (raw) => {
   const base = String(raw || 'https://api.deepseek.com').trim().replace(/\/+$/, '');
   return base.endsWith('/v1') ? base : `${base}/v1`;
@@ -81,6 +108,66 @@ const getErrorDetails = (error) => {
     error?.message ||
     'Unknown error';
   return { status, message };
+};
+
+const normalizeZipEntryPath = (rawPath) => {
+  const value = String(rawPath || '').trim();
+  if (!value) return '';
+
+  const withForwardSlashes = value.replace(/\\/g, '/');
+  const withoutDriveLetter = withForwardSlashes.replace(/^[a-zA-Z]:\//, '');
+  const withoutLeadingSlash = withoutDriveLetter.replace(/^\/+/, '');
+
+  const parts = [];
+  for (const segment of withoutLeadingSlash.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      parts.pop();
+      continue;
+    }
+    parts.push(segment);
+  }
+
+  return parts.join('/');
+};
+
+const addFilesToZip = (zip, files) => {
+  let count = 0;
+
+  const addFile = (path, content) => {
+    const entryPath = normalizeZipEntryPath(path);
+    if (!entryPath) return;
+    zip.file(entryPath, typeof content === 'string' ? content : String(content ?? ''));
+    count += 1;
+  };
+
+  const walkTree = (tree, basePath) => {
+    if (!tree || typeof tree !== 'object') return;
+    for (const [name, entry] of Object.entries(tree)) {
+      const nextPath = basePath ? `${basePath}/${name}` : name;
+      if (entry?.file && typeof entry.file.contents === 'string') {
+        addFile(nextPath, entry.file.contents);
+      } else if (entry?.directory) {
+        walkTree(entry.directory, nextPath);
+      }
+    }
+  };
+
+  if (Array.isArray(files)) {
+    for (const file of files) {
+      if (!file) continue;
+      const path = file.path || file.name;
+      addFile(path, file.content);
+    }
+    return count;
+  }
+
+  if (files && typeof files === 'object') {
+    walkTree(files, '');
+    return count;
+  }
+
+  return 0;
 };
 
 // Prompts

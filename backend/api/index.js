@@ -87,7 +87,7 @@ const getErrorDetails = (error) => {
 const PLAN_SYSTEM_PROMPT =
   "You are a Software Architect. Output ONLY raw JSON (no markdown, no code fences) with shape {\"title\":\"...\",\"steps\":[{\"id\":\"1\",\"title\":\"...\"}]}.";
 
-const CODE_SYSTEM_PROMPT = `
+const CODE_JSON_SYSTEM_PROMPT = `
 You are an expert full-stack code generator.
 Return ONLY a single valid JSON object (no markdown), with this shape:
 {
@@ -99,6 +99,28 @@ Rules:
 - Output ONLY JSON. No code fences.
 - Escape content correctly in JSON strings.
 - Include complete file contents (no placeholders).
+`.trim();
+
+const CODE_STREAM_SYSTEM_PROMPT = `
+You are an expert full-stack code generator.
+CRITICAL OUTPUT RULES (NON-NEGOTIABLE):
+- Output MUST be plain text only (no JSON, no arrays, no markdown, no code fences).
+- You MUST use the File-Marker protocol for EVERY file.
+- No filler text. Output ONLY file markers and file contents.
+
+File-Marker protocol:
+[[START_FILE: path/to/file.ext]]
+<full file contents>
+[[END_FILE]]
+
+Rules:
+- Each file MUST start with [[START_FILE: ...]] on its own line.
+- Each file MUST end with [[END_FILE]] on its own line.
+- Include complete file contents (no placeholders).
+- Never repeat a file unless explicitly asked to continue that SAME file from a given line.
+
+If asked to resume a cut-off file at line N:
+- Output [[START_FILE: that/path]] then continue EXACTLY from line N+1 (do not repeat earlier lines) then [[END_FILE]].
 `.trim();
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
@@ -174,7 +196,7 @@ app.post('/ai/generate', async (req, res) => {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.0,
       messages: [
-        { role: 'system', content: CODE_SYSTEM_PROMPT },
+        { role: 'system', content: CODE_JSON_SYSTEM_PROMPT },
         { role: 'user', content: prompt }
       ]
     });
@@ -198,17 +220,23 @@ app.post('/ai/generate-stream', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no'); // CRITICAL for Vercel
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-  const writeEvent = (event, payload) => {
+  const writeSse = (event, data) => {
     res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    const text = String(data ?? '');
+    const lines = text.split('\n');
+    for (const line of lines) {
+      res.write(`data: ${line}\n`);
+    }
+    res.write('\n');
   };
 
-  const writeStatus = (phase, message) => {
-    writeEvent('status', { phase, message });
-  };
+  const writeStatus = (phase, message) => writeSse('status', `${phase}:${message || ''}`);
 
   // 2. IMMEDIATE Keep-Alive Payload
   res.write(': keep-alive\n\n');
+
+  let keepAliveTimer = null;
+  let abortTimer = null;
 
   try {
     const { prompt, thinkingMode, includeReasoning } = req.body || {};
@@ -225,12 +253,12 @@ app.post('/ai/generate-stream', async (req, res) => {
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
       : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
 
-    writeEvent('meta', { provider: 'deepseek', model, thinkingMode: Boolean(thinkingMode) });
+    writeSse('meta', `provider=deepseek;model=${model};thinkingMode=${Boolean(thinkingMode)}`);
     writeStatus(thinkingMode ? 'thinking' : 'streaming', thinkingMode ? 'Thinking…' : 'Generating…');
 
     // Keep-alive while the upstream model is still "thinking" (before first token).
     let hasStartedStreaming = false;
-    const keepAliveTimer = setInterval(() => {
+    keepAliveTimer = setInterval(() => {
       if (hasStartedStreaming) return;
       try {
         res.write(': keep-alive\n\n');
@@ -239,32 +267,34 @@ app.post('/ai/generate-stream', async (req, res) => {
       }
     }, 10000);
 
+    const abortController = new AbortController();
+    abortTimer = setTimeout(() => {
+      try {
+        abortController.abort();
+      } catch {
+        // ignore
+      }
+    }, 55000);
+
     const request = {
       model,
       messages: [
-        { role: 'system', content: CODE_SYSTEM_PROMPT },
+        { role: 'system', content: CODE_STREAM_SYSTEM_PROMPT },
         { role: 'user', content: prompt }
       ],
-      stream: true
+      stream: true,
+      signal: abortController.signal
     };
 
     let stream;
     try {
-      stream = await client.chat.completions.create({
-        ...request,
-        response_format: { type: 'json_object' }
-      });
+      stream = await client.chat.completions.create(request);
     } catch {
       stream = await client.chat.completions.create(request);
     }
 
     const isReasoner = model === 'deepseek-reasoner';
     const wantReasoning = Boolean(includeReasoning) && isReasoner;
-    let contentBuffer = '';
-    let routingReasoningAsContent = false;
-    let holdingJsonCandidate = false;
-    let jsonHold = '';
-    let reasoningProbe = '';
 
     for await (const chunk of stream) {
       const delta = chunk?.choices?.[0]?.delta || {};
@@ -272,75 +302,22 @@ app.post('/ai/generate-stream', async (req, res) => {
       const contentChunk = delta?.content;
 
       if (typeof reasoningChunk === 'string' && reasoningChunk.length > 0) {
-        if (wantReasoning && !routingReasoningAsContent && contentBuffer.length === 0) {
-          // Some DeepSeek deployments stream the final JSON in `reasoning_content`.
-          reasoningProbe = (reasoningProbe + reasoningChunk).slice(0, 1200);
-          const probeTrimmed = reasoningProbe.trimStart();
-          if (!holdingJsonCandidate && probeTrimmed.startsWith('{')) holdingJsonCandidate = true;
-
-          if (holdingJsonCandidate) {
-            jsonHold += reasoningChunk;
-            const holdProbe = jsonHold.slice(0, 2200).trimStart();
-
-            if (holdProbe.includes('"project_files"')) {
-              routingReasoningAsContent = true;
-              holdingJsonCandidate = false;
-              writeStatus('streaming', 'Generating…');
-              if (!hasStartedStreaming) {
-                hasStartedStreaming = true;
-                clearInterval(keepAliveTimer);
-              }
-              contentBuffer += jsonHold;
-              writeEvent('token', { chunk: jsonHold });
-              jsonHold = '';
-            } else if (jsonHold.length > 1800 && !holdProbe.includes('"project_files"')) {
-              holdingJsonCandidate = false;
-              writeEvent('reasoning', { chunk: jsonHold });
-              jsonHold = '';
-            }
-            continue;
-          }
-        }
-
-        if (routingReasoningAsContent) {
-          if (!hasStartedStreaming) {
-            hasStartedStreaming = true;
-            clearInterval(keepAliveTimer);
-          }
-          contentBuffer += reasoningChunk;
-          writeEvent('token', { chunk: reasoningChunk });
-        } else if (wantReasoning) {
-          writeEvent('reasoning', { chunk: reasoningChunk });
-        }
+        if (wantReasoning) writeSse('thought', reasoningChunk);
       }
 
       if (typeof contentChunk === 'string' && contentChunk.length > 0) {
-        if (holdingJsonCandidate && jsonHold.length > 0) {
-          holdingJsonCandidate = false;
-          if (wantReasoning) writeEvent('reasoning', { chunk: jsonHold });
-          jsonHold = '';
-        }
-
         if (!hasStartedStreaming) {
           hasStartedStreaming = true;
           clearInterval(keepAliveTimer);
           writeStatus('streaming', 'Generating…');
         }
 
-        contentBuffer += contentChunk;
-        writeEvent('token', { chunk: contentChunk });
+        writeSse('token', contentChunk);
       }
     }
 
-    clearInterval(keepAliveTimer);
-
-    try {
-      const payload = cleanAndParseJSON(contentBuffer);
-      writeEvent('json', { payload });
-    } catch {
-      // Let the frontend rely on checkpoint extraction/resume.
-    }
-
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
+    if (abortTimer) clearTimeout(abortTimer);
     writeStatus('done', 'Complete');
     res.end();
   } catch (error) {
@@ -352,6 +329,21 @@ app.post('/ai/generate-stream', async (req, res) => {
       // ignore
     }
     res.end();
+  } finally {
+    if (keepAliveTimer) {
+      try {
+        clearInterval(keepAliveTimer);
+      } catch {
+        // ignore
+      }
+    }
+    if (abortTimer) {
+      try {
+        clearTimeout(abortTimer);
+      } catch {
+        // ignore
+      }
+    }
   }
 });
 

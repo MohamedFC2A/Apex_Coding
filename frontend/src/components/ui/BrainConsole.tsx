@@ -92,9 +92,11 @@ interface BrainConsoleProps {
   status: string;
   error: string | null;
   logs: string;
+  canFixResume?: boolean;
+  onFixResume?: () => void;
 }
 
-export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onToggle, thought, status, error, logs }) => {
+export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onToggle, thought, status, error, logs, canFixResume, onFixResume }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -132,6 +134,25 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onTog
               {cleanedError.length > 0 && (
                 <div style={{ marginTop: 8, color: 'rgba(248,113,113,0.95)' }}>
                   <Prefix>[ERROR]</Prefix> <span>{cleanedError}</span>
+                </div>
+              )}
+              {canFixResume && onFixResume && (
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    onClick={onFixResume}
+                    style={{
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: 'rgba(255,255,255,0.08)',
+                      color: 'rgba(255,255,255,0.88)',
+                      padding: '8px 10px',
+                      cursor: 'pointer',
+                      fontWeight: 800
+                    }}
+                  >
+                    Fix & Resume
+                  </button>
                 </div>
               )}
               <div style={{ marginTop: 10 }}>

@@ -1,6 +1,5 @@
 import { ProjectFile } from '@/types';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
-import { createProjectJSONStreamRouter } from '@/services/projectStreamRouter';
 
 // HARDCODED FOR PRODUCTION FIX
 const API_BASE_URL = 'https://apex-coding-backend.vercel.app';
@@ -94,6 +93,15 @@ export const aiService = {
           architectMode?: boolean;
           includeReasoning?: boolean;
           history?: any[];
+          typingMs?: number; // 0 disables typing playback (useful for tests)
+          onFileEvent?: (event: {
+            type: 'start' | 'chunk' | 'end';
+            path: string;
+            chunk?: string;
+            partial?: boolean;
+            line?: number;
+            append?: boolean;
+          }) => void;
         } = false
   ): Promise<void> {
     try {
@@ -101,90 +109,257 @@ export const aiService = {
       const thinkingMode = Boolean(options.thinkingMode);
       const architectMode = Boolean(options.architectMode);
       const includeReasoning = Boolean(options.includeReasoning);
+      const typingMsRaw = Number(options.typingMs ?? 26);
+      const typingMs = Number.isFinite(typingMsRaw) ? typingMsRaw : 26;
 
       onMeta({ provider: 'vercel-backend', baseURL: API_BASE_URL, thinkingMode, architectMode });
       onStatus('streaming', 'Generating…');
 
-      // Streaming checkpoint extraction (incremental parser):
-      // We track files as they complete and use that to auto-resume if the stream truncates.
-      // This avoids relying on `JSON.parse()` of a potentially truncated full payload.
-      const completedFiles = new Set<string>();
-      const discoveredFiles = new Set<string>();
-      let lastCompletedFilePath = '';
-      let currentWritingFilePath = '';
-
-      const streamTailMax = 5000;
-      let streamTail = '';
-
-      const checkpointRouter = createProjectJSONStreamRouter({
-        onFileDiscovered: (path) => {
-          const key = String(path || '').trim();
-          if (!key) return;
-          discoveredFiles.add(key);
-        },
-        onFileStatus: (path, status) => {
-          const key = String(path || '').trim();
-          if (!key) return;
-          if (status === 'writing') currentWritingFilePath = key;
-        },
-        onFileComplete: (path) => {
-          const key = String(path || '').trim();
-          if (!key) return;
-          completedFiles.add(key);
-          lastCompletedFilePath = key;
-          if (currentWritingFilePath === key) currentWritingFilePath = '';
-        }
-      });
-
       const parseSseEvent = (rawEvent: string) => {
-        const lines = rawEvent
-          .split('\n')
-          .map((line) => line.trimEnd())
-          .filter((line) => line.length > 0 && !line.startsWith(':'));
+        const lines = rawEvent.split(/\r?\n/);
 
         let eventName = 'message';
         const dataLines: string[] = [];
 
         for (const line of lines) {
+          if (line.startsWith(':')) continue; // keep-alive/comment
           if (line.startsWith('event:')) {
             eventName = line.slice('event:'.length).trim();
             continue;
           }
           if (line.startsWith('data:')) {
-            dataLines.push(line.slice('data:'.length).trimStart());
+            // Preserve all content including leading spaces; only strip the single optional space after `data:`.
+            const rest = line.slice('data:'.length);
+            dataLines.push(rest.startsWith(' ') ? rest.slice(1) : rest);
             continue;
           }
         }
 
-        const dataRaw = dataLines.join('\n');
-        return { eventName, dataRaw };
+        const dataText = dataLines.join('\n');
+        return { eventName, dataText };
       };
 
-      const buildResumePrompt = () => {
-        const completed = Array.from(completedFiles).slice(-40);
-        const discovered = Array.from(discoveredFiles).slice(-40);
-        const tail = streamTail.slice(-2200);
+      const startToken = '[[START_FILE:';
+      const endToken = '[[END_FILE]]';
+      const streamTailMax = 2200;
 
+      const completedFiles = new Set<string>();
+      const partialFiles = new Set<string>();
+      let lastSuccessfulFile = '';
+      let lastSuccessfulLine = 0;
+
+      const countLines = (text: string) => {
+        let lines = 0;
+        for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lines++;
+        return lines;
+      };
+
+      const getForceCloseMarker = (path: string) => {
+        const lower = (path || '').toLowerCase();
+        if (lower.endsWith('.html')) return '\n<!-- [[PARTIAL_FILE_CLOSED]] -->\n';
+        if (lower.endsWith('.css')) return '\n/* [[PARTIAL_FILE_CLOSED]] */\n';
+        if (lower.endsWith('.md')) return '\n<!-- [[PARTIAL_FILE_CLOSED]] -->\n';
+        return '\n// [[PARTIAL_FILE_CLOSED]]\n';
+      };
+
+      class FileMarkerParser {
+        private scan = '';
+        private inFile = false;
+        private currentPath = '';
+        private currentLine = 1;
+        private resumeAppendPath: string | undefined;
+
+        setResumeAppendPath(path?: string) {
+          this.resumeAppendPath = path;
+        }
+
+        push(text: string) {
+          if (!text) return;
+          this.scan += text;
+          this.drain();
+        }
+
+        private drain() {
+          while (this.scan.length > 0) {
+            if (!this.inFile) {
+              const startIdx = this.scan.indexOf(startToken);
+              if (startIdx === -1) {
+                this.scan = this.scan.slice(Math.max(0, this.scan.length - (startToken.length - 1)));
+                return;
+              }
+
+              const closeIdx = this.scan.indexOf(']]', startIdx);
+              if (closeIdx === -1) {
+                this.scan = this.scan.slice(startIdx);
+                return;
+              }
+
+              const rawPath = this.scan.slice(startIdx + startToken.length, closeIdx).trim();
+              this.currentPath = rawPath;
+              this.inFile = true;
+              this.currentLine = 1;
+              this.scan = this.scan.slice(closeIdx + 2);
+
+              options.onFileEvent?.({
+                type: 'start',
+                path: rawPath,
+                append: Boolean(this.resumeAppendPath && rawPath === this.resumeAppendPath),
+                line: 1
+              });
+              continue;
+            }
+
+            const endIdx = this.scan.indexOf(endToken);
+            const nextStartIdx = this.scan.indexOf(startToken);
+
+            const hasImplicitStart = nextStartIdx !== -1 && (endIdx === -1 || nextStartIdx < endIdx);
+            if (hasImplicitStart) {
+              this.flushContent(this.scan.slice(0, nextStartIdx));
+              this.forceClose(true);
+              this.scan = this.scan.slice(nextStartIdx);
+              continue;
+            }
+
+            if (endIdx !== -1) {
+              this.flushContent(this.scan.slice(0, endIdx));
+              completedFiles.add(this.currentPath);
+              options.onFileEvent?.({ type: 'end', path: this.currentPath, partial: false, line: this.currentLine });
+              lastSuccessfulFile = this.currentPath;
+              lastSuccessfulLine = this.currentLine;
+
+              this.inFile = false;
+              this.currentPath = '';
+              this.scan = this.scan.slice(endIdx + endToken.length);
+              continue;
+            }
+
+            // No marker found: flush most of the buffer but keep a tail to allow marker split across chunks.
+            const keep = Math.max(startToken.length + 8, endToken.length + 8);
+            if (this.scan.length <= keep) return;
+
+            this.flushContent(this.scan.slice(0, this.scan.length - keep));
+            this.scan = this.scan.slice(this.scan.length - keep);
+          }
+        }
+
+        private flushContent(content: string) {
+          if (!content) return;
+          options.onFileEvent?.({ type: 'chunk', path: this.currentPath, chunk: content, line: this.currentLine });
+          this.currentLine += countLines(content);
+        }
+
+        private forceClose(partial: boolean) {
+          const marker = getForceCloseMarker(this.currentPath);
+          options.onFileEvent?.({ type: 'chunk', path: this.currentPath, chunk: marker, line: this.currentLine });
+          this.currentLine += countLines(marker);
+          partialFiles.add(this.currentPath);
+          options.onFileEvent?.({ type: 'end', path: this.currentPath, partial, line: this.currentLine });
+          lastSuccessfulFile = this.currentPath;
+          lastSuccessfulLine = this.currentLine;
+          this.inFile = false;
+          this.currentPath = '';
+        }
+
+        finalize(): { cutPath: string; cutLine: number } | null {
+          if (!this.inFile) return null;
+          if (this.scan.length > 0) {
+            this.flushContent(this.scan);
+            this.scan = '';
+          }
+          const cutPath = this.currentPath;
+          const cutLine = this.currentLine;
+          this.forceClose(true);
+          return { cutPath, cutLine };
+        }
+      }
+
+      class TypedStreamPlayer {
+        private timer: any = null;
+        private queue = '';
+        private closed = false;
+
+        constructor(
+          private readonly tickMs: number,
+          private readonly onEmit: (chunk: string) => void
+        ) {}
+
+        enqueue(text: string) {
+          if (this.closed) return;
+          if (!text) return;
+          this.queue += text;
+          if (this.tickMs <= 0) {
+            const out = this.queue;
+            this.queue = '';
+            if (out) this.onEmit(out);
+            return;
+          }
+          if (!this.timer) this.start();
+        }
+
+        private start() {
+          this.timer = globalThis.setInterval(() => {
+            if (this.queue.length === 0) {
+              if (this.closed) this.stop();
+              return;
+            }
+
+            const backlog = this.queue.length;
+            const batch =
+                backlog > 8000 ? 140
+              : backlog > 3000 ? 80
+              : backlog > 1200 ? 40
+              : backlog > 300 ? 16
+              : 4;
+
+            const out = this.queue.slice(0, batch);
+            this.queue = this.queue.slice(batch);
+            this.onEmit(out);
+          }, this.tickMs);
+        }
+
+        close() {
+          this.closed = true;
+          if (this.tickMs <= 0) return;
+          if (this.queue.length === 0) this.stop();
+        }
+
+        flushAll() {
+          if (this.queue.length > 0) {
+            const out = this.queue;
+            this.queue = '';
+            this.onEmit(out);
+          }
+          this.closed = true;
+          this.stop();
+        }
+
+        private stop() {
+          if (this.timer) {
+            globalThis.clearInterval(this.timer);
+            this.timer = null;
+          }
+        }
+      }
+
+      let streamTail = '';
+
+      const buildResumePrompt = (cutPath: string, cutLine: number) => {
+        const completedList = Array.from(completedFiles).slice(-80).join(', ');
+        const tail = streamTail.slice(-streamTailMax);
         return [
           prompt,
           '',
-          'SYSTEM: Your previous response was truncated mid-stream and did not finish a valid JSON object.',
-          lastCompletedFilePath ? `Last completed file: ${lastCompletedFilePath}` : '',
-          currentWritingFilePath ? `Last file in progress: ${currentWritingFilePath}` : '',
-          completed.length > 0 ? `Already completed files (DO NOT repeat): ${completed.join(', ')}` : '',
-          discovered.length > 0 ? `Files already discovered (avoid repeating): ${discovered.join(', ')}` : '',
-          tail.length > 0 ? `Last JSON tail received (may be truncated):\n${tail}` : '',
-          '',
-          'Return ONLY the missing files as a single VALID JSON object with this schema:',
-          '{"project_files":[{"name":"...","content":"..."}],"metadata":{"resume":true},"instructions":""}',
-          '',
-          'Do NOT include files already completed. Do NOT add markdown or code fences.'
+          'SYSTEM: You were cut off mid-stream. Resume using ONLY the File-Marker protocol.',
+          `The last file ${cutPath} was cut off at line ${cutLine}. Continue the stream exactly from line ${cutLine + 1} (do not repeat earlier lines).`,
+          completedList ? `DO NOT repeat these already completed files: ${completedList}` : '',
+          tail ? `Last received tail (for context, may be truncated):\n${tail}` : '',
+          'Output only markers + code. No filler.'
         ]
           .filter(Boolean)
           .join('\n');
       };
 
-      const runStreamOnce = async (streamPrompt: string) => {
+      const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
         const response = await fetch(apiUrl('/api/ai/generate-stream'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -211,17 +386,21 @@ export const aiService = {
         const reader = body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let gotJsonEvent = false;
         let sawAnyToken = false;
-        let backendErrorMessage = '';
         let sawDoneStatus = false;
+
+        const markerParser = new FileMarkerParser();
+        markerParser.setResumeAppendPath(resumeAppendPath);
+        const player = new TypedStreamPlayer(typingMs, (out) => {
+          markerParser.push(out);
+          onToken(out);
+        });
 
         const consumeToken = (tokenChunk: string) => {
           if (!tokenChunk) return;
           sawAnyToken = true;
           streamTail = (streamTail + tokenChunk).slice(-streamTailMax);
-          checkpointRouter.push(tokenChunk);
-          onToken(tokenChunk);
+          player.enqueue(tokenChunk);
         };
 
         while (true) {
@@ -235,7 +414,7 @@ export const aiService = {
           const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
           if (!looksLikeSse && buffer.length === 0) {
             const cleaned = decoded.replace(/^:[^\n]*\n+/gm, '');
-            if (cleaned.trim().length > 0) consumeToken(cleaned);
+            if (cleaned.length > 0) consumeToken(cleaned);
             continue;
           }
 
@@ -247,92 +426,77 @@ export const aiService = {
             buffer = buffer.slice(boundaryIndex + 2);
             boundaryIndex = buffer.indexOf('\n\n');
 
-            const { eventName, dataRaw } = parseSseEvent(rawEvent);
-            if (!dataRaw) continue;
-
-            let data: any;
-            try {
-              data = JSON.parse(dataRaw);
-            } catch {
+            const { eventName, dataText } = parseSseEvent(rawEvent);
+            if (eventName === 'meta') {
+              onMeta({ raw: dataText });
               continue;
             }
 
-            if (eventName === 'meta') onMeta(data);
             if (eventName === 'status') {
-              const phase = String(data.phase || 'streaming');
-              const message = String(data.message || '');
+              const idx = dataText.indexOf(':');
+              const phase = idx === -1 ? 'streaming' : dataText.slice(0, idx);
+              const message = idx === -1 ? dataText : dataText.slice(idx + 1);
               onStatus(phase, message);
               if (phase === 'done') sawDoneStatus = true;
-              if (phase === 'error' && message) backendErrorMessage = message;
+              if (phase === 'error' && message) onError(message);
+              continue;
             }
-            if (eventName === 'reasoning' && includeReasoning) _onReasoning(String(data.chunk || ''));
+
+            if (eventName === 'thought' && includeReasoning) {
+              _onReasoning(dataText);
+              continue;
+            }
+
             if (eventName === 'token') {
-              const tokenChunk = String(data.chunk || '');
-              if (tokenChunk.length > 0) consumeToken(tokenChunk);
-            }
-            if (eventName === 'json') {
-              gotJsonEvent = true;
-              onJSON(data.payload);
+              consumeToken(dataText);
+              continue;
             }
           }
 
           // If we have a buffer that isn't SSE-framed, treat it as raw content.
-          if (!gotJsonEvent && buffer.length > 0 && !/(^|\n)event:\s/.test(buffer) && !/(^|\n)data:\s/.test(buffer)) {
+          if (buffer.length > 0 && !/(^|\n)event:\s/.test(buffer) && !/(^|\n)data:\s/.test(buffer)) {
             const cleaned = buffer.replace(/^:[^\n]*\n+/gm, '');
             buffer = '';
-            if (cleaned.trim().length > 0) consumeToken(cleaned);
+            if (cleaned.length > 0) consumeToken(cleaned);
           }
         }
 
         if (!sawDoneStatus) onStatus('done', 'Complete');
 
-        if (!gotJsonEvent && backendErrorMessage) {
-          throw new Error(backendErrorMessage);
-        }
+        player.flushAll();
 
-        if (!gotJsonEvent && !sawAnyToken) {
+        if (!sawAnyToken) {
           throw new Error('Backend connection failed or timed out');
         }
 
-        return { gotJsonEvent };
+        return { markerParser };
       };
 
-      let finalJsonReceived = false;
       const maxResumeAttempts = 1;
 
-      for (let attempt = 0; attempt <= maxResumeAttempts; attempt++) {
-        const streamPrompt = attempt === 0 ? prompt : buildResumePrompt();
-        if (attempt > 0) {
-          checkpointRouter.reset();
-          currentWritingFilePath = '';
-          onMeta({ resume: { attempt, lastCompletedFilePath } });
-          onStatus('streaming', 'Resuming…');
-        }
+      const first = await runStreamOnce(prompt);
+      const cut = first.markerParser.finalize();
 
-        const { gotJsonEvent } = await runStreamOnce(streamPrompt);
-        finalJsonReceived = finalJsonReceived || gotJsonEvent;
+      if (cut && maxResumeAttempts > 0) {
+        onStatus('streaming', 'Resuming…');
+        onMeta({ resume: { attempt: 1, file: cut.cutPath, line: cut.cutLine } });
 
-        const incomplete =
-          (Boolean(currentWritingFilePath) && !completedFiles.has(currentWritingFilePath)) ||
-          discoveredFiles.size > completedFiles.size;
-        if (finalJsonReceived || !incomplete) break;
+        const resumePrompt = buildResumePrompt(cut.cutPath, cut.cutLine);
+        const resumed = await runStreamOnce(resumePrompt, cut.cutPath);
+        resumed.markerParser.finalize();
       }
 
-      if (!finalJsonReceived && completedFiles.size > 0) {
-        onMeta({
-          checkpoint: {
-            partial: true,
-            completedFiles: completedFiles.size,
-            lastCompletedFilePath,
-            currentWritingFilePath
-          }
-        });
-        onJSON({
-          project_files: [],
-          metadata: { partial: true },
-          instructions: ''
-        });
-      }
+      onJSON({
+        project_files: [],
+        metadata: {
+          protocol: 'file-marker',
+          completedFiles: completedFiles.size,
+          partialFiles: partialFiles.size,
+          lastSuccessfulFile,
+          lastSuccessfulLine
+        },
+        instructions: ''
+      });
 
       onComplete();
     } catch (err: any) {

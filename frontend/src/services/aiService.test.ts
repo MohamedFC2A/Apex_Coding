@@ -26,25 +26,30 @@ describe('aiService (API mode)', () => {
     expect(res.steps).toEqual([{ id: '1', title: 'Test step' }]);
   });
 
-  it('generateCodeStream streams raw JSON', async () => {
+  it('generateCodeStream streams file-marker text', async () => {
     vi.resetModules();
     const { aiService } = await import('./aiService');
 
     const encoder = new TextEncoder();
-    const jsonText = JSON.stringify({
-      project_files: [],
-      metadata: { language: 'x', framework: 'y' },
-      instructions: 'ok'
-    });
-    const jsonPayload = JSON.parse(jsonText);
+    const fileStream = [
+      '[[START_FILE: index.html]]',
+      '<!doctype html>',
+      '<html><body>Hello</body></html>',
+      '[[END_FILE]]',
+      ''
+    ].join('\n');
+
+    const sseEvent = (event: string, data: string) => {
+      const lines = String(data ?? '').split('\n');
+      return [`event: ${event}`, ...lines.map((l) => `data: ${l}`), '', ''].join('\n');
+    };
 
     const sse = [
-      `event: meta\ndata: ${JSON.stringify({ provider: 'deepseek', model: 'deepseek-chat' })}\n\n`,
-      `event: token\ndata: ${JSON.stringify({ chunk: jsonText.slice(0, 10) })}\n\n`,
+      sseEvent('meta', 'provider=deepseek;model=deepseek-chat;thinkingMode=false'),
+      sseEvent('status', 'streaming:Generating…'),
+      sseEvent('token', fileStream),
       `: keep-alive\n\n`,
-      `event: token\ndata: ${JSON.stringify({ chunk: jsonText.slice(10) })}\n\n`,
-      `event: json\ndata: ${JSON.stringify({ payload: jsonPayload })}\n\n`,
-      `event: status\ndata: ${JSON.stringify({ phase: 'done', message: 'Complete' })}\n\n`
+      sseEvent('status', 'done:Complete')
     ].join('');
 
     const stream = new ReadableStream({
@@ -65,6 +70,7 @@ describe('aiService (API mode)', () => {
     const metas: any[] = [];
     const statuses: any[] = [];
     const jsonPayloads: any[] = [];
+    const fileEvents: any[] = [];
     let completed = 0;
     let errorMessage = '';
 
@@ -81,13 +87,22 @@ describe('aiService (API mode)', () => {
       () => {
         completed += 1;
       },
-      { thinkingMode: false, architectMode: false, includeReasoning: false, history: [] }
+      {
+        thinkingMode: false,
+        architectMode: false,
+        includeReasoning: false,
+        history: [],
+        typingMs: 0,
+        onFileEvent: (ev) => fileEvents.push(ev)
+      }
     );
 
     expect(fetchMock).toHaveBeenCalled();
     expect(metas[0]).toMatchObject({ provider: 'vercel-backend' });
-    expect(tokens.join('')).toBe(jsonText);
-    expect(jsonPayloads[0]).toMatchObject({ instructions: 'ok' });
+    expect(tokens.join('')).toContain('[[START_FILE: index.html]]');
+    expect(fileEvents.some((e) => e.type === 'start' && String(e.path).includes('index.html'))).toBe(true);
+    expect(fileEvents.some((e) => e.type === 'end' && String(e.path).includes('index.html'))).toBe(true);
+    expect(jsonPayloads[0]?.metadata?.protocol).toBe('file-marker');
     expect(statuses.some((s) => s.phase === 'done')).toBe(true);
     expect(completed).toBe(1);
     expect(errorMessage).toBe('');

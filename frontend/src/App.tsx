@@ -6,9 +6,7 @@ import { useAIStore } from './stores/aiStore';
 import { useProjectStore } from './stores/projectStore';
 import { usePreviewStore } from './stores/previewStore';
 import { aiService } from './services/aiService';
-import { createProjectJSONStreamRouter } from './services/projectStreamRouter';
 import { getLanguageFromExtension } from './utils/stackDetector';
-import { ProjectFile } from './types';
 
 import { CodeEditor } from './components/CodeEditor';
 import { Sidebar } from './components/Sidebar';
@@ -403,6 +401,7 @@ function App() {
   const [brainOpen, setBrainOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
+  const [resumeRequest, setResumeRequest] = useState<{ path: string; line: number } | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const fileFlushTimerRef = useRef<number | null>(null);
   const fileChunkBuffersRef = useRef<Map<string, string>>(new Map());
@@ -573,6 +572,7 @@ function App() {
     logSystem('[webcontainer] Waiting for code generation to finish...');
     setBrainOpen(false);
     setThinkingStatus('Initializing…');
+    setResumeRequest(null);
     streamCharCountRef.current = 0;
     streamLastLogAtRef.current = Date.now();
     clearFileStatuses();
@@ -612,50 +612,100 @@ function App() {
         filePathMap.set(rawPath, finalPath);
         return finalPath;
       };
-      const router = createProjectJSONStreamRouter({
-        onFileDiscovered: (path) => {
-          const resolvedPath = resolveGeneratedPath(path);
-          logSystem(`[STATUS] Parsed file: ${resolvedPath}`);
+
+      const stripPartialMarkerAtEnd = (text: string) => {
+        const lines = String(text || '').split(/\r?\n/);
+        while (lines.length > 0) {
+          const last = (lines[lines.length - 1] || '').trim();
+          if (last.includes('[[PARTIAL_FILE_CLOSED]]')) {
+            lines.pop();
+            continue;
+          }
+          if (last.length === 0) {
+            lines.pop();
+            continue;
+          }
+          break;
+        }
+        return lines.join('\n') + (lines.length > 0 ? '\n' : '');
+      };
+
+      const handleFileEvent = (event: {
+        type: 'start' | 'chunk' | 'end';
+        path: string;
+        chunk?: string;
+        partial?: boolean;
+        line?: number;
+        append?: boolean;
+      }) => {
+        const resolvedPath = resolveGeneratedPath(event.path || '');
+        if (!resolvedPath) return;
+
+        if (event.type === 'start') {
+          logSystem(`[STATUS] Writing ${resolvedPath}...`);
+          setThinkingStatus(`Writing ${resolvedPath.split('/').pop() || resolvedPath}…`);
+          setFileStatus(resolvedPath, 'writing');
+
           upsertFileNode(resolvedPath);
           const name = resolvedPath.split('/').pop() || resolvedPath;
-          const exists = useProjectStore.getState().files.some((f) => (f.path || f.name) === resolvedPath);
-          if (!exists) {
+          const existing = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath);
+
+          if (!existing) {
             upsertFile({ name, path: resolvedPath, content: '', language: getLanguageFromExtension(resolvedPath) });
           }
-        },
-        onFileStatus: (path, status) => {
-          const resolvedPath = resolveGeneratedPath(path);
-          setFileStatus(resolvedPath, status);
-          if (status === 'writing') {
-            logSystem(`[STATUS] Writing ${resolvedPath}...`);
-            setThinkingStatus(`Writing ${resolvedPath.split('/').pop() || resolvedPath}…`);
+
+          if (event.append) {
+            const current = existing?.content || '';
+            const cleaned = stripPartialMarkerAtEnd(current);
+            updateFile(resolvedPath, cleaned);
+            upsertFileNode(resolvedPath, cleaned);
+            upsertFile({ name, path: resolvedPath, content: cleaned, language: getLanguageFromExtension(resolvedPath) });
+          } else {
             flushFileBuffers();
             fileChunkBuffersRef.current.delete(resolvedPath);
             updateFile(resolvedPath, '');
             upsertFileNode(resolvedPath, '');
-            setWritingFilePath(resolvedPath);
-            setActiveFile(resolvedPath);
-            setMobileTab('editor');
-            setBrainOpen(true);
           }
-        },
-        onFileChunk: (path, chunk) => {
-          const resolvedPath = resolveGeneratedPath(path);
-          fileChunkBuffersRef.current.set(
-            resolvedPath,
-            (fileChunkBuffersRef.current.get(resolvedPath) || '') + chunk
-          );
-          scheduleFileFlush();
-        },
-        onFileComplete: (path) => {
-          const resolvedPath = resolveGeneratedPath(path);
-          logSystem(`[STATUS] Completed ${resolvedPath}`);
 
-          if (!useAIStore.getState().architectMode) return;
-          const next = useAIStore.getState().planSteps.find((s) => !s.completed);
-          if (next) useAIStore.getState().setPlanStepCompleted(next.id, true);
+          setWritingFilePath(resolvedPath);
+          setActiveFile(resolvedPath);
+          setMobileTab('editor');
+          setBrainOpen(true);
+          return;
         }
-      });
+
+        if (event.type === 'chunk') {
+          const chunk = String(event.chunk || '');
+          if (chunk.length === 0) return;
+          fileChunkBuffersRef.current.set(resolvedPath, (fileChunkBuffersRef.current.get(resolvedPath) || '') + chunk);
+          scheduleFileFlush();
+          return;
+        }
+
+        if (event.type === 'end') {
+          flushFileBuffers();
+          setFileStatus(resolvedPath, 'ready');
+          if (useAIStore.getState().writingFilePath === resolvedPath) setWritingFilePath(null);
+
+          if (event.partial) {
+            const msg = `Stream interrupted: ${resolvedPath} cut at line ${event.line || '?'}`;
+            logSystem(`[ERROR] ${msg}`);
+            setError(msg);
+            if (typeof event.line === 'number' && event.line > 0) {
+              setResumeRequest({ path: resolvedPath, line: event.line });
+            } else {
+              setResumeRequest({ path: resolvedPath, line: 1 });
+            }
+          } else {
+            logSystem(`[STATUS] Completed ${resolvedPath}`);
+          }
+
+          if (useAIStore.getState().architectMode) {
+            const next = useAIStore.getState().planSteps.find((s) => !s.completed);
+            if (next) useAIStore.getState().setPlanStepCompleted(next.id, true);
+          }
+        }
+      };
 
       let reasoningChars = 0;
       const isThinkingMode = modelMode === 'thinking';
@@ -671,7 +721,6 @@ function App() {
             logSystem(`[STATUS] Received ${k}k chars...`);
             streamLastLogAtRef.current = now;
           }
-          router.push(token);
           scheduleTokenBeat();
         },
         (phase, message) => {
@@ -686,81 +735,17 @@ function App() {
           if (message) logSystem(`[STATUS] ${message}`);
         },
         (meta) => {
-          if (meta?.model) {
-            addLog({ timestamp: Date.now(), type: 'info', message: `Model: ${meta.model}` });
-          }
           if (meta?.resume?.attempt) {
             logSystem(`[STATUS] Auto-resume attempt ${meta.resume.attempt}`);
           }
+          if (meta?.raw) logSystem(`[STATUS] ${String(meta.raw)}`);
         },
         (payload) => {
-          flushFileBuffers();
-          if (fileFlushTimerRef.current) {
-            window.clearTimeout(fileFlushTimerRef.current);
-            fileFlushTimerRef.current = null;
+          // File-marker protocol drives file updates incrementally; the service emits a minimal meta payload here.
+          const protocol = payload?.metadata?.protocol;
+          if (protocol === 'file-marker') {
+            logSystem('[STATUS] File-Marker stream finished.');
           }
-          const data = payload;
-          const isPartial = Boolean(data?.metadata?.partial);
-          const incomingFiles: ProjectFile[] = (data.project_files || []).map((file: any) => {
-            const rawPath = file.name || file.path || '';
-            const resolvedPath = resolveFilePath(rawPath);
-            const name = resolvedPath.split('/').pop() || resolvedPath;
-            return {
-              name,
-              path: resolvedPath,
-              content: file.content,
-              language: getLanguageFromExtension(resolvedPath)
-            };
-          });
-
-          if (incomingFiles.length > 0) {
-            const merged = new Map<string, ProjectFile>();
-            for (const file of useProjectStore.getState().files) {
-              const key = file.path || file.name;
-              if (key) merged.set(key, file);
-            }
-            for (const file of incomingFiles) {
-              const key = file.path || file.name;
-              if (!key) continue;
-              merged.set(key, file);
-              upsertFileNode(key, file.content || '');
-              upsertFile(file);
-              updateFile(key, file.content || '');
-            }
-            const mergedFiles = Array.from(merged.values());
-            setFiles(mergedFiles);
-            setFileStructure(mergedFiles.map((file) => ({ path: file.path || file.name, type: 'file' as const })));
-            setFilesFromProjectFiles(mergedFiles);
-          }
-          if (!isPartial) {
-            setStack(data.metadata?.language || 'Unknown');
-            setDescription(data.instructions || 'Generated by NEXUS AI CODING');
-          } else {
-            logSystem('[STATUS] Stream ended early; continuing with checkpoint files.');
-          }
-
-          if (!preserveProjectMeta) {
-            const projectId = `project-${Date.now()}`;
-            const projectName = (basePrompt || 'project').slice(0, 30).replace(/[^a-zA-Z0-9]/g, '-');
-            setProjectId(projectId);
-            setProjectName(projectName);
-          }
-
-          if (architectMode && !skipPlanning && useAIStore.getState().planSteps.length > 0) {
-            const finalSteps = useAIStore.getState().planSteps.map((s) => ({ ...s, completed: true }));
-            useAIStore.getState().setPlanSteps(finalSteps);
-          }
-
-          for (const file of incomingFiles) {
-            const filePath = file.path || file.name;
-            if (filePath) setFileStatus(filePath, 'ready');
-          }
-          setWritingFilePath(null);
-          setIsGenerating(false);
-          setThinkingStatus('');
-          generationSucceeded = !isPartial || useProjectStore.getState().files.length > 0;
-          logSystem(isPartial ? '[STATUS] Checkpoint finalize complete.' : '[STATUS] Final JSON received.');
-
         },
         (err) => {
           flushFileBuffers();
@@ -789,15 +774,15 @@ function App() {
           flushReasoningBuffer();
           setIsGenerating(false);
           setThinkingStatus('');
-          const hasFilesNow = useProjectStore.getState().files.length > 0;
-          if (generationSucceeded || hasFilesNow) {
+          generationSucceeded = useProjectStore.getState().files.length > 0;
+          if (generationSucceeded) {
             logSystem('[webcontainer] Code Complete. Writing to Container...');
             setTimeout(() => {
               void deployAndRun();
             }, 0);
           }
         },
-        { thinkingMode: isThinkingMode, architectMode, includeReasoning: isThinkingMode }
+        { thinkingMode: isThinkingMode, architectMode, includeReasoning: isThinkingMode, typingMs: 26, onFileEvent: handleFileEvent }
       );
     } catch (e: any) {
       flushFileBuffers();
@@ -932,6 +917,28 @@ function App() {
     setInteractionMode,
     setPrompt
   ]);
+
+  const handleFixResume = useCallback(() => {
+    if (!resumeRequest) return;
+    if (isGenerating || isPlanning) return;
+
+    const filesNow = useProjectStore.getState().files;
+    const fileList = filesNow
+      .map((f) => f.path || f.name)
+      .filter((p): p is string => Boolean(p))
+      .slice(0, 120);
+
+    const resumePrompt = [
+      'SYSTEM: Resume the previous cut-off generation using ONLY the File-Marker protocol.',
+      `The last file ${resumeRequest.path} was cut off at line ${resumeRequest.line}. Continue exactly from line ${resumeRequest.line + 1}.`,
+      fileList.length > 0 ? `Do NOT repeat these existing files unless continuing the cut file: ${fileList.join(', ')}` : '',
+      'Output only file markers and code. No filler.'
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    void handleGenerate(resumePrompt, { skipPlanning: true, preserveProjectMeta: true });
+  }, [handleGenerate, isGenerating, isPlanning, resumeRequest]);
 
   return (
     <>
@@ -1090,6 +1097,8 @@ function App() {
         status={thinkingStatus}
         error={error}
         logs={systemConsoleContent}
+        canFixResume={Boolean(resumeRequest)}
+        onFixResume={handleFixResume}
       />
       </Root>
     </>

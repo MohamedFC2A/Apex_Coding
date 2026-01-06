@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { FileSystem } from '@/types';
+import { FileSystem, FileSystemEntry } from '@/types';
 import { useAIStore } from '@/stores/aiStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { DEFAULT_ROOT_PACKAGE_JSON, ensureWebContainer, installDependencies, resetWebContainerState, startServer, syncFileSystem } from '@/services/webcontainer';
@@ -21,6 +21,113 @@ const WebContainerContext = createContext<WebContainerContextValue | null>(null)
 const normalizeFileSystem = (files: FileSystem | []) => (Array.isArray(files) ? {} : files);
 
 const isTreeEmpty = (tree: FileSystem) => Object.keys(tree).length === 0;
+
+const treeContainsFileNamed = (tree: FileSystem, filename: string): boolean => {
+  for (const [name, entry] of Object.entries(tree) as [string, FileSystemEntry][]) {
+    if (name.toLowerCase() === filename.toLowerCase() && entry.file) return true;
+    if (entry.directory && treeContainsFileNamed(entry.directory, filename)) return true;
+  }
+  return false;
+};
+
+const treeHasPath = (tree: FileSystem, path: string): boolean => {
+  const parts = path.split('/').filter(Boolean);
+  let node: FileSystem | undefined = tree;
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    const entry: FileSystemEntry | undefined = node ? node[part] : undefined;
+    if (!entry) return false;
+    const isLast = index === parts.length - 1;
+    if (isLast) return Boolean(entry.file || entry.directory);
+    if (!entry.directory) return false;
+    node = entry.directory;
+  }
+  return false;
+};
+
+const STATIC_SERVER_FILE = '.apex/static-server.cjs';
+const STATIC_SERVER_CODE = `const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const port = Number(process.env.PORT || 5173);
+const root = process.cwd();
+
+const contentTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8'
+};
+
+const resolveSafePath = (urlPath) => {
+  const decoded = decodeURIComponent(urlPath.split('?')[0] || '/');
+  const normalized = decoded.replace(/\\\\/g, '/');
+  const withoutLeading = normalized.replace(/^\\/+/, '');
+  const resolved = path.resolve(root, withoutLeading);
+  if (!resolved.startsWith(root)) return null;
+  return resolved;
+};
+
+const send = (res, status, body, headers = {}) => {
+  res.writeHead(status, headers);
+  res.end(body);
+};
+
+const server = http.createServer((req, res) => {
+  const safe = resolveSafePath(req.url || '/');
+  if (!safe) return send(res, 400, 'Bad Request');
+
+  let target = safe;
+  try {
+    const stat = fs.statSync(target);
+    if (stat.isDirectory()) target = path.join(target, 'index.html');
+  } catch {
+    // fall through
+  }
+
+  if (!fs.existsSync(target)) {
+    const index = path.join(root, 'index.html');
+    if (fs.existsSync(index)) target = index;
+  }
+
+  if (!fs.existsSync(target)) return send(res, 404, 'Not Found');
+
+  const ext = path.extname(target).toLowerCase();
+  const type = contentTypes[ext] || 'application/octet-stream';
+  try {
+    const buffer = fs.readFileSync(target);
+    send(res, 200, buffer, { 'Content-Type': type });
+  } catch (err) {
+    send(res, 500, String(err && err.message ? err.message : err));
+  }
+});
+
+server.listen(port, () => {
+  console.log('[static] listening on', port);
+});
+`;
+
+const addStaticServerFile = (tree: FileSystem): FileSystem => {
+  const dotApex = tree['.apex']?.directory;
+  const nextDotApex: FileSystem = {
+    ...(dotApex || {}),
+    'static-server.cjs': { file: { contents: STATIC_SERVER_CODE } }
+  };
+
+  return {
+    ...tree,
+    ['.apex']: { directory: nextDotApex }
+  };
+};
 
 const createLineBuffer = (onLine: (line: string) => void) => {
   let buffer = '';
@@ -50,6 +157,33 @@ const getPackageDir = (path: string) => {
 };
 
 const resolveStartCommand = (fileMap: Map<string, string>) => {
+  if (fileMap.has('index.html') && !Array.from(fileMap.keys()).some((p) => p.endsWith('package.json'))) {
+    return { command: 'node', args: [STATIC_SERVER_FILE], cwd: '.' };
+  }
+
+  const packagePaths = Array.from(fileMap.keys()).filter((p) => p.endsWith('package.json'));
+  const preferred = ['package.json', 'frontend/package.json', 'client/package.json', 'backend/package.json'];
+  packagePaths.sort((a, b) => {
+    const ai = preferred.indexOf(a);
+    const bi = preferred.indexOf(b);
+    if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    return a.localeCompare(b);
+  });
+
+  for (const pkgPath of packagePaths) {
+    const raw = fileMap.get(pkgPath);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      const scripts = parsed?.scripts || {};
+      const cwd = getPackageDir(pkgPath);
+      if (scripts?.start) return { command: 'npm', args: ['run', 'start'], cwd };
+      if (scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+    } catch {
+      // ignore parse errors (handled elsewhere)
+    }
+  }
+
   const rootPackage = fileMap.get('package.json');
   if (rootPackage) {
     try {
@@ -167,6 +301,12 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const tree = normalizeFileSystem(files);
       if (!isPreviewOpen || isTreeEmpty(tree)) return;
 
+      const looksStatic =
+        treeHasPath(tree, 'index.html') &&
+        !treeContainsFileNamed(tree, 'package.json') &&
+        !treeHasPath(tree, 'vite.config.ts') &&
+        !treeHasPath(tree, 'vite.config.js');
+
       setError(null);
       if (!serverStartedRef.current || forceRestart) updateUrl(null);
       updateStatus('booting', 'Booting container...');
@@ -176,8 +316,11 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       urlsByPortRef.current = {};
 
       updateStatus('mounting', 'Syncing files...');
-      const { changedPackages, injectedRootPackage, invalidPackageJsonPaths, fileMap } = await syncFileSystem(tree, {
-        ensureRootPackageJson: true,
+      const effectiveTree = looksStatic ? addStaticServerFile(tree) : tree;
+      const ensureRootPackageJson = !looksStatic && !treeContainsFileNamed(tree, 'package.json');
+
+      const { changedPackages, injectedRootPackage, invalidPackageJsonPaths, fileMap } = await syncFileSystem(effectiveTree, {
+        ensureRootPackageJson,
         rootPackageJson: DEFAULT_ROOT_PACKAGE_JSON
       });
       if (injectedRootPackage) {
@@ -194,7 +337,11 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       const readyPackages = changedPackages.filter((path) => (fileMap.get(path) || '').trim().length > 10);
-      await installPackages(readyPackages);
+      if (!looksStatic) {
+        await installPackages(readyPackages);
+      } else if (!serverStartedRef.current || forceRestart) {
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Static project detected; skipping npm install.\\n`);
+      }
 
       if (serverStartedRef.current && !forceRestart) {
         updateStatus('ready', 'Server running.');

@@ -50,23 +50,22 @@ const HeaderTitle = styled.div`
 `;
 
 const Tabs = styled.div`
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 8px;
 `;
 
 const TabButton = styled.button<{ $active?: boolean }>`
   height: 32px;
-  padding: 0 10px;
-  border-radius: 999px;
+  width: 100%;
+  padding: 0 12px;
+  border-radius: 14px;
   border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.28)' : 'rgba(255, 255, 255, 0.10)')};
   background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.10)' : 'rgba(255, 255, 255, 0.03)')};
   color: ${(p) => (p.$active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.70)')};
-  flex: 1;
   min-width: 0;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
   font-size: 12px;
   font-weight: 800;
@@ -325,7 +324,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, defaultTab = 'files
   return (
     <Shell className={className}>
       <Header>
-        <HeaderTitle>Project Explorer</HeaderTitle>
+        <HeaderTitle>PROJECT EXPLORER</HeaderTitle>
         <Tabs>
           <TabButton type="button" $active={tab === 'files'} onClick={() => setTab('files')}>
             <Files size={16} />

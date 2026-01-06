@@ -25,6 +25,7 @@ export const PromptPanel: React.FC = () => {
     appendStreamText,
     setSections,
     setModelMode,
+    saveCurrentSession,
     setError,
     error
   } = useAIStore();
@@ -134,6 +135,7 @@ export const PromptPanel: React.FC = () => {
   const handleGenerate = async () => {
     if (!localPrompt.trim() || isGenerating) return;
 
+    saveCurrentSession();
     setIsGenerating(true);
     setError(null);
     setSections({});

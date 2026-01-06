@@ -64,7 +64,7 @@ const SessionCard = styled.button`
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  padding: 10px 10px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.035);
   display: flex;
   align-items: center;
@@ -143,10 +143,12 @@ const flattenFileSystem = (tree: FileSystem, basePath = ''): ProjectFile[] => {
   return files;
 };
 
-const formatTime = (timestamp: number) => {
+const formatDayMonth = (timestamp: number) => {
   const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return '??:??';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (Number.isNaN(date.getTime())) return '??/??';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
 };
 
 export const SidebarHistory: React.FC = () => {
@@ -196,7 +198,7 @@ export const SidebarHistory: React.FC = () => {
               <SessionCard key={session.id} type="button" onClick={() => handleRestore(session.id)}>
                 <SessionMain>
                   <SessionTitle>{session.title || 'Untitled Session'}</SessionTitle>
-                  <SessionMeta>{formatTime(session.createdAt)}</SessionMeta>
+                  <SessionMeta>Date: {formatDayMonth(session.createdAt)}</SessionMeta>
                 </SessionMain>
                 <RightMeta>Restore</RightMeta>
               </SessionCard>

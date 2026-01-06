@@ -53,7 +53,7 @@ const Panel = styled.div`
   flex-direction: column;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(18px);
   box-shadow:
     0 22px 60px rgba(0, 0, 0, 0.55),

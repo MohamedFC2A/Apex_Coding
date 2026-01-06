@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { AlertCircle, Eye, EyeOff, Github, History, ListTodo, Menu, X } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Github, History, ListTodo, Menu, Settings, X } from 'lucide-react';
 
 import { useAIStore } from './stores/aiStore';
 import { useProjectStore } from './stores/projectStore';
@@ -545,6 +545,9 @@ function App() {
   const {
     files,
     activeFile,
+    projectName,
+    stack,
+    description,
     reset: resetProject,
     setFiles,
     setFileStructure,
@@ -565,6 +568,7 @@ function App() {
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const fileFlushTimerRef = useRef<number | null>(null);
   const fileChunkBuffersRef = useRef<Map<string, string>>(new Map());
@@ -794,6 +798,35 @@ function App() {
       const filePathMap = new Map<string, string>();
       const partialPaths = new Set<string>();
       const editOriginalByPath = new Map<string, string>();
+
+      let autosaveTimer: number | null = null;
+      const writeAutosaveNow = () => {
+        try {
+          const project = useProjectStore.getState();
+          const snapshot = {
+            savedAt: Date.now(),
+            projectName: project.projectName,
+            stack: project.stack,
+            description: project.description,
+            activeFile: project.activeFile,
+            files: project.files.map((f) => ({
+              name: f.name,
+              path: f.path || f.name,
+              content: f.content || ''
+            }))
+          };
+          localStorage.setItem('nexus-apex-autosave', JSON.stringify(snapshot));
+        } catch {
+          // ignore
+        }
+      };
+      const scheduleAutosave = () => {
+        if (autosaveTimer) return;
+        autosaveTimer = window.setTimeout(() => {
+          autosaveTimer = null;
+          writeAutosaveNow();
+        }, 0);
+      };
       const resolveGeneratedPath = (rawPath: string) => {
         if (filePathMap.has(rawPath)) return filePathMap.get(rawPath) as string;
         const normalized = resolveFilePath(rawPath);
@@ -820,11 +853,11 @@ function App() {
       };
 
       const BRANDING_FOOTER = `<footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
-  © 2026 Nexus Apex. All rights reserved. Made by NEXUS_APEX_CODING | Built by Matany Labs
+  © 2026 Nexus Apex | Made by NEXUS_APEX_CODING
 </footer>`;
 
       const injectBrandingFooter = (html: string) => {
-        const signature = '© 2026 Nexus Apex.';
+        const signature = '© 2026 Nexus Apex | Made by NEXUS_APEX_CODING';
         if (html.includes(signature)) return html;
 
         const footerBlock = `\n${BRANDING_FOOTER}\n`;
@@ -1026,6 +1059,7 @@ function App() {
           } else {
             partialPaths.delete(resolvedPath);
             logSystem(`[STATUS] Completed ${resolvedPath}`);
+            scheduleAutosave();
           }
 
           if (useAIStore.getState().architectMode) {
@@ -1320,7 +1354,7 @@ function App() {
         <HeaderArea>
           <HeaderLeft>
             <BrandStack>
-              <BrandTitle>NEXUS AI</BrandTitle>
+              <BrandTitle>NEXUS APEX</BrandTitle>
               <BrandSubtitle>
                 A <BrandAccent>Matany</BrandAccent> Product
               </BrandSubtitle>
@@ -1343,6 +1377,14 @@ function App() {
               title="History"
             >
               <History size={18} />
+            </HeaderIconButton>
+            <HeaderIconButton
+              type="button"
+              onClick={() => setSettingsOpen((v) => !v)}
+              aria-label={settingsOpen ? 'Close project settings' : 'Open project settings'}
+              title="Project settings"
+            >
+              <Settings size={18} />
             </HeaderIconButton>
             <PreviewToggleButton
               type="button"
@@ -1442,7 +1484,14 @@ function App() {
         <Sidebar />
       </DrawerPanel>
 
-      <OverlayScrim $open={historyOpen} onClick={() => setHistoryOpen(false)} aria-hidden={!historyOpen} />
+      <OverlayScrim
+        $open={historyOpen || settingsOpen}
+        onClick={() => {
+          setHistoryOpen(false);
+          setSettingsOpen(false);
+        }}
+        aria-hidden={!(historyOpen || settingsOpen)}
+      />
       <OverlayPanel $open={historyOpen} aria-hidden={!historyOpen}>
         <OverlayHeader>
           History
@@ -1457,6 +1506,89 @@ function App() {
         </OverlayHeader>
         <OverlayBody>
           <SidebarHistory />
+        </OverlayBody>
+      </OverlayPanel>
+
+      <OverlayPanel $open={settingsOpen} aria-hidden={!settingsOpen}>
+        <OverlayHeader>
+          Project Settings
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(false)}
+            style={{ border: 0, background: 'transparent', color: 'rgba(255,255,255,0.70)', cursor: 'pointer' }}
+            aria-label="Close project settings"
+          >
+            <X size={16} />
+          </button>
+        </OverlayHeader>
+        <OverlayBody>
+          <div style={{ padding: 12, display: 'grid', gap: 10 }}>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
+                Project Name
+              </div>
+              <input
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="My project"
+                style={{
+                  height: 40,
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: 'rgba(255,255,255,0.90)',
+                  padding: '0 12px',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
+                Stack
+              </div>
+              <input
+                value={stack}
+                onChange={(e) => setStack(e.target.value)}
+                placeholder="react-vite"
+                style={{
+                  height: 40,
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: 'rgba(255,255,255,0.90)',
+                  padding: '0 12px',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
+                Description
+              </div>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What this project does…"
+                rows={3}
+                className="scrollbar-thin"
+                style={{
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: 'rgba(255,255,255,0.90)',
+                  padding: '10px 12px',
+                  outline: 'none',
+                  resize: 'vertical'
+                }}
+              />
+            </div>
+
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>
+              Autosave is enabled. Generated projects must include the Nexus Apex footer.
+            </div>
+          </div>
         </OverlayBody>
       </OverlayPanel>
 

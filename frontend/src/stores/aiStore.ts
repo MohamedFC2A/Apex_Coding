@@ -102,6 +102,7 @@ interface AIStoreActions {
   resetFiles: () => void;
   resolveFilePath: (path: string) => string;
   upsertFileNode: (path: string, content?: string) => void;
+  upsertDirectoryNode: (path: string) => void;
   appendToFileNode: (path: string, chunk: string) => void;
   setFilesFromProjectFiles: (files: ProjectFile[]) => void;
   saveCurrentSession: () => void;
@@ -241,6 +242,18 @@ const normalizePath = (rawPath: string) => {
   return `${root}/${cleaned}`;
 };
 
+const normalizeDirPath = (rawPath: string) => {
+  if (!rawPath) return '';
+  const cleaned = cleanPath(rawPath).replace(/\/+$/, '');
+  if (!cleaned) return '';
+
+  const lower = cleaned.toLowerCase();
+  if (lower.startsWith('frontend/') || lower.startsWith('backend/')) return cleaned;
+
+  const root = inferRootFromPath(cleaned);
+  return `${root}/${cleaned}`;
+};
+
 const upsertFileSystemEntry = (tree: FileSystem, rawPath: string, content?: string) => {
   const resolvedPath = normalizePath(rawPath);
   if (!resolvedPath) return tree;
@@ -257,6 +270,38 @@ const upsertFileSystemEntry = (tree: FileSystem, rawPath: string, content?: stri
         ...node,
         [name]: {
           file: { contents: content ?? existing }
+        }
+      };
+    }
+
+    const existingDir = node[name]?.directory ?? {};
+    return {
+      ...node,
+      [name]: {
+        directory: insert(existingDir, index + 1)
+      }
+    };
+  };
+
+  return insert(tree, 0);
+};
+
+const upsertDirectoryEntry = (tree: FileSystem, rawPath: string) => {
+  const resolvedPath = normalizeDirPath(rawPath);
+  if (!resolvedPath) return tree;
+
+  const segments = resolvedPath.split('/');
+
+  const insert = (node: FileSystem, index: number): FileSystem => {
+    const name = segments[index];
+    const isLeaf = index === segments.length - 1;
+
+    if (isLeaf) {
+      const existingDir = node[name]?.directory ?? {};
+      return {
+        ...node,
+        [name]: {
+          directory: existingDir
         }
       };
     }
@@ -468,6 +513,11 @@ export const useAIStore = create<AIState>()(
       upsertFileNode: (path, content) =>
         set((state) => ({
           files: upsertFileSystemEntry(normalizeFileSystem(state.files), path, content)
+        })),
+
+      upsertDirectoryNode: (path) =>
+        set((state) => ({
+          files: upsertDirectoryEntry(normalizeFileSystem(state.files), path)
         })),
 
       appendToFileNode: (path, chunk) =>

@@ -196,7 +196,7 @@ CRITICAL OUTPUT RULES (NON-NEGOTIABLE):
 - No filler text. Output ONLY file markers and file contents.
 - If you output any HTML (any *.html file), you MUST include this exact footer immediately before the closing </body> tag (even for Hello World):
 <footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
-  © 2026 Nexus Apex. All rights reserved. Made by NEXUS_APEX_CODING | Built by Matany Labs
+  © 2026 Nexus Apex | Made by NEXUS_APEX_CODING
 </footer>
 - Every project MUST include the Nexus Apex footer in the main layout (React/TSX App component or HTML page).
 - If the user asks for a "web app" or "dashboard", you MUST generate a Vite + React + TypeScript project (not a single index.html).
@@ -299,28 +299,110 @@ app.post('/ai/plan', async (req, res) => {
 });
 
 // /ai/generate (mapped from /api/ai/generate)
-app.post('/ai/generate', async (req, res) => {
+// /generate (mapped from /api/generate)
+// Live streaming (no job queue): pipes model output directly to the client.
+app.post(['/ai/generate', '/generate'], async (req, res) => {
+  // Force headers to prevent buffering and keep the connection open.
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  // Immediate heartbeat so the client sees the stream right away.
+  res.write(': keep-alive\n\n');
+
+  let keepAliveTimer = null;
+  let abortTimer = null;
+
   try {
-    const { prompt } = req.body || {};
-    if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+    const { prompt, thinkingMode } = req.body || {};
+    if (!prompt) {
+      res.write('Missing prompt');
+      res.end();
+      return;
+    }
 
     const client = getClient();
-    const completion = await client.chat.completions.create({
-      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+
+    const model = thinkingMode
+      ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
+      : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
+
+    // Keep-alive while upstream is "thinking" before first token.
+    let hasStartedStreaming = false;
+    keepAliveTimer = setInterval(() => {
+      if (hasStartedStreaming) return;
+      try {
+        res.write(': keep-alive\n\n');
+      } catch {
+        // ignore
+      }
+    }, 10000);
+
+    const abortController = new AbortController();
+    abortTimer = setTimeout(() => {
+      try {
+        abortController.abort();
+      } catch {
+        // ignore
+      }
+    }, 55000);
+
+    const request = {
+      model,
       temperature: 0.0,
       messages: [
-        { role: 'system', content: CODE_JSON_SYSTEM_PROMPT },
+        { role: 'system', content: CODE_STREAM_SYSTEM_PROMPT },
         { role: 'user', content: prompt }
-      ]
-    });
+      ],
+      stream: true,
+      signal: abortController.signal
+    };
 
-    const content = completion?.choices?.[0]?.message?.content || '';
-    const payload = cleanAndParseJSON(content);
-    res.json(payload);
+    let stream;
+    try {
+      stream = await client.chat.completions.create(request);
+    } catch {
+      stream = await client.chat.completions.create(request);
+    }
+
+    for await (const chunk of stream) {
+      const delta = chunk?.choices?.[0]?.delta || {};
+      const contentChunk = delta?.content;
+      if (typeof contentChunk !== 'string' || contentChunk.length === 0) continue;
+
+      if (!hasStartedStreaming) {
+        hasStartedStreaming = true;
+        if (keepAliveTimer) clearInterval(keepAliveTimer);
+      }
+
+      // Pipe directly (raw stream). Frontend consumes as a text stream.
+      res.write(contentChunk);
+    }
+
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
+    if (abortTimer) clearTimeout(abortTimer);
+    res.end();
   } catch (error) {
     const details = getErrorDetails(error);
     console.error('AI Generate Error:', details.message);
-    res.status(500).json({ error: details.message });
+    res.end();
+  } finally {
+    if (keepAliveTimer) {
+      try {
+        clearInterval(keepAliveTimer);
+      } catch {
+        // ignore
+      }
+    }
+    if (abortTimer) {
+      try {
+        clearTimeout(abortTimer);
+      } catch {
+        // ignore
+      }
+    }
   }
 });
 

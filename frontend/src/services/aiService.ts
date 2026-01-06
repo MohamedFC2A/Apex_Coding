@@ -383,7 +383,7 @@ export const aiService = {
       };
 
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
-        const response = await fetch(apiUrl('/api/ai/generate-stream'), {
+        const response = await fetch(apiUrl('/api/ai/generate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           mode: 'cors',

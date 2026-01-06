@@ -97,6 +97,7 @@ export const aiService = {
           onFileEvent?: (event: {
             type: 'start' | 'chunk' | 'end';
             path: string;
+            mode?: 'create' | 'edit';
             chunk?: string;
             partial?: boolean;
             line?: number;
@@ -140,6 +141,7 @@ export const aiService = {
       };
 
       const startToken = '[[START_FILE:';
+      const editToken = '[[EDIT_FILE:';
       const endToken = '[[END_FILE]]';
       const streamTailMax = 2200;
 
@@ -167,6 +169,7 @@ export const aiService = {
         private inFile = false;
         private currentPath = '';
         private currentLine = 1;
+        private currentMode: 'create' | 'edit' = 'create';
         private resumeAppendPath: string | undefined;
 
         setResumeAppendPath(path?: string) {
@@ -183,26 +186,39 @@ export const aiService = {
           while (this.scan.length > 0) {
             if (!this.inFile) {
               const startIdx = this.scan.indexOf(startToken);
-              if (startIdx === -1) {
-                this.scan = this.scan.slice(Math.max(0, this.scan.length - (startToken.length - 1)));
+              const editIdx = this.scan.indexOf(editToken);
+              const nextIdx =
+                startIdx === -1
+                  ? editIdx
+                  : editIdx === -1
+                    ? startIdx
+                    : Math.min(startIdx, editIdx);
+
+              if (nextIdx === -1) {
+                const keep = Math.max(startToken.length - 1, editToken.length - 1);
+                this.scan = this.scan.slice(Math.max(0, this.scan.length - keep));
                 return;
               }
 
-              const closeIdx = this.scan.indexOf(']]', startIdx);
+              const isEdit = editIdx !== -1 && editIdx === nextIdx;
+              const token = isEdit ? editToken : startToken;
+              const closeIdx = this.scan.indexOf(']]', nextIdx);
               if (closeIdx === -1) {
-                this.scan = this.scan.slice(startIdx);
+                this.scan = this.scan.slice(nextIdx);
                 return;
               }
 
-              const rawPath = this.scan.slice(startIdx + startToken.length, closeIdx).trim();
+              const rawPath = this.scan.slice(nextIdx + token.length, closeIdx).trim();
               this.currentPath = rawPath;
               this.inFile = true;
               this.currentLine = 1;
+              this.currentMode = isEdit ? 'edit' : 'create';
               this.scan = this.scan.slice(closeIdx + 2);
 
               options.onFileEvent?.({
                 type: 'start',
                 path: rawPath,
+                mode: this.currentMode,
                 append: Boolean(this.resumeAppendPath && rawPath === this.resumeAppendPath),
                 line: 1
               });
@@ -211,19 +227,26 @@ export const aiService = {
 
             const endIdx = this.scan.indexOf(endToken);
             const nextStartIdx = this.scan.indexOf(startToken);
+            const nextEditIdx = this.scan.indexOf(editToken);
+            const nextMarkerIdx =
+              nextStartIdx === -1
+                ? nextEditIdx
+                : nextEditIdx === -1
+                  ? nextStartIdx
+                  : Math.min(nextStartIdx, nextEditIdx);
 
-            const hasImplicitStart = nextStartIdx !== -1 && (endIdx === -1 || nextStartIdx < endIdx);
+            const hasImplicitStart = nextMarkerIdx !== -1 && (endIdx === -1 || nextMarkerIdx < endIdx);
             if (hasImplicitStart) {
-              this.flushContent(this.scan.slice(0, nextStartIdx));
+              this.flushContent(this.scan.slice(0, nextMarkerIdx));
               this.forceClose(true);
-              this.scan = this.scan.slice(nextStartIdx);
+              this.scan = this.scan.slice(nextMarkerIdx);
               continue;
             }
 
             if (endIdx !== -1) {
               this.flushContent(this.scan.slice(0, endIdx));
               completedFiles.add(this.currentPath);
-              options.onFileEvent?.({ type: 'end', path: this.currentPath, partial: false, line: this.currentLine });
+              options.onFileEvent?.({ type: 'end', path: this.currentPath, mode: this.currentMode, partial: false, line: this.currentLine });
               lastSuccessfulFile = this.currentPath;
               lastSuccessfulLine = this.currentLine;
 
@@ -234,7 +257,7 @@ export const aiService = {
             }
 
             // No marker found: flush most of the buffer but keep a tail to allow marker split across chunks.
-            const keep = Math.max(startToken.length + 8, endToken.length + 8);
+            const keep = Math.max(startToken.length + 8, editToken.length + 8, endToken.length + 8);
             if (this.scan.length <= keep) return;
 
             this.flushContent(this.scan.slice(0, this.scan.length - keep));
@@ -244,16 +267,16 @@ export const aiService = {
 
         private flushContent(content: string) {
           if (!content) return;
-          options.onFileEvent?.({ type: 'chunk', path: this.currentPath, chunk: content, line: this.currentLine });
+          options.onFileEvent?.({ type: 'chunk', path: this.currentPath, mode: this.currentMode, chunk: content, line: this.currentLine });
           this.currentLine += countLines(content);
         }
 
         private forceClose(partial: boolean) {
           const marker = getForceCloseMarker(this.currentPath);
-          options.onFileEvent?.({ type: 'chunk', path: this.currentPath, chunk: marker, line: this.currentLine });
+          options.onFileEvent?.({ type: 'chunk', path: this.currentPath, mode: this.currentMode, chunk: marker, line: this.currentLine });
           this.currentLine += countLines(marker);
           partialFiles.add(this.currentPath);
-          options.onFileEvent?.({ type: 'end', path: this.currentPath, partial, line: this.currentLine });
+          options.onFileEvent?.({ type: 'end', path: this.currentPath, mode: this.currentMode, partial, line: this.currentLine });
           lastSuccessfulFile = this.currentPath;
           lastSuccessfulLine = this.currentLine;
           this.inFile = false;

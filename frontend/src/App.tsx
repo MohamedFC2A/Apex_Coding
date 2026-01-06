@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { AlertCircle, Eye, EyeOff, Github, Menu, X } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Github, History, ListTodo, Menu, X } from 'lucide-react';
 
 import { useAIStore } from './stores/aiStore';
 import { useProjectStore } from './stores/projectStore';
@@ -10,6 +10,7 @@ import { getLanguageFromExtension } from './utils/stackDetector';
 
 import { CodeEditor } from './components/CodeEditor';
 import { Sidebar } from './components/Sidebar';
+import { SidebarHistory } from './components/SidebarHistory';
 
 import { PromptInput } from './components/ui/PromptInput';
 import { ModeToggle } from './components/ui/ModeToggle';
@@ -17,6 +18,7 @@ import { ArchitectToggle } from './components/ui/ArchitectToggle';
 import { MainActionButton, MainActionState } from './components/ui/MainActionButton';
 import { PreviewWindow } from './components/ui/PreviewWindow';
 import { BrainConsole } from './components/ui/BrainConsole';
+import { PlanChecklist } from './components/ui/PlanChecklist';
 import { Content, Description, Heading, Popover, Trigger } from './components/ui/InstructionPopover';
 import { GlobalStyles } from './styles/GlobalStyles';
 import { useWebContainer } from './context/WebContainerContext';
@@ -66,6 +68,164 @@ const HeaderRight = styled.div`
   display: flex;
   align-items: center;
   gap: 10px;
+`;
+
+const HeaderIconButton = styled.button`
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+    transform: translateY(-1px);
+  }
+`;
+
+const OverlayScrim = styled.button<{ $open: boolean }>`
+  position: fixed;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  opacity: ${(p) => (p.$open ? 1 : 0)};
+  pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
+  transition: opacity 160ms ease;
+  z-index: 55;
+`;
+
+const OverlayPanel = styled.div<{ $open: boolean }>`
+  position: fixed;
+  top: 70px;
+  right: 18px;
+  width: min(420px, calc(100vw - 36px));
+  max-height: calc(100vh - 140px);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 10, 10, 0.55);
+  backdrop-filter: blur(22px);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  transform: ${(p) => (p.$open ? 'translateY(0)' : 'translateY(-10px)')};
+  opacity: ${(p) => (p.$open ? 1 : 0)};
+  pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
+  transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 56;
+`;
+
+const OverlayHeader = styled.div`
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.82);
+`;
+
+const OverlayBody = styled.div`
+  height: calc(100% - 44px);
+  overflow: hidden;
+`;
+
+const FloatingPlanWrap = styled.div<{ $open: boolean }>`
+  position: fixed;
+  right: 18px;
+  bottom: 62px;
+  width: min(360px, calc(100vw - 36px));
+  max-height: 48vh;
+  z-index: 54;
+
+  ${(p) =>
+    !p.$open &&
+    `
+      width: auto;
+      max-height: none;
+    `}
+`;
+
+const FloatingPlanPanel = styled.div`
+  position: relative;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -60px;
+    background: radial-gradient(220px 120px at 20% 20%, rgba(34, 211, 238, 0.16), transparent 60%),
+      radial-gradient(240px 140px at 80% 60%, rgba(168, 85, 247, 0.14), transparent 60%);
+    filter: blur(18px);
+    opacity: 0.8;
+    pointer-events: none;
+  }
+`;
+
+const FloatingPlanHeader = styled.button`
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  border: 0;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.10);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.84);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 900;
+`;
+
+const FloatingPlanBody = styled.div`
+  position: relative;
+  z-index: 1;
+  height: calc(48vh - 42px);
+  max-height: calc(48vh - 42px);
+  overflow: hidden;
+`;
+
+const FloatingPlanToggle = styled.button`
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(22px);
+  color: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.18);
+    transform: translateY(-1px);
+  }
 `;
 
 const BrandStack = styled.div`
@@ -351,6 +511,7 @@ function App() {
     isGenerating,
     isPlanning,
     lastTokenAt,
+    planSteps,
     thinkingContent,
     systemConsoleContent,
     isPreviewOpen,
@@ -396,12 +557,14 @@ function App() {
     setProjectId,
     setProjectName
   } = useProjectStore();
-  const { setPreviewUrl, addLog, runtimeStatus, runtimeMessage } = usePreviewStore();
+  const { setPreviewUrl, addLog, logs, runtimeStatus, runtimeMessage } = usePreviewStore();
 
   const [thinkingStatus, setThinkingStatus] = useState('');
   const [brainOpen, setBrainOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const fileFlushTimerRef = useRef<number | null>(null);
   const fileChunkBuffersRef = useRef<Map<string, string>>(new Map());
@@ -410,6 +573,7 @@ function App() {
   const reasoningBufferRef = useRef('');
   const streamCharCountRef = useRef(0);
   const streamLastLogAtRef = useRef(0);
+  const autoDebugRef = useRef<{ signature: string; attempts: number }>({ signature: '', attempts: 0 });
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
@@ -417,6 +581,8 @@ function App() {
     if (files.length > 0) return 'done';
     return 'idle';
   }, [files.length, isGenerating, isPlanning]);
+
+  const currentPlanStepId = useMemo(() => planSteps.find((step) => !step.completed)?.id, [planSteps]);
 
   const isConsoleVisible = true;
 
@@ -438,6 +604,12 @@ function App() {
     },
     [appendSystemConsoleContent]
   );
+
+  useEffect(() => {
+    if (!architectMode) return;
+    if (planSteps.length === 0) return;
+    setPlanOpen(true);
+  }, [architectMode, planSteps.length]);
 
   useEffect(() => {
     if (isGenerating) return;
@@ -574,6 +746,8 @@ function App() {
       }
     }
 
+    autoDebugRef.current = { signature: '', attempts: 0 };
+
     setIsPreviewOpen(true);
     setIsGenerating(true);
     setError(null);
@@ -619,6 +793,7 @@ function App() {
       let generationSucceeded = false;
       const filePathMap = new Map<string, string>();
       const partialPaths = new Set<string>();
+      const editOriginalByPath = new Map<string, string>();
       const resolveGeneratedPath = (rawPath: string) => {
         if (filePathMap.has(rawPath)) return filePathMap.get(rawPath) as string;
         const normalized = resolveFilePath(rawPath);
@@ -730,9 +905,45 @@ function App() {
         });
       };
 
+      const parseSearchReplaceBlocks = (raw: string) => {
+        const text = String(raw || '');
+        const blocks: Array<{ search: string; replace: string }> = [];
+        let cursor = 0;
+
+        while (cursor < text.length) {
+          const searchIdx = text.indexOf('[[SEARCH]]', cursor);
+          if (searchIdx === -1) break;
+          const replaceIdx = text.indexOf('[[REPLACE]]', searchIdx);
+          if (replaceIdx === -1) break;
+          const endIdx = text.indexOf('[[END_EDIT]]', replaceIdx);
+          if (endIdx === -1) break;
+
+          const search = text.slice(searchIdx + '[[SEARCH]]'.length, replaceIdx).replace(/^\r?\n/, '').replace(/\r?\n$/, '');
+          const replace = text.slice(replaceIdx + '[[REPLACE]]'.length, endIdx).replace(/^\r?\n/, '').replace(/\r?\n$/, '');
+          blocks.push({ search, replace });
+          cursor = endIdx + '[[END_EDIT]]'.length;
+        }
+
+        return blocks;
+      };
+
+      const applySearchReplaceBlocks = (original: string, blocks: Array<{ search: string; replace: string }>) => {
+        let out = original;
+        for (const block of blocks) {
+          if (!block.search) continue;
+          if (out.includes(block.search)) {
+            out = out.replace(block.search, block.replace);
+            continue;
+          }
+          // Fallback: ignore missing search blocks.
+        }
+        return out;
+      };
+
       const handleFileEvent = (event: {
         type: 'start' | 'chunk' | 'end';
         path: string;
+        mode?: 'create' | 'edit';
         chunk?: string;
         partial?: boolean;
         line?: number;
@@ -742,7 +953,8 @@ function App() {
         if (!resolvedPath) return;
 
         if (event.type === 'start') {
-          logSystem(`[STATUS] Writing ${resolvedPath}...`);
+          const label = event.mode === 'edit' ? 'Editing' : 'Writing';
+          logSystem(`[STATUS] ${label} ${resolvedPath}...`);
           setThinkingStatus(`Writing ${resolvedPath.split('/').pop() || resolvedPath}…`);
           setFileStatus(resolvedPath, 'writing');
 
@@ -752,6 +964,10 @@ function App() {
 
           if (!existing) {
             upsertFile({ name, path: resolvedPath, content: '', language: getLanguageFromExtension(resolvedPath) });
+          }
+
+          if (event.mode === 'edit') {
+            editOriginalByPath.set(resolvedPath, existing?.content || '');
           }
 
           if (event.append) {
@@ -786,6 +1002,18 @@ function App() {
           flushFileBuffers();
           setFileStatus(resolvedPath, 'ready');
           if (useAIStore.getState().writingFilePath === resolvedPath) setWritingFilePath(null);
+
+          if (event.mode === 'edit') {
+            const original = editOriginalByPath.get(resolvedPath) ?? '';
+            const latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '';
+            const blocks = parseSearchReplaceBlocks(latest);
+            if (blocks.length > 0) {
+              const next = applySearchReplaceBlocks(original, blocks);
+              updateFile(resolvedPath, next);
+              upsertFileNode(resolvedPath, next);
+              upsertFile({ name: resolvedPath.split('/').pop() || resolvedPath, path: resolvedPath, content: next, language: getLanguageFromExtension(resolvedPath) });
+            }
+          }
 
           if (resolvedPath.toLowerCase().endsWith('.html')) {
             finalizeHtmlFile(resolvedPath, Boolean(event.partial));
@@ -941,52 +1169,87 @@ function App() {
 
   const buildFixPrompt = useCallback(
     (request: string) => {
-      const entries = files
-        .map((file) => ({
-          path: file.path || file.name || '',
-          content: file.content || ''
-        }))
-        .filter((f) => f.path.length > 0);
+      const paths = files
+        .map((file) => file.path || file.name || '')
+        .filter((p) => p.length > 0)
+        .sort((a, b) => a.localeCompare(b));
 
-      const activePath = activeFile || '';
-      entries.sort((a, b) => {
-        if (a.path === activePath) return -1;
-        if (b.path === activePath) return 1;
-        return a.path.localeCompare(b.path);
-      });
+      const activePath = activeFile || paths[0] || '';
+      const active = files.find((f) => (f.path || f.name) === activePath);
+      const activeContent = active?.content || '';
 
-      const truncate = (text: string, max: number) => {
-        if (text.length <= max) return text;
-        return `${text.slice(0, max)}\n\n[TRUNCATED]`;
-      };
+      const truncate = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max)}\n\n[[TRUNCATED]]`);
 
-      let total = 0;
-      const maxTotal = 22000;
-      const lines: string[] = [];
-
-      for (const file of entries) {
-        const isActive = file.path === activePath;
-        const maxPer = isActive ? 9000 : 2800;
-        const chunk = truncate(file.content, maxPer);
-        total += chunk.length;
-        if (total > maxTotal) break;
-        lines.push(`--- ${file.path} ---\n${chunk}\n`);
-      }
+      const structureList = paths.slice(0, 220).map((p) => `- ${p}`).join('\n');
+      const activeBlock = activePath
+        ? `[[ACTIVE_FILE: ${activePath}]]\n${truncate(activeContent, 24000)}\n[[END_ACTIVE_FILE]]`
+        : '[[ACTIVE_FILE: none]]';
 
       return [
-        'You are editing an existing project. Apply the requested change and return the FULL updated JSON object.',
-        'Keep the same project structure unless the request requires changes.',
+        'SYSTEM: You are editing an existing project.',
+        'CRITICAL: Output MUST be plain text only. No JSON. No markdown.',
+        'Use ONLY these markers:',
+        '  - [[EDIT_FILE: path/to/file.ext]] ... [[END_FILE]] for edits',
+        '  - [[START_FILE: path/to/file.ext]] ... [[END_FILE]] for new files',
+        'Prefer [[EDIT_FILE]] whenever possible. Do NOT repeat unchanged files.',
         '',
-        `EDIT REQUEST: ${request}`,
+        `USER REQUEST: ${request}`,
         '',
-        'CURRENT PROJECT FILES:',
-        lines.join('\n'),
+        'PROJECT STRUCTURE:',
+        structureList,
         '',
-        'Return ONLY valid JSON.'
+        'ACTIVE FILE (full content):',
+        activeBlock,
+        '',
+        'Branding rule: Ensure the Nexus Apex footer exists in the main layout (React App component or HTML page).',
+        'Output only markers + file contents. No filler.'
       ].join('\n');
     },
     [activeFile, files]
   );
+
+  useEffect(() => {
+    if (runtimeStatus !== 'error') return;
+    if (!isPreviewOpen) return;
+    if (isGenerating || isPlanning) return;
+
+    const signature = String(runtimeMessage || 'preview-error');
+    const attempts = autoDebugRef.current.signature === signature ? autoDebugRef.current.attempts : 0;
+    if (attempts >= 1) return;
+
+    autoDebugRef.current = { signature, attempts: attempts + 1 };
+
+    const tail = logs
+      .slice(-45)
+      .map((line) => {
+        const t = new Date(line.timestamp).toLocaleTimeString([], { hour12: false });
+        return `${t} ${line.message}`;
+      })
+      .join('\n');
+
+    logSystem(`[STATUS] Auto-debugging: ${signature}`);
+    const requestText = [
+      'AUTO-DEBUG: The WebContainer preview failed to run. Fix the code so it starts successfully.',
+      signature ? `Error: ${signature}` : '',
+      tail ? `Recent logs:\n${tail}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const fixPrompt = buildFixPrompt(requestText);
+    void handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
+  }, [
+    autoDebugRef,
+    buildFixPrompt,
+    handleGenerate,
+    isGenerating,
+    isPlanning,
+    isPreviewOpen,
+    logSystem,
+    logs,
+    runtimeMessage,
+    runtimeStatus
+  ]);
 
   const handleMainActionClick = useCallback(() => {
     if (mainActionState === 'done') {
@@ -1073,6 +1336,14 @@ function App() {
             >
               <Github size={18} />
             </RepoButton>
+            <HeaderIconButton
+              type="button"
+              onClick={() => setHistoryOpen((v) => !v)}
+              aria-label={historyOpen ? 'Close history' : 'Open history'}
+              title="History"
+            >
+              <History size={18} />
+            </HeaderIconButton>
             <PreviewToggleButton
               type="button"
               onClick={() => setIsPreviewOpen(!isPreviewOpen)}
@@ -1170,6 +1441,51 @@ function App() {
         </DrawerHeader>
         <Sidebar />
       </DrawerPanel>
+
+      <OverlayScrim $open={historyOpen} onClick={() => setHistoryOpen(false)} aria-hidden={!historyOpen} />
+      <OverlayPanel $open={historyOpen} aria-hidden={!historyOpen}>
+        <OverlayHeader>
+          History
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(false)}
+            style={{ border: 0, background: 'transparent', color: 'rgba(255,255,255,0.70)', cursor: 'pointer' }}
+            aria-label="Close history"
+          >
+            <X size={16} />
+          </button>
+        </OverlayHeader>
+        <OverlayBody>
+          <SidebarHistory />
+        </OverlayBody>
+      </OverlayPanel>
+
+      {architectMode && planSteps.length > 0 && (
+        <FloatingPlanWrap $open={planOpen}>
+          {planOpen ? (
+            <FloatingPlanPanel>
+              <FloatingPlanHeader type="button" onClick={() => setPlanOpen(false)} aria-label="Collapse plan">
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <ListTodo size={16} />
+                  Plan
+                </span>
+                <span style={{ opacity: 0.7 }}>×</span>
+              </FloatingPlanHeader>
+              <FloatingPlanBody>
+                <PlanChecklist
+                  items={planSteps}
+                  currentStepId={isGenerating ? currentPlanStepId : undefined}
+                  embedded
+                />
+              </FloatingPlanBody>
+            </FloatingPlanPanel>
+          ) : (
+            <FloatingPlanToggle type="button" onClick={() => setPlanOpen(true)} aria-label="Open plan">
+              <ListTodo size={18} />
+            </FloatingPlanToggle>
+          )}
+        </FloatingPlanWrap>
+      )}
 
       <BrainConsole
         visible={isConsoleVisible}

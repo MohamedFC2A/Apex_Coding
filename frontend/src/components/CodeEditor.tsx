@@ -24,8 +24,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     projectName
   } = useProjectStore();
 
-  const [isGenerating, streamText, modelMode, isPlanning, setIsPreviewOpen] = useAIStore(
-    (state) => [state.isGenerating, state.streamText, state.modelMode, state.isPlanning, state.setIsPreviewOpen],
+  const [isGenerating, streamText, modelMode, isPlanning, writingFilePath, setIsPreviewOpen] = useAIStore(
+    (state) => [state.isGenerating, state.streamText, state.modelMode, state.isPlanning, state.writingFilePath, state.setIsPreviewOpen],
     shallow
   );
   
@@ -211,7 +211,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
               <button
                 onClick={handleRun}
                 className="glass-button px-4 py-1.5 rounded flex items-center justify-center gap-2 text-sm"
-                disabled={files.length === 0}
+                disabled={files.length === 0 || isGenerating || Boolean(writingFilePath)}
               >
                 <Play className="w-5 h-5" />
                 <span className="hidden sm:inline">Run</span>

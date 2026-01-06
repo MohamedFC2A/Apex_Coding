@@ -1,13 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { ChevronDown, ChevronRight, FileText, Files, Folder, History, ListTodo } from 'lucide-react';
-import { PlanChecklist } from './ui/PlanChecklist';
-import { SidebarHistory } from './SidebarHistory';
+import { ChevronDown, ChevronRight, FileText, Folder } from 'lucide-react';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { FileSystem } from '@/types';
-
-type SidebarTab = 'files' | 'plan' | 'history';
 
 type NodeStatus = 'ready' | 'queued' | 'writing';
 
@@ -47,43 +43,6 @@ const HeaderTitle = styled.div`
   text-transform: uppercase;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.84);
-`;
-
-const Tabs = styled.div`
-  display: grid;
-  gap: 8px;
-`;
-
-const TabButton = styled.button<{ $active?: boolean }>`
-  height: 32px;
-  width: 100%;
-  padding: 0 12px;
-  border-radius: 14px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.28)' : 'rgba(255, 255, 255, 0.10)')};
-  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.10)' : 'rgba(255, 255, 255, 0.03)')};
-  color: ${(p) => (p.$active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.70)')};
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
-
-  & svg {
-    flex-shrink: 0;
-  }
-
-  &:hover {
-    border-color: rgba(168, 85, 247, 0.22);
-    background: rgba(255, 255, 255, 0.05);
-    transform: translateY(-1px);
-  }
 `;
 
 const Body = styled.div`
@@ -265,24 +224,12 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
 
 export interface SidebarProps {
   className?: string;
-  defaultTab?: SidebarTab;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ className, defaultTab = 'files' }) => {
-  const [tab, setTab] = useState<SidebarTab>(defaultTab);
+export const Sidebar: React.FC<SidebarProps> = ({ className }) => {
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({});
-  const { planSteps, isGenerating, files, fileStatuses, writingFilePath, architectMode } = useAIStore();
+  const { files, fileStatuses, writingFilePath } = useAIStore();
   const { activeFile, setActiveFile } = useProjectStore();
-
-  const currentStepId = useMemo(() => planSteps.find((s) => !s.completed)?.id, [planSteps]);
-
-  useEffect(() => {
-    setTab(defaultTab);
-  }, [defaultTab]);
-
-  useEffect(() => {
-    if (!architectMode && tab === 'plan') setTab('files');
-  }, [architectMode, tab]);
 
   const toggleNode = useCallback((path: string) => {
     setOpenNodes((prev) => ({
@@ -325,35 +272,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, defaultTab = 'files
     <Shell className={className}>
       <Header>
         <HeaderTitle>PROJECT EXPLORER</HeaderTitle>
-        <Tabs>
-          <TabButton type="button" $active={tab === 'files'} onClick={() => setTab('files')}>
-            <Files size={16} />
-            Files
-          </TabButton>
-          {architectMode && (
-            <TabButton type="button" $active={tab === 'plan'} onClick={() => setTab('plan')}>
-              <ListTodo size={16} />
-              Plan
-            </TabButton>
-          )}
-          <TabButton type="button" $active={tab === 'history'} onClick={() => setTab('history')}>
-            <History size={16} />
-            History
-          </TabButton>
-        </Tabs>
       </Header>
       <Body>
-        {tab === 'files' ? (
-          <TreeContainer className="scrollbar-thin scrollbar-glass">{renderTree()}</TreeContainer>
-        ) : tab === 'plan' && architectMode ? (
-          <PlanChecklist
-            items={planSteps}
-            currentStepId={isGenerating ? currentStepId : undefined}
-            embedded
-          />
-        ) : (
-          <SidebarHistory />
-        )}
+        <TreeContainer className="scrollbar-thin scrollbar-glass">{renderTree()}</TreeContainer>
       </Body>
     </Shell>
   );

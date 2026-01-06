@@ -1,5 +1,4 @@
 import { ProjectFile } from '@/types';
-import { getLanguageFromExtension } from '@/utils/stackDetector';
 
 const API_BASE_URL = (import.meta as any)?.env?.VITE_BACKEND_URL || '/api';
 
@@ -26,12 +25,12 @@ const getErrorMessage = (err: any, fallback: string) => {
 export const aiService = {
   async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
     try {
-      const PLAN_URL = apiUrl('');
+      const PLAN_URL = apiUrl('/ai/plan');
 
       const response = await fetch(PLAN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'plan', prompt, thinkingMode })
+        body: JSON.stringify({ prompt, thinkingMode })
       });
 
       if (!response.ok) {
@@ -49,32 +48,10 @@ export const aiService = {
   },
 
   async generateCode(prompt: string): Promise<AIResponse> {
-    try {
-      const response = await fetch(apiUrl(''), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'generate', prompt })
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(text || `Generate failed (${response.status})`);
-      }
-
-      const data: any = await response.json();
-
-      if (data?.files) {
-        data.files = data.files.map((file: ProjectFile) => ({
-          ...file,
-          language: file.language || getLanguageFromExtension(file.path || file.name || '')
-        }));
-      }
-
-      return data as AIResponse;
-    } catch (error: any) {
-      console.error('Generate Code Error Details:', error);
-      throw new Error(getErrorMessage(error, 'Failed to generate code'));
-    }
+    // Legacy endpoint previously returned JSON; the app now relies on streaming (`generateCodeStream`).
+    // Keep this method for compatibility but surface an explicit error.
+    void prompt;
+    throw new Error('generateCode() is deprecated; use generateCodeStream()');
   },
 
   async generateCodeStream(
@@ -383,12 +360,11 @@ export const aiService = {
       };
 
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
-        const response = await fetch(apiUrl(''), {
+        const response = await fetch(apiUrl('/ai/generate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           mode: 'cors',
           body: JSON.stringify({
-            action: 'generate',
             prompt: streamPrompt,
             thinkingMode,
             architectMode,

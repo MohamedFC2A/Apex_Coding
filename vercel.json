@@ -1,8 +1,11 @@
 {
   "version": 2,
-  "public": true,
+  "functions": {
+    "backend/api/index.js": {
+      "runtime": "vercel-node@latest"
+    }
+  },
   "rewrites": [
-    { "source": "/api", "destination": "/backend/api/index.js" },
     { "source": "/api/(.*)", "destination": "/backend/api/index.js" },
     { "source": "/(.*)", "destination": "/frontend/dist/$1" }
   ]

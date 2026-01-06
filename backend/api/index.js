@@ -641,5 +641,10 @@ app.post('/ai/generate-stream', async (req, res) => {
   }
 });
 
+// Catch-all: explicit 404 (helps diagnose rewrites / 405 confusion on Vercel).
+app.all('*', (req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
 // Vercel requires exporting the app instance (no app.listen)
 module.exports = app;

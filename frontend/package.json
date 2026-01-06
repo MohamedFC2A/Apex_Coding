@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "postbuild": "node scripts/copyDistToRoot.cjs",
     "preview": "vite preview",
     "test": "vitest"
   },

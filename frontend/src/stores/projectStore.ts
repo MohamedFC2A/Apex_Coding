@@ -10,12 +10,14 @@ interface ProjectState {
   activeFile: string | null;
   stack: string;
   description: string;
+  isHydrating: boolean;
   
   setProjectId: (id: string) => void;
   setProjectName: (name: string) => void;
   setFiles: (files: ProjectFile[]) => void;
   setFileStructure: (structure: FileStructure[]) => void;
   setActiveFile: (path: string) => void;
+  setIsHydrating: (isHydrating: boolean) => void;
   updateFile: (path: string, content: string) => void;
   upsertFile: (file: ProjectFile) => void;
   appendToFile: (path: string, chunk: string) => void;
@@ -33,7 +35,8 @@ const initialState = {
   fileStructure: [],
   activeFile: null,
   stack: '',
-  description: ''
+  description: '',
+  isHydrating: false
 };
 
 export const useProjectStore = create<ProjectState>()(
@@ -50,6 +53,8 @@ export const useProjectStore = create<ProjectState>()(
       setFileStructure: (structure) => set({ fileStructure: structure }),
       
       setActiveFile: (path) => set({ activeFile: path }),
+
+      setIsHydrating: (isHydrating) => set({ isHydrating }),
       
       updateFile: (path, content) => set((state) => ({
         files: state.files.map(file =>

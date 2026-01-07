@@ -411,7 +411,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return;
     }
 
-    const apiKeyPresent = Boolean((import.meta as any)?.env?.VITE_WC_CLIENT_ID);
+    const apiKeyPresent = Boolean(process.env.NEXT_PUBLIC_WC_CLIENT_ID);
     if (apiKeyPresent) {
       appendSystemConsoleContent(`${stamp()} [webcontainer] Authenticated with Enterprise API Key.\\n`);
     }

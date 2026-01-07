@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { ChevronDown, ChevronRight, Database, FileText, Folder, Settings } from 'lucide-react';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { usePreviewStore } from '@/stores/previewStore';
 import { FileSystem } from '@/types';
 
 type SidebarTab = 'files' | 'database';
@@ -155,13 +156,57 @@ const EmptyState = styled.div`
   text-align: center;
 `;
 
+const shimmer = keyframes`
+  0% { background-position: 0% 50%; opacity: 0.6; }
+  100% { background-position: 180% 50%; opacity: 0.9; }
+`;
+
+const SkeletonRow = styled.div`
+  height: 28px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.09),
+    rgba(255, 255, 255, 0.05)
+  );
+  background-size: 220% 100%;
+  animation: ${shimmer} 1.3s linear infinite;
+`;
+
+const SkeletonStack = styled.div`
+  display: grid;
+  gap: 8px;
+  padding: 6px 4px;
+`;
+
 const Footer = styled.div`
   flex-shrink: 0;
   padding: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(13, 17, 23, 0.25);
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+`;
+
+const FooterMeta = styled.div`
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+`;
+
+const FooterMetaLine = styled.div`
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
 const FooterButton = styled.button`
@@ -313,7 +358,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
   const [tab, setTab] = useState<SidebarTab>('files');
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({});
   const { files, fileStatuses, writingFilePath } = useAIStore();
-  const { activeFile, setActiveFile, files: flatFiles } = useProjectStore();
+  const { activeFile, setActiveFile, files: flatFiles, isHydrating, stack } = useProjectStore();
+  const { runtimeStatus } = usePreviewStore();
 
   const toggleNode = useCallback((path: string) => {
     setOpenNodes((prev) => ({
@@ -343,7 +389,45 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
     return false;
   }, [flatFiles, fsTree]);
 
+  const schemaSource = useMemo(() => {
+    const schemaFile =
+      flatFiles.find((f) => (f.path || f.name) === 'convex/schema.ts') ||
+      flatFiles.find((f) => (f.path || f.name) === 'convex/schema.js') ||
+      flatFiles.find((f) => (f.path || f.name) === 'convex/schema.tsx') ||
+      null;
+    return schemaFile?.content || '';
+  }, [flatFiles]);
+
+  const schemaTables = useMemo(() => {
+    if (!schemaSource) return [];
+    const names = new Set<string>();
+
+    for (const line of schemaSource.split(/\r?\n/)) {
+      const m = line.match(/^\s*([a-zA-Z0-9_]+)\s*:\s*defineTable\s*\(/);
+      if (m?.[1]) names.add(m[1]);
+    }
+
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [schemaSource]);
+
+  const schemaPreview = useMemo(() => {
+    if (!schemaSource) return '';
+    const max = 2200;
+    const text = schemaSource.length > max ? `${schemaSource.slice(0, max)}\n\n// [[TRUNCATED]]` : schemaSource;
+    return text.trim();
+  }, [schemaSource]);
+
   const renderTree = () => {
+    if (isHydrating && tree.length === 0) {
+      return (
+        <SkeletonStack aria-label="Loading files">
+          {Array.from({ length: 10 }).map((_, idx) => (
+            <SkeletonRow key={idx} />
+          ))}
+        </SkeletonStack>
+      );
+    }
+
     if (tree.length === 0) {
       return <EmptyState>No files yet. Generate code to get started.</EmptyState>;
     }
@@ -390,13 +474,57 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
                 </div>
               </div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.70)', lineHeight: 1.5 }}>
-                {convexEnabled ? 'Convex detected. Database is configured for this project.' : 'No Database Required.'}
+                {convexEnabled ? 'Convex detected. Schema + data live in your project.' : 'No Database Required.'}
               </div>
+
+              {convexEnabled && (
+                <div
+                  style={{
+                    borderRadius: 14,
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    background: 'rgba(255,255,255,0.03)',
+                    padding: 12,
+                    display: 'grid',
+                    gap: 8
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>
+                      Schema
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.50)' }}>
+                      {schemaTables.length > 0 ? `Tables: ${schemaTables.join(', ')}` : 'Tables: —'}
+                    </div>
+                  </div>
+                  {schemaPreview ? (
+                    <pre
+                      style={{
+                        margin: 0,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        fontSize: 11,
+                        lineHeight: 1.45,
+                        color: 'rgba(255,255,255,0.70)'
+                      }}
+                    >
+                      {schemaPreview}
+                    </pre>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
+                      No `convex/schema.ts` found yet. Ask the AI to create it.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </TreeContainer>
         )}
       </Body>
       <Footer>
+        <FooterMeta>
+          <FooterMetaLine>Stack: {stack ? stack : 'Auto'}</FooterMetaLine>
+          <FooterMetaLine>Build: {runtimeStatus}</FooterMetaLine>
+        </FooterMeta>
         <FooterButton type="button" aria-label="Settings" title="Settings" onClick={onOpenSettings}>
           <Settings size={16} />
         </FooterButton>

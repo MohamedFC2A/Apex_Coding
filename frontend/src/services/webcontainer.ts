@@ -134,7 +134,7 @@ const streamProcessOutput = async (process: WebContainerProcess, onOutput?: (chu
 
 export const ensureWebContainer = async () => {
   if (!state.bootPromise) {
-    const apiKey = (import.meta as any)?.env?.VITE_WC_CLIENT_ID as string | undefined;
+    const apiKey = process.env.NEXT_PUBLIC_WC_CLIENT_ID as string | undefined;
     if (apiKey && !state.apiKeyConfigured) {
       configureAPIKey(apiKey);
       state.apiKeyConfigured = true;

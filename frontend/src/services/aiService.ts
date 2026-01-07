@@ -1,6 +1,6 @@
 import { ProjectFile } from '@/types';
 
-const API_BASE_URL = (import.meta as any)?.env?.VITE_BACKEND_URL || '/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '/api';
 
 interface AIResponse {
   plan: string;
@@ -119,6 +119,7 @@ export const aiService = {
 
       const startToken = '[[START_FILE:';
       const editToken = '[[EDIT_FILE:';
+      const editNodeToken = '[[EDIT_NODE:';
       const endToken = '[[END_FILE]]';
       const streamTailMax = 2200;
 
@@ -164,21 +165,18 @@ export const aiService = {
             if (!this.inFile) {
               const startIdx = this.scan.indexOf(startToken);
               const editIdx = this.scan.indexOf(editToken);
+              const editNodeIdx = this.scan.indexOf(editNodeToken);
               const nextIdx =
-                startIdx === -1
-                  ? editIdx
-                  : editIdx === -1
-                    ? startIdx
-                    : Math.min(startIdx, editIdx);
+                [startIdx, editIdx, editNodeIdx].filter((v) => v !== -1).sort((a, b) => a - b)[0] ?? -1;
 
               if (nextIdx === -1) {
-                const keep = Math.max(startToken.length - 1, editToken.length - 1);
+                const keep = Math.max(startToken.length - 1, editToken.length - 1, editNodeToken.length - 1);
                 this.scan = this.scan.slice(Math.max(0, this.scan.length - keep));
                 return;
               }
 
-              const isEdit = editIdx !== -1 && editIdx === nextIdx;
-              const token = isEdit ? editToken : startToken;
+              const isEdit = (editIdx !== -1 && editIdx === nextIdx) || (editNodeIdx !== -1 && editNodeIdx === nextIdx);
+              const token = startIdx === nextIdx ? startToken : isEdit && editNodeIdx === nextIdx ? editNodeToken : editToken;
               const closeIdx = this.scan.indexOf(']]', nextIdx);
               if (closeIdx === -1) {
                 this.scan = this.scan.slice(nextIdx);

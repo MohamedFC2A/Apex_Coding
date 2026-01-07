@@ -21,7 +21,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     activeFile, 
     setActiveFile, 
     updateFile, 
-    projectName
+    projectName,
+    isHydrating
   } = useProjectStore();
 
   const [isGenerating, streamText, modelMode, isPlanning, writingFilePath, setIsPreviewOpen] = useAIStore(
@@ -170,6 +171,16 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     if (!currentFile) return undefined;
     return isGenerating ? typedValue : storeContent;
   }, [currentFile, isGenerating, isStreamingView, storeContent, streamText, typedValue]);
+
+  if (isHydrating && files.length === 0) {
+    return (
+      <GlassCard className="h-full flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 p-4">
+          <div className="h-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-2xl animate-pulse" />
+        </div>
+      </GlassCard>
+    );
+  }
 
   return (
     <GlassCard className="h-full flex flex-col overflow-hidden">

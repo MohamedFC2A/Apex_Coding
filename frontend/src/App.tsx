@@ -24,8 +24,8 @@ import { GlobalStyles } from './styles/GlobalStyles';
 import { useWebContainer } from './context/WebContainerContext';
 
 const Root = styled.div`
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   position: relative;
   background: radial-gradient(900px 500px at 20% 10%, rgba(34, 211, 238, 0.12), transparent 55%),
@@ -1201,9 +1201,17 @@ function App() {
         'SYSTEM: You are editing an existing project.',
         'CRITICAL: Output MUST be plain text only. No JSON. No markdown.',
         'Use ONLY these markers:',
-        '  - [[EDIT_FILE: path/to/file.ext]] ... [[END_FILE]] for edits',
+        '  - [[EDIT_NODE: path/to/file.ext]] ... [[END_FILE]] for edits',
         '  - [[START_FILE: path/to/file.ext]] ... [[END_FILE]] for new files',
-        'Prefer [[EDIT_FILE]] whenever possible. Do NOT repeat unchanged files.',
+        'Prefer [[EDIT_NODE]] whenever possible. Do NOT repeat unchanged files.',
+        'When editing, prefer search/replace blocks instead of rewriting entire files:',
+        '  [[EDIT_NODE: path/to/file.ext]]',
+        '  [[SEARCH]]',
+        '  <exact text>',
+        '  [[REPLACE]]',
+        '  <replacement text>',
+        '  [[END_EDIT]]',
+        '  [[END_FILE]]',
         '',
         `USER REQUEST: ${request}`,
         '',
@@ -1213,12 +1221,50 @@ function App() {
         'ACTIVE FILE (full content):',
         activeBlock,
         '',
-        'Branding rule: Ensure the Nexus Apex footer exists in the main layout (React App component or HTML page).',
+        'Branding rule: Ensure the Nexus Apex footer exists in the main layout (React App component or HTML page):',
+        '© 2026 Nexus Apex | Made by NEXUS_APEX_CODING | Built by Matany Labs.',
         'Output only markers + file contents. No filler.'
       ].join('\n');
     },
     [activeFile, files]
   );
+
+  useEffect(() => {
+    if (!isPreviewOpen) return;
+    if (isGenerating || isPlanning) return;
+
+    const last = logs[logs.length - 1];
+    if (!last) return;
+
+    const message = String(last.message || '');
+    if (!message.includes('TypeError')) return;
+
+    const signature = `typeerror:${message.slice(0, 500)}`;
+    const attempts = autoDebugRef.current.signature === signature ? autoDebugRef.current.attempts : 0;
+    if (attempts >= 1) return;
+
+    autoDebugRef.current = { signature, attempts: attempts + 1 };
+
+    const tail = logs
+      .slice(-45)
+      .map((line) => {
+        const t = new Date(line.timestamp).toLocaleTimeString([], { hour12: false });
+        return `${t} ${line.message}`;
+      })
+      .join('\n');
+
+    logSystem('[STATUS] Auto-fix triggered: TypeError detected.');
+    const requestText = [
+      'AUTO-FIX: A TypeError appeared in the terminal/console. Fix the code so the preview runs without throwing.',
+      message ? `Error: ${message}` : '',
+      tail ? `Recent logs:\n${tail}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const fixPrompt = buildFixPrompt(requestText);
+    void handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
+  }, [autoDebugRef, buildFixPrompt, handleGenerate, isGenerating, isPlanning, isPreviewOpen, logSystem, logs]);
 
   useEffect(() => {
     if (runtimeStatus !== 'error') return;

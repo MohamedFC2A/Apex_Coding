@@ -109,7 +109,7 @@ export function Hero() {
         };
 
         const attempt = async () =>
-          await withTimeout(convexClient.mutation((api as any).projects.ensureDefault, {} as any), 5_000);
+          await withTimeout(convexClient.mutation(api.projects.ensureDefault, {}), 5_000);
 
         let lastErr: any = null;
         for (let i = 0; i < 3; i++) {

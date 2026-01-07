@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useMemo } from 'react';
 import styled, { css, keyframes } from 'styled-components';
 import { motion } from 'framer-motion';

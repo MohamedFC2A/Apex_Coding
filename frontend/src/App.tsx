@@ -24,8 +24,8 @@ import { GlobalStyles } from './styles/GlobalStyles';
 import { useWebContainer } from './context/WebContainerContext';
 
 const Root = styled.div`
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   position: relative;
   background: radial-gradient(900px 500px at 20% 10%, rgba(34, 211, 238, 0.12), transparent 55%),
@@ -35,22 +35,25 @@ const Root = styled.div`
 `;
 
 const Container = styled.div`
-  height: 100%;
+  height: 100vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 14px;
+  padding-bottom: calc(14px + 34px);
   min-height: 0;
 
   @media (max-width: 768px) {
-    padding-bottom: 190px;
+    padding: 12px;
+    padding-bottom: calc(12px + 38px);
+    gap: 10px;
   }
 `;
 
 const HeaderArea = styled.div`
   flex-shrink: 0;
-  height: 44px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -71,8 +74,8 @@ const HeaderRight = styled.div`
 `;
 
 const HeaderIconButton = styled.button`
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   border-radius: 14px;
@@ -361,6 +364,27 @@ const MainWorkspace = styled.div<{ $previewOpen: boolean }>`
     grid-template-columns: 1fr;
     gap: 0;
     position: relative;
+  }
+`;
+
+const IDEFooter = styled.div`
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  z-index: 40;
+  pointer-events: none;
+
+  @media (max-width: 768px) {
+    height: 34px;
   }
 `;
 
@@ -1624,6 +1648,7 @@ function App() {
         </FloatingPlanWrap>
       )}
 
+      <IDEFooter>© 2026 Nexus Apex | Built by Matany Labs.</IDEFooter>
       <BrainConsole
         visible={isConsoleVisible}
         open={brainOpen}

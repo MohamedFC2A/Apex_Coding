@@ -307,6 +307,12 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         !treeHasPath(tree, 'vite.config.ts') &&
         !treeHasPath(tree, 'vite.config.js');
 
+      if (!looksStatic && !treeContainsFileNamed(tree, 'package.json')) {
+        updateStatus('idle', 'Waiting for package.json...');
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for package.json before starting preview.\\n`);
+        return;
+      }
+
       setError(null);
       if (!serverStartedRef.current || forceRestart) updateUrl(null);
       updateStatus('booting', 'Booting container...');
@@ -317,10 +323,8 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       updateStatus('mounting', 'Syncing files...');
       const effectiveTree = looksStatic ? addStaticServerFile(tree) : tree;
-      const ensureRootPackageJson = !looksStatic && !treeContainsFileNamed(tree, 'package.json');
-
       const { changedPackages, injectedRootPackage, invalidPackageJsonPaths, fileMap } = await syncFileSystem(effectiveTree, {
-        ensureRootPackageJson,
+        ensureRootPackageJson: false,
         rootPackageJson: DEFAULT_ROOT_PACKAGE_JSON
       });
       if (injectedRootPackage) {

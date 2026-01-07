@@ -517,8 +517,7 @@ app.post(['/ai/generate', '/generate'], async (req, res) => {
   }
 });
 
-// /ai/generate-stream (mapped from /api/ai/generate-stream)
-app.post('/ai/generate-stream', async (req, res) => {
+const handleGenerateStream = async (req, res) => {
   // 1. Force headers to prevent Vercel from buffering or closing the connection
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -705,7 +704,13 @@ app.post('/ai/generate-stream', async (req, res) => {
       }
     }
   }
-});
+};
+
+// /ai/generate-stream (mapped from /api/ai/generate-stream)
+app.post('/ai/generate-stream', handleGenerateStream);
+
+// /ai/chat (mapped from /api/ai/chat)
+app.post('/ai/chat', handleGenerateStream);
 
 // Catch-all: explicit 404 (helps diagnose rewrites / 405 confusion on Vercel).
 app.all('*', (req, res) => {

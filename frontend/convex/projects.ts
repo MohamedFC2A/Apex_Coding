@@ -29,7 +29,7 @@ export const ensureDefault = mutation({
         {
           path: 'README.md',
           content:
-            '# Nexus Apex\\n\\n© 2026 Nexus Apex | Made by NEXUS_APEX_CODING | Built by Matany Labs.\\n'
+            '# Nexus Apex\\n\\n© 2026 Nexus Apex | Built by Matany Labs.\\n'
         }
       ];
 

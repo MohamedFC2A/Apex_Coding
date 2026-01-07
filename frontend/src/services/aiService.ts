@@ -358,10 +358,12 @@ export const aiService = {
       };
 
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
-        const response = await fetch(apiUrl('/ai/generate'), {
+        const controller = new AbortController();
+        const response = await fetch(apiUrl('/ai/chat'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           mode: 'cors',
+          signal: controller.signal,
           body: JSON.stringify({
             prompt: streamPrompt,
             thinkingMode,
@@ -386,6 +388,29 @@ export const aiService = {
         let buffer = '';
         let sawAnyToken = false;
         let sawDoneStatus = false;
+        let streamErrored = false;
+
+        const stallMsRaw = Number((options as any).stallTimeoutMs ?? 35_000);
+        const stallMs = Number.isFinite(stallMsRaw) ? Math.max(8_000, stallMsRaw) : 35_000;
+        let lastUsefulAt = Date.now();
+        let stallTimer: any = null;
+
+        const kickStallTimer = () => {
+          lastUsefulAt = Date.now();
+          if (!stallTimer) {
+            stallTimer = globalThis.setInterval(() => {
+              // Only enforce stall detection after we have begun receiving tokens.
+              if (!sawAnyToken) return;
+              const idleFor = Date.now() - lastUsefulAt;
+              if (idleFor < stallMs) return;
+              try {
+                controller.abort();
+              } catch {
+                // ignore
+              }
+            }, 1000);
+          }
+        };
 
         const markerParser = new FileMarkerParser();
         markerParser.setResumeAppendPath(resumeAppendPath);
@@ -397,74 +422,92 @@ export const aiService = {
         const consumeToken = (tokenChunk: string) => {
           if (!tokenChunk) return;
           sawAnyToken = true;
+          kickStallTimer();
           streamTail = (streamTail + tokenChunk).slice(-streamTailMax);
           player.enqueue(tokenChunk);
         };
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          const decoded = decoder.decode(value, { stream: true });
-          if (decoded.length === 0) continue;
+            const decoded = decoder.decode(value, { stream: true });
+            if (decoded.length === 0) continue;
 
-          // If backend sends raw chunks (not SSE framed), forward immediately.
-          const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
-          if (!looksLikeSse && buffer.length === 0) {
-            const cleaned = decoded.replace(/^:[^\n]*\n+/gm, '');
-            if (cleaned.length > 0) consumeToken(cleaned);
-            continue;
+            // If backend sends raw chunks (not SSE framed), forward immediately.
+            const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
+            if (!looksLikeSse && buffer.length === 0) {
+              const cleaned = decoded.replace(/^:[^\n]*\n+/gm, '');
+              if (cleaned.length > 0) consumeToken(cleaned);
+              continue;
+            }
+
+            buffer += decoded;
+
+            let boundaryIndex = buffer.indexOf('\n\n');
+            while (boundaryIndex !== -1) {
+              const rawEvent = buffer.slice(0, boundaryIndex);
+              buffer = buffer.slice(boundaryIndex + 2);
+              boundaryIndex = buffer.indexOf('\n\n');
+
+              const { eventName, dataText } = parseSseEvent(rawEvent);
+              if (eventName === 'meta') {
+                onMeta({ raw: dataText });
+                if (dataText.trim().length > 0) kickStallTimer();
+                continue;
+              }
+
+              if (eventName === 'status') {
+                const idx = dataText.indexOf(':');
+                const phase = idx === -1 ? 'streaming' : dataText.slice(0, idx);
+                const message = idx === -1 ? dataText : dataText.slice(idx + 1);
+                onStatus(phase, message);
+                if (dataText.trim().length > 0) kickStallTimer();
+                if (phase === 'done') sawDoneStatus = true;
+                if (phase === 'error' && message) onError(message);
+                continue;
+              }
+
+              if (eventName === 'thought' && includeReasoning) {
+                if (dataText.trim().length > 0) kickStallTimer();
+                _onReasoning(dataText);
+                continue;
+              }
+
+              if (eventName === 'token') {
+                consumeToken(dataText);
+                continue;
+              }
+            }
+
+            // If we have a buffer that isn't SSE-framed, treat it as raw content.
+            if (buffer.length > 0 && !/(^|\n)event:\s/.test(buffer) && !/(^|\n)data:\s/.test(buffer)) {
+              const cleaned = buffer.replace(/^:[^\n]*\n+/gm, '');
+              buffer = '';
+              if (cleaned.length > 0) consumeToken(cleaned);
+            }
           }
-
-          buffer += decoded;
-
-          let boundaryIndex = buffer.indexOf('\n\n');
-          while (boundaryIndex !== -1) {
-            const rawEvent = buffer.slice(0, boundaryIndex);
-            buffer = buffer.slice(boundaryIndex + 2);
-            boundaryIndex = buffer.indexOf('\n\n');
-
-            const { eventName, dataText } = parseSseEvent(rawEvent);
-            if (eventName === 'meta') {
-              onMeta({ raw: dataText });
-              continue;
-            }
-
-            if (eventName === 'status') {
-              const idx = dataText.indexOf(':');
-              const phase = idx === -1 ? 'streaming' : dataText.slice(0, idx);
-              const message = idx === -1 ? dataText : dataText.slice(idx + 1);
-              onStatus(phase, message);
-              if (phase === 'done') sawDoneStatus = true;
-              if (phase === 'error' && message) onError(message);
-              continue;
-            }
-
-            if (eventName === 'thought' && includeReasoning) {
-              _onReasoning(dataText);
-              continue;
-            }
-
-            if (eventName === 'token') {
-              consumeToken(dataText);
-              continue;
-            }
-          }
-
-          // If we have a buffer that isn't SSE-framed, treat it as raw content.
-          if (buffer.length > 0 && !/(^|\n)event:\s/.test(buffer) && !/(^|\n)data:\s/.test(buffer)) {
-            const cleaned = buffer.replace(/^:[^\n]*\n+/gm, '');
-            buffer = '';
-            if (cleaned.length > 0) consumeToken(cleaned);
-          }
+        } catch (e: any) {
+          streamErrored = true;
+          // If we already received output, treat this as a cut-off stream and let the resume logic heal it.
+          if (!sawAnyToken) throw e;
         }
 
         if (!sawDoneStatus) onStatus('done', 'Complete');
 
         player.flushAll();
+        if (stallTimer) {
+          globalThis.clearInterval(stallTimer);
+          stallTimer = null;
+        }
 
         if (!sawAnyToken) {
           throw new Error('Backend connection failed or timed out');
+        }
+
+        if (streamErrored) {
+          onStatus('streaming', 'Connection stalled; attempting resume…');
         }
 
         return { markerParser };
@@ -472,7 +515,18 @@ export const aiService = {
 
       const maxResumeAttempts = 2;
 
-      const first = await runStreamOnce(prompt);
+      let first: { markerParser: any } | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          first = await runStreamOnce(prompt);
+          break;
+        } catch (e: any) {
+          if (attempt >= 1) throw e;
+          onStatus('streaming', 'Retrying…');
+          await new Promise((r) => setTimeout(r, 550));
+        }
+      }
+      if (!first) throw new Error('Streaming failed');
       const cut = first.markerParser.finalize();
 
       if (cut && maxResumeAttempts > 0) {

@@ -49,9 +49,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full">
-      <body className={`${inter.className} h-full bg-[#0B0F14] text-white antialiased`}>
+      <body className={`${inter.className} h-full bg-[#0B0F14] text-white antialiased overflow-hidden`}>
         <div className="min-h-full flex flex-col">
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
             <StyledComponentsRegistry>
               <Providers>{children}</Providers>
             </StyledComponentsRegistry>

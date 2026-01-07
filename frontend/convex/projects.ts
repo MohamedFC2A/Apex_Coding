@@ -1,74 +1,47 @@
 import { mutation } from './_generated/server';
+import { v } from "convex/values";
 
 const DEFAULT_PROJECT_SLUG = 'default';
 const DEFAULT_PROJECT_NAME = 'Nexus Apex Project';
 
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
-  let timer: any;
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    try {
-      clearTimeout(timer);
-    } catch {
-      // ignore
-    }
-  }
-};
-
 export const ensureDefault = mutation({
   args: {},
   handler: async (ctx) => {
-    return await withTimeout(
-      (async () => {
-        const existing = await ctx.db
-          .query('projects')
-          .withIndex('by_slug', (q) => q.eq('slug', DEFAULT_PROJECT_SLUG))
-          .first();
+    // 1. البحث عن المشروع باستخدام الـ Index الصحيح عندك
+    let project = await ctx.db
+      .query('projects')
+      .withIndex('by_slug', (q) => q.eq('slug', DEFAULT_PROJECT_SLUG))
+      .first();
 
-        const projectId =
-          existing?._id ??
-          (await ctx.db.insert('projects', {
-            slug: DEFAULT_PROJECT_SLUG,
-            name: DEFAULT_PROJECT_NAME,
-            createdAt: Date.now()
-          }));
+    let projectId;
 
-        const anyFile = await ctx.db
-          .query('files')
-          .withIndex('by_project', (q) => q.eq('projectId', projectId))
-          .first();
+    if (!project) {
+      // 2. إنشاء المشروع
+      projectId = await ctx.db.insert('projects', {
+        slug: DEFAULT_PROJECT_SLUG,
+        name: DEFAULT_PROJECT_NAME,
+        createdAt: Date.now(),
+      });
+    } else {
+      projectId = project._id;
+    }
 
-        if (!anyFile) {
-          const now = Date.now();
-          const seed = [
-            { path: 'src/components/.keep', content: '' },
-            { path: 'src/hooks/.keep', content: '' },
-            { path: 'src/services/.keep', content: '' },
-            { path: 'convex/.keep', content: '' },
-            {
-              path: 'README.md',
-              content: '# Nexus Apex\n\n© 2026 Nexus Apex | Built by Matany Labs.\n'
-            }
-          ];
+    // 3. التحقق من وجود ملفات باستخدام الـ Index 'by_project'
+    const anyFile = await ctx.db
+      .query('files')
+      .withIndex('by_project', (q) => q.eq('projectId', projectId))
+      .first();
 
-          for (const file of seed) {
-            await ctx.db.insert('files', {
-              projectId,
-              path: file.path,
-              content: file.content,
-              updatedAt: now
-            });
-          }
-        }
+    // 4. لو مفيش ملفات، انشئ ملف واحد فقط (README) لضمان السرعة ومنع الـ Timeout
+    if (!anyFile) {
+      await ctx.db.insert('files', {
+        projectId,
+        path: 'README.md',
+        content: '# Nexus Apex\n\n© 2026 Nexus Apex | Built by Matany Labs.\n',
+        updatedAt: Date.now(),
+      });
+    }
 
-        return { projectId, name: DEFAULT_PROJECT_NAME };
-      })(),
-      5_000,
-      'projects:ensureDefault timed out'
-    );
-  }
+    return { projectId, name: DEFAULT_PROJECT_NAME };
+  },
 });

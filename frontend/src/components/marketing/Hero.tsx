@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 import { ConvexReactClient } from 'convex/react';
@@ -12,6 +12,66 @@ const fadeUp = {
   hidden: { opacity: 0, y: 14, filter: 'blur(8px)' },
   show: { opacity: 1, y: 0, filter: 'blur(0px)' }
 };
+
+function TypingSearch() {
+  const [text, setText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [loopNum, setLoopNum] = useState(0);
+  const [typingSpeed, setTypingSpeed] = useState(150);
+  
+  const phrases = [
+    "Build a SaaS...",
+    "Design a Portfolio...",
+    "Create AI Chatbot...",
+    "Launch E-commerce...",
+    "Develop Mobile App..."
+  ];
+
+  useEffect(() => {
+    const handleTyping = () => {
+      const i = loopNum % phrases.length;
+      const fullText = phrases[i];
+
+      setText(fullText.substring(0, text.length + (isDeleting ? -1 : 1)));
+      setTypingSpeed(isDeleting ? 50 : 150);
+
+      if (!isDeleting && text === fullText) {
+        setTypingSpeed(2000);
+        setIsDeleting(true);
+      } else if (isDeleting && text === '') {
+        setIsDeleting(false);
+        setLoopNum(loopNum + 1);
+        setTypingSpeed(100);
+      }
+    };
+
+    const timer = setTimeout(handleTyping, typingSpeed);
+    return () => clearTimeout(timer);
+  }, [text, isDeleting, loopNum, typingSpeed, phrases]);
+
+  return (
+    <div className="mt-6 max-w-2xl">
+      <div className="relative">
+        <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-fuchsia-500/20 blur-xl" />
+        <div className="relative rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
+          <div className="flex items-center gap-3 px-5 py-4">
+            <svg className="h-5 w-5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={text}
+              readOnly
+              placeholder=""
+              className="flex-1 bg-transparent text-white placeholder-white/40 outline-none"
+            />
+            <span className="h-4 w-0.5 bg-white/40 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function Hero() {
   const router = useRouter();
@@ -107,6 +167,7 @@ export function Hero() {
         <p className="mt-4 max-w-2xl text-pretty text-base leading-relaxed text-white/70 md:text-lg">
           The first Graph-Based AI IDE that understands your project structure, not just your files.
         </p>
+        <TypingSearch />
       </motion.div>
 
       <motion.div

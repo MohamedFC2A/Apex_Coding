@@ -49,8 +49,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} bg-[#0B0F14] text-white antialiased`}>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.className} bg-[#0B0F14] text-white antialiased`} suppressHydrationWarning>
         <div className="min-h-screen flex flex-col">
           <div className="flex-1 min-h-0 overflow-x-hidden">
             <StyledComponentsRegistry>

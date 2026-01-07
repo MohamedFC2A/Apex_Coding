@@ -1,23 +1,29 @@
 'use client';
 
 import { motion } from 'framer-motion';
-
-const items = [
-  {
-    title: 'Graph context, not file guessing',
-    body: 'Understand structure, dependencies, and intent—so edits land in the right place.'
-  },
-  {
-    title: 'Streaming generation with recovery',
-    body: 'SSE streaming, stall detection, auto-retry, and resume keeps progress moving under real-world latency.'
-  },
-  {
-    title: 'Convex-backed persistence',
-    body: 'Project state syncs to the database so refreshes don’t wipe your work.'
-  }
-];
+import { useLanguage } from '@/context/LanguageContext';
 
 export function ValueProp() {
+  const { t } = useLanguage();
+  
+  const items = [
+    {
+      key: 'context',
+      title: t('value.context.title'),
+      body: t('value.context.body')
+    },
+    {
+      key: 'streaming',
+      title: t('value.streaming.title'),
+      body: t('value.streaming.body')
+    },
+    {
+      key: 'persistence',
+      title: t('value.persistence.title'),
+      body: t('value.persistence.body')
+    }
+  ];
+  
   return (
     <motion.section
       initial="hidden"
@@ -32,13 +38,14 @@ export function ValueProp() {
     >
       {items.map((item) => (
         <motion.div
-          key={item.title}
+          key={item.key}
           variants={{
             hidden: { opacity: 0, y: 14, filter: 'blur(8px)' },
             show: { opacity: 1, y: 0, filter: 'blur(0px)' }
           }}
           transition={{ duration: 0.65, ease: [0.2, 0.8, 0.2, 1] }}
-          className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md"
+          whileHover={{ scale: 1.02, y: -4 }}
+          className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md hover:bg-white/8 transition-colors cursor-pointer"
         >
           <div className="text-sm font-semibold tracking-wide text-white/90">{item.title}</div>
           <div className="mt-2 text-sm leading-relaxed text-white/65">{item.body}</div>

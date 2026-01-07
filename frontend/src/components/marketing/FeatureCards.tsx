@@ -1,23 +1,29 @@
 'use client';
 
 import { motion } from 'framer-motion';
-
-const cards = [
-  {
-    title: 'Graph-Based Understanding',
-    body: 'Nexus Apex maps your repo into a navigable graph so the AI reasons about structure, dependencies, and intent.'
-  },
-  {
-    title: 'Keystroke Persistence',
-    body: 'Every edit is captured in real time — refresh without fear. Convex-backed project state keeps you moving.'
-  },
-  {
-    title: 'Instant Feedback',
-    body: 'Skeleton loaders, streaming output, and a floating plan keep progress visible and perceived performance high.'
-  }
-];
+import { useLanguage } from '@/context/LanguageContext';
 
 export function FeatureCards() {
+  const { t } = useLanguage();
+  
+  const cards = [
+    {
+      key: 'graph',
+      title: t('feature.graph.title'),
+      body: t('feature.graph.body')
+    },
+    {
+      key: 'persistence',
+      title: t('feature.persistence.title'),
+      body: t('feature.persistence.body')
+    },
+    {
+      key: 'feedback',
+      title: t('feature.feedback.title'),
+      body: t('feature.feedback.body')
+    }
+  ];
+  
   return (
     <motion.div
       initial="hidden"
@@ -31,13 +37,14 @@ export function FeatureCards() {
     >
       {cards.map((card) => (
         <motion.div
-          key={card.title}
+          key={card.key}
           variants={{
             hidden: { opacity: 0, y: 14, filter: 'blur(8px)' },
             show: { opacity: 1, y: 0, filter: 'blur(0px)' }
           }}
           transition={{ duration: 0.65, ease: [0.2, 0.8, 0.2, 1] }}
-          className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md"
+          whileHover={{ scale: 1.02, y: -4 }}
+          className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md hover:bg-white/8 transition-colors cursor-pointer"
         >
           <div className="text-sm font-semibold tracking-wide text-white/90">{card.title}</div>
           <div className="mt-2 text-sm leading-relaxed text-white/65">{card.body}</div>

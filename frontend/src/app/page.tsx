@@ -1,11 +1,16 @@
+'use client';
+
 import { Hero } from '@/components/marketing/Hero';
 import { FeatureCards } from '@/components/marketing/FeatureCards';
 import { ValueProp } from '@/components/marketing/ValueProp';
 import { LeadCapture } from '@/components/marketing/LeadCapture';
+import { DemoSection } from '@/components/marketing/DemoSection';
+import { FloatingPlan } from '@/components/FloatingPlan';
 
 export default function HomePage() {
   return (
     <>
+      <FloatingPlan />
       <header className="relative min-h-[calc(100vh-56px)] overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute inset-0 bg-[radial-gradient(1200px_700px_at_20%_15%,rgba(34,211,238,0.18),transparent_55%),radial-gradient(1100px_740px_at_85%_80%,rgba(168,85,247,0.18),transparent_55%),radial-gradient(900px_520px_at_60%_35%,rgba(255,255,255,0.04),transparent_60%)]" />
@@ -27,12 +32,7 @@ export default function HomePage() {
           <LeadCapture />
         </section>
         <section id="demo" className="mx-auto max-w-6xl px-6 pb-20">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
-            <div className="text-sm font-semibold tracking-wide text-white/85">Demo</div>
-            <div className="mt-2 text-sm leading-relaxed text-white/65">
-              Add your demo video embed here.
-            </div>
-          </div>
+          <DemoSection />
         </section>
       </main>
     </>

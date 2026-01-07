@@ -4,6 +4,11 @@
 
 @layer base {
   * { box-sizing: border-box; }
+  html, body {
+    overflow-y: auto !important;
+    height: auto !important;
+    min-height: 100vh;
+  }
   body {
     background: var(--nexus-deepest);
     color: rgba(255, 255, 255, 0.95);
@@ -12,9 +17,26 @@
     -moz-osx-font-smoothing: grayscale;
     margin: 0;
     padding: 0;
-    overflow: hidden;
   }
   code { font-family: source-code-pro, Menlo, Monaco, monospace; }
+}
+
+html, body {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #0f172a;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 10px;
 }
 
 /* ==================== DARK LIQUID GLASS CORE ==================== */

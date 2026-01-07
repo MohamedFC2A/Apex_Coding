@@ -17,6 +17,7 @@ export function Hero() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
   const convexClient = useMemo(() => {
@@ -27,14 +28,50 @@ export function Hero() {
   const handleStart = async () => {
     if (isStarting) return;
     setIsStarting(true);
+    setStartError(null);
+    let shouldNavigate = true;
     try {
       if (convexClient) {
-        await convexClient.mutation((api as any).projects.ensureDefault, {} as any);
+        const withTimeout = async <T,>(p: Promise<T>, timeoutMs: number) => {
+          let timer: any;
+          const timeout = new Promise<T>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('Upstream timed out')), timeoutMs);
+          });
+          try {
+            return await Promise.race([p, timeout]);
+          } finally {
+            try {
+              clearTimeout(timer);
+            } catch {
+              // ignore
+            }
+          }
+        };
+
+        const attempt = async () =>
+          await withTimeout(convexClient.mutation((api as any).projects.ensureDefault, {} as any), 5_000);
+
+        let lastErr: any = null;
+        for (let i = 0; i < 3; i++) {
+          try {
+            await attempt();
+            lastErr = null;
+            break;
+          } catch (e: any) {
+            lastErr = e;
+            await new Promise((r) => setTimeout(r, 450 * (i + 1)));
+          }
+        }
+
+        if (lastErr) throw lastErr;
       }
-    } catch {
-      // If Convex isn't configured (or is unavailable), still allow navigation into the IDE.
+    } catch (e: any) {
+      if (convexClient) {
+        setStartError(e?.message || 'Failed to initialize project. Please retry.');
+        shouldNavigate = false;
+      }
     } finally {
-      startTransition(() => router.push('/app'));
+      if (shouldNavigate) startTransition(() => router.push('/app'));
       setIsStarting(false);
     }
   };
@@ -85,7 +122,7 @@ export function Hero() {
           className="inline-flex items-center justify-center rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-md transition hover:bg-white/15 disabled:opacity-60"
           disabled={isStarting || isPending}
         >
-          Start Coding Free
+          {isStarting || isPending ? 'Starting…' : 'Start Coding Free'}
         </button>
         <Link
           href="#demo"
@@ -94,6 +131,22 @@ export function Hero() {
           Watch Demo
         </Link>
       </motion.div>
+
+      {startError && (
+        <div className="mt-4 max-w-2xl rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-white/80 backdrop-blur-md">
+          <div className="font-semibold text-white/90">Initialization failed</div>
+          <div className="mt-1 text-white/70">{startError}</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleStart}
+              className="inline-flex items-center justify-center rounded-xl bg-white/10 px-4 py-2 text-xs font-semibold text-white ring-1 ring-white/10 backdrop-blur-md transition hover:bg-white/15"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       <motion.div
         variants={fadeUp}

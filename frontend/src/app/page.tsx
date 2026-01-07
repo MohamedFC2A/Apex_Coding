@@ -1,5 +1,7 @@
 import { Hero } from '@/components/marketing/Hero';
 import { FeatureCards } from '@/components/marketing/FeatureCards';
+import { ValueProp } from '@/components/marketing/ValueProp';
+import { LeadCapture } from '@/components/marketing/LeadCapture';
 
 export default function HomePage() {
   return (
@@ -18,6 +20,12 @@ export default function HomePage() {
         <section className="mx-auto max-w-6xl px-6 pb-16">
           <FeatureCards />
         </section>
+        <section className="mx-auto max-w-6xl px-6 pb-14">
+          <ValueProp />
+        </section>
+        <section className="mx-auto max-w-6xl px-6 pb-20">
+          <LeadCapture />
+        </section>
         <section id="demo" className="mx-auto max-w-6xl px-6 pb-20">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
             <div className="text-sm font-semibold tracking-wide text-white/85">Demo</div>
@@ -30,4 +38,3 @@ export default function HomePage() {
     </>
   );
 }
-

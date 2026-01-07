@@ -1,7 +1,6 @@
 // api/index.js (Vercel Serverless, CommonJS)
 const express = require('express');
 const cors = require('cors');
-const JSZip = require('jszip');
 require('dotenv').config();
 
 const app = express();
@@ -87,6 +86,8 @@ app.post(['/download/zip', '/api/download/zip'], async (req, res) => {
     const { files } = req.body || {};
     if (!files) return res.status(400).json({ error: 'files is required' });
 
+    // Lazy-load to reduce cold-start cost for non-download requests.
+    const JSZip = require('jszip');
     const zip = new JSZip();
     const fileCount = addFilesToZip(zip, files);
     if (fileCount === 0) return res.status(400).json({ error: 'No files to zip' });

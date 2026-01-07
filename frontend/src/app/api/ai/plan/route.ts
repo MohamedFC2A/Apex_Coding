@@ -1,4 +1,4 @@
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 const PLAN_SYSTEM_PROMPT =
   'You are a Software Architect. Output ONLY raw JSON (no markdown, no code fences) with shape {"title":"...","steps":[{"id":"1","title":"..."}]}.';
@@ -60,11 +60,27 @@ export async function POST(req: Request) {
       ]
     };
 
-    const res = await fetch(`${baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ ...request, response_format: { type: 'json_object' } })
-    });
+    const fetchOnce = async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12_000);
+      try {
+        return await fetch(`${baseURL}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ ...request, response_format: { type: 'json_object' } }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    let res = await fetchOnce();
+    if (!res.ok) {
+      // One lightweight retry to smooth out transient upstream timeouts.
+      await new Promise((r) => setTimeout(r, 450));
+      res = await fetchOnce();
+    }
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -101,4 +117,3 @@ export async function POST(req: Request) {
     });
   }
 }
-

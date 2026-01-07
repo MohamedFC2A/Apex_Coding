@@ -1,4 +1,4 @@
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 const CODE_STREAM_SYSTEM_PROMPT = `
 You are an expert full-stack code generator.

@@ -57,13 +57,40 @@ function ConvexProjectSyncEnabled() {
     (async () => {
       setIsHydrating(true);
       try {
-        const result = (await ensureDefaultProject({} as any)) as any;
+        const withTimeout = async <T,>(p: Promise<T>, timeoutMs: number) => {
+          let timer: any;
+          const timeout = new Promise<T>((_, reject) => {
+            timer = globalThis.setTimeout(() => reject(new Error('Upstream timed out')), timeoutMs);
+          });
+          try {
+            return await Promise.race([p, timeout]);
+          } finally {
+            globalThis.clearTimeout(timer as any);
+          }
+        };
+
+        let result: any = null;
+        let lastErr: any = null;
+        for (let i = 0; i < 3; i++) {
+          try {
+            result = await withTimeout(ensureDefaultProject({} as any), 5_000);
+            lastErr = null;
+            break;
+          } catch (e: any) {
+            lastErr = e;
+            await new Promise((r) => globalThis.setTimeout(r as any, 450 * (i + 1)));
+          }
+        }
+        if (lastErr) throw lastErr;
         if (cancelled) return;
 
         const nextProjectId = String(result?.projectId || '');
         setProjectId(nextProjectId || null);
         setProjectIdInStore(nextProjectId);
         if (typeof result?.name === 'string') setProjectName(result.name);
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.error('[convex] ensureDefault failed', e);
       } finally {
         if (!cancelled) setIsHydrating(false);
       }

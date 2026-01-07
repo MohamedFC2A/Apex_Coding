@@ -23,11 +23,38 @@ export const aiService = {
     try {
       const PLAN_URL = apiUrl('/ai/plan');
 
-      const response = await fetch(PLAN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, thinkingMode })
-      });
+      const postOnce = async () => {
+        const controller = new AbortController();
+        const timer = globalThis.setTimeout(() => controller.abort(), 12_000);
+        try {
+          return await fetch(PLAN_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({ prompt, thinkingMode })
+          });
+        } finally {
+          globalThis.clearTimeout(timer as any);
+        }
+      };
+
+      let response: Response | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          response = await postOnce();
+          if (response.ok) break;
+          if (response.status === 502 || response.status === 503 || response.status === 504) {
+            await new Promise((r) => globalThis.setTimeout(r as any, 450));
+            continue;
+          }
+          break;
+        } catch {
+          if (attempt >= 1) throw new Error('Upstream timed out');
+          await new Promise((r) => globalThis.setTimeout(r as any, 450));
+        }
+      }
+
+      if (!response) throw new Error('Plan failed');
 
       if (!response.ok) {
         const text = await response.text().catch(() => '');

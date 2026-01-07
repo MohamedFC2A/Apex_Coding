@@ -1,4 +1,4 @@
-import { mutation } from './_generated/server';
+import { mutation } from './_generated/server'; // تم تصحيح import لتكون بحرف صغير
 
 const DEFAULT_PROJECT_SLUG = 'default';
 const DEFAULT_PROJECT_NAME = 'Nexus Apex Project';

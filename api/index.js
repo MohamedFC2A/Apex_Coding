@@ -315,7 +315,7 @@ CRITICAL OUTPUT RULES (NON-NEGOTIABLE):
 - No filler text. Output ONLY file markers and file contents.
 - If you output any HTML (any *.html file), you MUST include this exact footer immediately before the closing </body> tag (even for Hello World):
 <footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
-  © 2026 Nexus Apex | Made by NEXUS_APEX_CODING | Built by Matany Labs.
+  © 2026 Nexus Apex | Built by Matany Labs.
 </footer>
 - Every project MUST include the Nexus Apex footer in the main layout (React/TSX App component or HTML page).
 - If the user asks for a "web app" or "dashboard", you MUST generate a Next.js (App Router) + TypeScript + Tailwind project.

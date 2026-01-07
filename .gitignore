@@ -7,6 +7,10 @@ dist/
 */dist/
 build/
 *.tsbuildinfo
+.next/
+*/.next/
+.vercel/
+*/.vercel/
 
 # Temp projects
 backend/temp-projects/
@@ -37,3 +41,7 @@ Thumbs.db
 
 # Testing
 coverage/
+
+# Convex generated
+convex/_generated/
+*/convex/_generated/

@@ -1,1 +1,0 @@
-"use strict";exports.id=873,exports.ids=[873],exports.modules={3873:(e,t,r)=>{r.r(t),r.d(t,{default:()=>s});let s=(0,r(2772).createProxy)(String.raw`C:\Projects\Apex_Coding\frontend\src\app\app\IDEClient.tsx#default`)}};

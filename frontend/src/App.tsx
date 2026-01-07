@@ -831,11 +831,11 @@ function App() {
       };
 
       const BRANDING_FOOTER = `<footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
-  © 2026 Nexus Apex | Made by NEXUS_APEX_CODING
+  © 2026 Nexus Apex | Built by Matany Labs.
 </footer>`;
 
       const injectBrandingFooter = (html: string) => {
-        const signature = '© 2026 Nexus Apex | Made by NEXUS_APEX_CODING';
+        const signature = '© 2026 Nexus Apex | Built by Matany Labs.';
         if (html.includes(signature)) return html;
 
         const footerBlock = `\n${BRANDING_FOOTER}\n`;
@@ -1222,7 +1222,7 @@ function App() {
         activeBlock,
         '',
         'Branding rule: Ensure the Nexus Apex footer exists in the main layout (React App component or HTML page):',
-        '© 2026 Nexus Apex | Made by NEXUS_APEX_CODING | Built by Matany Labs.',
+        '© 2026 Nexus Apex | Built by Matany Labs.',
         'Output only markers + file contents. No filler.'
       ].join('\n');
     },
@@ -1480,7 +1480,7 @@ function App() {
       </Container>
 
       <DrawerScrim $open={sidebarOpen} onClick={() => setSidebarOpen(false)} />
-      <DrawerPanel $open={sidebarOpen} aria-hidden={!sidebarOpen}>
+      <DrawerPanel $open={sidebarOpen}>
         <DrawerHeader>
           <DrawerTitle>Workspace</DrawerTitle>
           <DrawerClose type="button" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar">
@@ -1496,9 +1496,8 @@ function App() {
           setHistoryOpen(false);
           setSettingsOpen(false);
         }}
-        aria-hidden={!(historyOpen || settingsOpen)}
       />
-      <OverlayPanel $open={historyOpen} aria-hidden={!historyOpen}>
+      <OverlayPanel $open={historyOpen}>
         <OverlayHeader>
           History
           <button
@@ -1515,7 +1514,7 @@ function App() {
         </OverlayBody>
       </OverlayPanel>
 
-      <OverlayPanel $open={settingsOpen} aria-hidden={!settingsOpen}>
+      <OverlayPanel $open={settingsOpen}>
         <OverlayHeader>
           Project Settings
           <button

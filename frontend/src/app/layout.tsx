@@ -1,12 +1,19 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 
 import '@/styles/globals.css';
 import '@/styles/theme.css';
 
 import { BrandFooter } from '@/components/BrandFooter';
 import { StyledComponentsRegistry } from '@/components/StyledComponentsRegistry';
+import { Providers } from '@/app/providers';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nexusapex.ai';
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap'
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -30,16 +37,24 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true
+  },
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico' }
+    ]
   }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full">
-      <body className="h-full bg-[#0B0F14] text-white antialiased">
+      <body className={`${inter.className} h-full bg-[#0B0F14] text-white antialiased`}>
         <div className="min-h-full flex flex-col">
           <div className="flex-1 min-h-0">
-            <StyledComponentsRegistry>{children}</StyledComponentsRegistry>
+            <StyledComponentsRegistry>
+              <Providers>{children}</Providers>
+            </StyledComponentsRegistry>
           </div>
           <BrandFooter />
         </div>

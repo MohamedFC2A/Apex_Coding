@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createWithEqualityFn } from 'zustand/traditional';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { FileSystem, GenerationStatus, ProjectFile } from '@/types';
 import { useProjectStore } from '@/stores/projectStore';
@@ -394,7 +394,7 @@ const buildInitialState = (): AIStoreState => ({
 
 const initialState: AIStoreState = buildInitialState();
 
-export const useAIStore = create<AIState>()(
+export const useAIStore = createWithEqualityFn<AIState>()(
   persist(
     (set, get) => ({
       ...initialState,

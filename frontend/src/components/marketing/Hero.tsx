@@ -1,7 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState, useTransition } from 'react';
 import { motion } from 'framer-motion';
+
+import { ConvexReactClient } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 14, filter: 'blur(8px)' },
@@ -9,11 +14,44 @@ const fadeUp = {
 };
 
 export function Hero() {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [isStarting, setIsStarting] = useState(false);
+
+  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+  const convexClient = useMemo(() => {
+    if (!convexUrl) return null;
+    return new ConvexReactClient(convexUrl);
+  }, [convexUrl]);
+
+  const handleStart = async () => {
+    if (isStarting) return;
+    setIsStarting(true);
+    try {
+      if (convexClient) {
+        await convexClient.mutation((api as any).projects.ensureDefault, {} as any);
+      }
+    } catch {
+      // If Convex isn't configured (or is unavailable), still allow navigation into the IDE.
+    } finally {
+      startTransition(() => router.push('/app'));
+      setIsStarting(false);
+    }
+  };
+
   return (
-    <div className="mx-auto max-w-6xl px-6 pt-16 pb-10 md:pt-24 md:pb-14">
-      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 backdrop-blur-2xl">
-        <span className="h-2 w-2 rounded-full bg-cyan-300/90" />
-        Built for Developers
+    <div className="mx-auto flex min-h-[calc(100vh-56px)] max-w-6xl flex-col justify-center px-6 pt-14 pb-12 md:pt-20">
+      <div className="flex items-center justify-between gap-4">
+        <Link href="/" className="inline-flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
+            <span className="h-5 w-5 rounded-full bg-gradient-to-br from-cyan-300/90 via-fuchsia-300/90 to-cyan-300/90" />
+          </span>
+          <span className="text-sm font-semibold tracking-wide text-white/85">Nexus Apex</span>
+        </Link>
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 backdrop-blur-md">
+          <span className="h-2 w-2 rounded-full bg-cyan-300/90" />
+          Built for Developers
+        </div>
       </div>
 
       <motion.div
@@ -21,11 +59,14 @@ export function Hero() {
         initial="hidden"
         animate="show"
         transition={{ duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
-        className="mt-6"
+        className="mt-10"
       >
         <h1 className="text-balance text-4xl font-semibold tracking-tight md:text-6xl">
-          Code at the Speed of Thought with Nexus Apex.
+          <span className="bg-gradient-to-r from-cyan-200 via-fuchsia-200 to-cyan-200 bg-clip-text text-transparent">
+            Code at the Speed of Thought with Nexus Apex.
+          </span>
         </h1>
+        <h2 className="sr-only">Graph-Based AI IDE</h2>
         <p className="mt-4 max-w-2xl text-pretty text-base leading-relaxed text-white/70 md:text-lg">
           The first Graph-Based AI IDE that understands your project structure, not just your files.
         </p>
@@ -38,15 +79,17 @@ export function Hero() {
         transition={{ delay: 0.1, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
         className="mt-8 flex flex-wrap items-center gap-3"
       >
-        <Link
-          href="/app"
-          className="inline-flex items-center justify-center rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-2xl transition hover:bg-white/15"
+        <button
+          type="button"
+          onClick={handleStart}
+          className="inline-flex items-center justify-center rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-md transition hover:bg-white/15 disabled:opacity-60"
+          disabled={isStarting || isPending}
         >
           Start Coding Free
-        </Link>
+        </button>
         <Link
           href="#demo"
-          className="inline-flex items-center justify-center rounded-2xl border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold text-white/85 backdrop-blur-2xl transition hover:bg-white/5"
+          className="inline-flex items-center justify-center rounded-2xl border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold text-white/85 backdrop-blur-md transition hover:bg-white/5"
         >
           Watch Demo
         </Link>
@@ -59,7 +102,7 @@ export function Hero() {
         transition={{ delay: 0.2, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
         className="mt-10"
       >
-        <div className="inline-flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/75 backdrop-blur-2xl">
+        <div className="inline-flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/75 backdrop-blur-md">
           <span className="text-white/55">Powered by</span>
           <span className="rounded-full bg-gradient-to-r from-cyan-400/20 to-fuchsia-500/20 px-3 py-1 ring-1 ring-white/10">
             DeepSeek
@@ -73,4 +116,3 @@ export function Hero() {
     </div>
   );
 }
-

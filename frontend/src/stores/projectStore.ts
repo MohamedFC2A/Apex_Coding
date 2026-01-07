@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createWithEqualityFn } from 'zustand/traditional';
 import { persist } from 'zustand/middleware';
 import { ProjectFile, FileStructure } from '@/types';
 
@@ -39,7 +39,7 @@ const initialState = {
   isHydrating: false
 };
 
-export const useProjectStore = create<ProjectState>()(
+export const useProjectStore = createWithEqualityFn<ProjectState>()(
   persist(
     (set) => ({
       ...initialState,

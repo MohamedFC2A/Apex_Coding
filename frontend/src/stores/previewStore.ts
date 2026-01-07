@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createWithEqualityFn } from 'zustand/traditional';
 import { ExecutionResult, LogEntry } from '@/types';
 
 export type RuntimeStatus = 'idle' | 'booting' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
@@ -32,7 +32,7 @@ const initialState = {
   runtimeMessage: null
 };
 
-export const usePreviewStore = create<PreviewState>((set) => ({
+export const usePreviewStore = createWithEqualityFn<PreviewState>((set) => ({
   ...initialState,
   
   setIsExecuting: (isExecuting) => set({ isExecuting }),

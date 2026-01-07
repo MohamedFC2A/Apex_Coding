@@ -8,7 +8,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import type { ProjectFile } from '@/types';
 
 // Note: `convex dev` typically generates this, but we ship a lightweight proxy to keep the app compiling.
-import { api } from '../../../convex/_generated/api';
+import { api } from '@convex/_generated/api';
 
 const convexEnabled = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL);
 

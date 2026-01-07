@@ -6,7 +6,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { motion } from 'framer-motion';
 
 import { ConvexReactClient } from 'convex/react';
-import { api } from '../../../convex/_generated/api';
+import { api } from '@convex/_generated/api';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 14, filter: 'blur(8px)' },

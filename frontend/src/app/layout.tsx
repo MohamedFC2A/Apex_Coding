@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 
 import '@/styles/globals.css';
 import '@/styles/theme.css';
+import './globals.css';
 
 import { BrandFooter } from '@/components/BrandFooter';
 import { StyledComponentsRegistry } from '@/components/StyledComponentsRegistry';

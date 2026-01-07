@@ -1,4 +1,4 @@
-import { mutation } from 'convex/server';
+import { mutation } from './_generated/server';
 
 const DEFAULT_PROJECT_SLUG = 'default';
 const DEFAULT_PROJECT_NAME = 'Nexus Apex Project';
@@ -72,4 +72,3 @@ export const ensureDefault = mutation({
     );
   }
 });
-

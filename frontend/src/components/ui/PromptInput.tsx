@@ -1,6 +1,19 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { useAIStore } from '../../stores/aiStore';
+
+const CREATIVE_HINTS = [
+  'Build a responsive SaaS dashboard...',
+  'Create a Neumorphic weather app...',
+  'Design a dark-themed 3D portfolio...',
+  'Develop a real-time chat with WebSockets...',
+  'Code a minimalist coffee brand page...',
+  'Build a live crypto price tracker...',
+  'Create a glassmorphism login UI...',
+  'Design an AI image generator tool...',
+  'Develop a fitness dashboard with charts...',
+  'Code a cinematic movie preview site...'
+] as const;
 
 const Shell = styled.div<{ $mode: 'create' | 'edit' }>`
   width: 100%;
@@ -27,7 +40,7 @@ const Shell = styled.div<{ $mode: 'create' | 'edit' }>`
     position: fixed;
     left: 14px;
     right: 14px;
-    bottom: 14px;
+    bottom: calc(14px + 34px);
     max-width: none;
     z-index: 80;
     flex-direction: column;
@@ -44,6 +57,46 @@ const Glow = styled.div<{ $mode: 'create' | 'edit' }>`
   filter: blur(18px);
   opacity: 0.9;
   pointer-events: none;
+`;
+
+const InputWrap = styled.div`
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+`;
+
+const HintOverlay = styled.div`
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px 2px;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-start;
+  color: rgba(255, 255, 255, 0.44);
+`;
+
+const HintText = styled.span<{ $steps: number; $durationMs: number; $targetWidthCh: number }>`
+  --target-width: ${(p) => `${Math.max(1, p.$targetWidthCh)}ch`};
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  width: 0ch;
+  max-width: 100%;
+  line-height: 1.4;
+  font-size: 15px;
+  animation: nexus-typing ${(p) => p.$durationMs}ms steps(${(p) => Math.max(12, p.$steps)}, end) infinite;
+`;
+
+const Cursor = styled.span`
+  display: inline-block;
+  width: 10px;
+  margin-left: 2px;
+  opacity: 0.65;
+  animation: nexus-blink 900ms steps(1, end) infinite;
 `;
 
 const Input = styled.textarea<{ $mode: 'create' | 'edit' }>`
@@ -68,6 +121,39 @@ const Input = styled.textarea<{ $mode: 'create' | 'edit' }>`
 
   &:focus {
     color: rgba(255, 255, 255, 0.96);
+  }
+
+  @keyframes nexus-typing {
+    0% {
+      width: 0ch;
+      opacity: 0;
+    }
+    8% {
+      opacity: 1;
+    }
+    45% {
+      width: var(--target-width);
+      opacity: 1;
+    }
+    78% {
+      width: var(--target-width);
+      opacity: 1;
+    }
+    100% {
+      width: 0ch;
+      opacity: 0;
+    }
+  }
+
+  @keyframes nexus-blink {
+    0%,
+    49% {
+      opacity: 0;
+    }
+    50%,
+    100% {
+      opacity: 0.8;
+    }
   }
 `;
 
@@ -99,23 +185,67 @@ interface PromptInputProps {
 export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(({ placeholder, controls, className }, ref) => {
   const { prompt, setPrompt, isGenerating, interactionMode } = useAIStore();
   const mode = interactionMode === 'edit' ? 'edit' : 'create';
+  const [focused, setFocused] = useState(false);
+
+  const [hint, setHint] = useState(() => CREATIVE_HINTS[Math.floor(Math.random() * CREATIVE_HINTS.length)]);
+
+  useEffect(() => {
+    if (mode !== 'create') return;
+    if (focused) return;
+    if (prompt.trim().length > 0) return;
+    setHint((prev) => prev || CREATIVE_HINTS[Math.floor(Math.random() * CREATIVE_HINTS.length)]);
+  }, [focused, mode, prompt]);
+
+  const showCreativeHint = mode === 'create' && !placeholder && !focused && prompt.trim().length === 0 && !isGenerating;
+  const hintSteps = hint.length;
+  const hintDurationMs = useMemo(() => {
+    const base = 2400;
+    const perChar = 65;
+    const ms = base + perChar * hint.length;
+    return Math.max(3200, Math.min(ms, 9000));
+  }, [hint.length]);
+
+  const displayedPlaceholder =
+    placeholder ||
+    (mode === 'edit' ? 'What would you like to change in the current code?' : showCreativeHint ? '' : 'Describe what you want to build…');
 
   return (
     <Shell className={className} $mode={mode}>
       <Glow $mode={mode} />
-      <Input
-        ref={ref}
-        $mode={mode}
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        placeholder={
-          placeholder ||
-          (mode === 'edit'
-            ? 'What would you like to change in the current code?'
-            : 'Describe what you want to build…')
-        }
-        disabled={isGenerating}
-      />
+      <InputWrap>
+        {showCreativeHint ? (
+          <HintOverlay aria-hidden="true">
+            <HintText
+              $steps={hintSteps}
+              $durationMs={hintDurationMs}
+              $targetWidthCh={hintSteps}
+              onAnimationIteration={() => {
+                setHint((prev) => {
+                  if (CREATIVE_HINTS.length <= 1) return prev;
+                  let next = prev;
+                  for (let i = 0; i < 6 && next === prev; i++) {
+                    next = CREATIVE_HINTS[Math.floor(Math.random() * CREATIVE_HINTS.length)];
+                  }
+                  return next;
+                });
+              }}
+            >
+              {hint}
+            </HintText>
+            <Cursor aria-hidden="true">|</Cursor>
+          </HintOverlay>
+        ) : null}
+        <Input
+          ref={ref}
+          $mode={mode}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder={displayedPlaceholder}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          disabled={isGenerating}
+        />
+      </InputWrap>
       {controls ? <Controls>{controls}</Controls> : null}
     </Shell>
   );

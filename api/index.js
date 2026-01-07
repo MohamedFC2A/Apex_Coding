@@ -50,11 +50,22 @@ app.use((req, _res, next) => {
     req.url = req.url.slice(4) || '/';
   }
 
+  // Some rewrite configurations may surface the destination file path instead of the original URL.
+  // Treat the function entrypoint path as the API root.
+  if (req.url === '/index.js' || req.url === '/api/index.js') {
+    req.url = '/';
+  }
+
   next();
 });
 
 app.get('/', (_req, res) => {
   res.status(200).send('Apex Coding Backend is Running!');
+});
+
+// Avoid noisy 404s when the backend is hit directly in dev/proxy setups.
+app.get(['/favicon.ico', '/favicon.svg'], (_req, res) => {
+  res.status(204).end();
 });
 
 // Unified /api handler (allows frontend to POST to `/api` and select an action).

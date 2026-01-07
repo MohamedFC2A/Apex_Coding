@@ -1,5 +1,4 @@
 import { mutation } from './_generated/server';
-import { v } from "convex/values";
 
 const DEFAULT_PROJECT_SLUG = 'default';
 const DEFAULT_PROJECT_NAME = 'Nexus Apex Project';
@@ -7,7 +6,7 @@ const DEFAULT_PROJECT_NAME = 'Nexus Apex Project';
 export const ensureDefault = mutation({
   args: {},
   handler: async (ctx) => {
-    // 1. البحث عن المشروع باستخدام الـ Index الصحيح عندك
+    // 1. البحث عن المشروع باستخدام الـ Index 'by_slug'
     let project = await ctx.db
       .query('projects')
       .withIndex('by_slug', (q) => q.eq('slug', DEFAULT_PROJECT_SLUG))
@@ -16,7 +15,7 @@ export const ensureDefault = mutation({
     let projectId;
 
     if (!project) {
-      // 2. إنشاء المشروع
+      // 2. إنشاء المشروع في حالة عدم وجوده
       projectId = await ctx.db.insert('projects', {
         slug: DEFAULT_PROJECT_SLUG,
         name: DEFAULT_PROJECT_NAME,
@@ -32,7 +31,7 @@ export const ensureDefault = mutation({
       .withIndex('by_project', (q) => q.eq('projectId', projectId))
       .first();
 
-    // 4. لو مفيش ملفات، انشئ ملف واحد فقط (README) لضمان السرعة ومنع الـ Timeout
+    // 4. إنشاء ملف README كملف أساسي لتجنب الـ Timeout
     if (!anyFile) {
       await ctx.db.insert('files', {
         projectId,

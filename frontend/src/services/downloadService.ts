@@ -1,9 +1,7 @@
 import axios from 'axios';
 import { ProjectFile } from '@/types';
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || '/api').replace(/\/+$/, '');
-
-const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+import { apiUrl } from '@/services/apiBase';
 
 export const downloadService = {
   async downloadAsZip(files: ProjectFile[], projectName: string): Promise<void> {

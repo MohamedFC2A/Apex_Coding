@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { FileSystem, FileSystemEntry } from '@/types';
 import { useAIStore } from '@/stores/aiStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { DEFAULT_ROOT_PACKAGE_JSON, ensureWebContainer, installDependencies, resetWebContainerState, startServer, syncFileSystem } from '@/services/webcontainer';
 import { stripAnsi } from '@/utils/ansi';
@@ -208,6 +209,8 @@ const resolveStartCommand = (fileMap: Map<string, string>) => {
 
 export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { files, isPreviewOpen, isGenerating, appendSystemConsoleContent } = useAIStore();
+  const projectId = useProjectStore((s) => s.projectId);
+  const isHydrating = useProjectStore((s) => s.isHydrating);
   const { addLog, setPreviewUrl, setRuntimeStatus } = usePreviewStore();
   const stamp = () => new Date().toLocaleTimeString([], { hour12: false });
 
@@ -301,6 +304,13 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const tree = normalizeFileSystem(files);
       if (!isPreviewOpen || isTreeEmpty(tree)) return;
 
+      const convexEnabled = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL);
+      if (convexEnabled && (isHydrating || !projectId)) {
+        updateStatus('idle', 'Initializing Development Environment...');
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for Convex initialization...\\n`);
+        return;
+      }
+
       const looksStatic =
         treeHasPath(tree, 'index.html') &&
         !treeContainsFileNamed(tree, 'package.json') &&
@@ -364,7 +374,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         addLog({ timestamp: Date.now(), type: 'info', message: line, source: 'server' });
       });
 
-      const process = await startServer(startCommand.command, startCommand.args, {
+      const serverProcess = await startServer(startCommand.command, startCommand.args, {
         cwd: startCommand.cwd,
         onOutput: logLine,
         force: forceRestart
@@ -374,7 +384,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       await Promise.race([
         waitForServerReady(10_000, [5173, 3111, 3000]),
-        process.exit.then((code) => {
+        serverProcess.exit.then((code) => {
           throw new Error(`Server process exited (${code}). Check logs for details.`);
         })
       ]);
@@ -384,8 +394,10 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       appendSystemConsoleContent,
       attachServerReady,
       files,
+      isHydrating,
       isPreviewOpen,
       installPackages,
+      projectId,
       updateStatus,
       updateUrl
     ]

@@ -1,6 +1,5 @@
 import { ProjectFile } from '@/types';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '/api';
+import { apiUrl, getApiBaseUrl } from '@/services/apiBase';
 
 interface AIResponse {
   plan: string;
@@ -10,9 +9,6 @@ interface AIResponse {
   stack: string;
   description: string;
 }
-
-const apiUrl = (path: string) =>
-  `${String(API_BASE_URL).replace(/\/+$/, '')}${path.startsWith('/') ? '' : '/'}${path}`;
 
 const getErrorMessage = (err: any, fallback: string) => {
   return (
@@ -90,7 +86,7 @@ export const aiService = {
       const typingMsRaw = Number(options.typingMs ?? 26);
       const typingMs = Number.isFinite(typingMsRaw) ? typingMsRaw : 26;
 
-      onMeta({ provider: 'vercel-backend', baseURL: API_BASE_URL, thinkingMode, architectMode });
+      onMeta({ provider: 'vercel-backend', baseURL: getApiBaseUrl(), thinkingMode, architectMode });
       onStatus('streaming', 'Generating…');
 
       const parseSseEvent = (rawEvent: string) => {

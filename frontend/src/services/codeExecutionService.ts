@@ -1,9 +1,7 @@
 import axios from 'axios';
 import { ProjectFile, ExecutionResult, ProjectStack } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '/api';
-
-const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+import { apiUrl } from '@/services/apiBase';
 
 export const codeExecutionService = {
   async executeCode(

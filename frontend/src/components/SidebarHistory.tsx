@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import { History, Save } from 'lucide-react';
+import { History } from 'lucide-react';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { FileSystem, ProjectFile } from '@/types';
@@ -152,7 +152,7 @@ const formatDayMonth = (timestamp: number) => {
 };
 
 export const SidebarHistory: React.FC = () => {
-  const { history, saveCurrentSession, startNewChat, restoreSession } = useAIStore();
+  const { history, startNewChat, restoreSession } = useAIStore();
   const { setFiles, setFileStructure, setActiveFile } = useProjectStore();
 
   const handleRestore = (sessionId: string) => {
@@ -179,10 +179,6 @@ export const SidebarHistory: React.FC = () => {
   return (
     <Wrapper>
       <ActionRow>
-        <ActionButton type="button" onClick={saveCurrentSession}>
-          <Save size={14} />
-          Save
-        </ActionButton>
         <ActionButton type="button" onClick={startNewChat}>
           <History size={14} />
           New Chat

@@ -65,6 +65,7 @@ interface AIStoreState {
   isPreviewOpen: boolean;
   files: FileSystemState;
   history: HistorySession[];
+  currentSessionId: string | null;
 }
 
 interface AIStoreActions {
@@ -395,7 +396,8 @@ const buildInitialState = (): AIStoreState => ({
   error: null,
   isPreviewOpen: false,
   files: createInitialFiles(),
-  history: []
+  history: [],
+  currentSessionId: null
 });
 
 const initialState: AIStoreState = buildInitialState();
@@ -427,9 +429,12 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       setChatHistory: (history) => set({ chatHistory: history }),
 
       addChatMessage: (message) =>
-        set((state) => ({
-          chatHistory: [...state.chatHistory, message]
-        })),
+        set((state) => {
+          const updatedHistory = [...state.chatHistory, message];
+          // Auto-save when chat message is added
+          setTimeout(() => get().saveCurrentSession(), 100);
+          return { chatHistory: updatedHistory };
+        }),
 
       clearChatHistory: () => set({ chatHistory: [] }),
 
@@ -537,6 +542,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       saveCurrentSession: () => {
         const state = get();
         const projectFiles = useProjectStore.getState().files;
+
         const snapshotFiles = projectFiles.length > 0
           ? buildTreeFromProjectFiles(projectFiles)
           : normalizeFileSystem(state.files);
@@ -553,7 +559,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
         const titleSource = state.lastPlannedPrompt || state.prompt || 'Untitled Session';
         const snapshot: HistorySession = {
-          id: `session-${Date.now()}`,
+          id: state.currentSessionId || `session-${Date.now()}`,
           createdAt: Date.now(),
           title: titleSource.slice(0, 60),
           files: cloneFileSystem(snapshotFiles),
@@ -562,7 +568,16 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           planSteps: state.planSteps.map((step) => ({ ...step }))
         };
 
-        set({ history: [snapshot, ...state.history] });
+        // Update existing session or add new one
+        if (state.currentSessionId) {
+          set((state) => ({
+            history: state.history.map((s) =>
+              s.id === state.currentSessionId ? snapshot : s
+            )
+          }));
+        } else {
+          set({ history: [snapshot, ...state.history], currentSessionId: snapshot.id });
+        }
       },
 
       restoreSession: (sessionId) => {
@@ -591,7 +606,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             progress: 0
           },
           error: null,
-          isPreviewOpen: false
+          isPreviewOpen: false,
+          currentSessionId: sessionId
         });
       },
 
@@ -621,7 +637,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           },
           error: null,
           isPreviewOpen: false,
-          interactionMode: 'create'
+          interactionMode: 'create',
+          currentSessionId: null
         });
 
         useProjectStore.getState().reset();

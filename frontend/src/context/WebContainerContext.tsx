@@ -158,6 +158,7 @@ const getPackageDir = (path: string) => {
 };
 
 const resolveStartCommand = (fileMap: Map<string, string>) => {
+  // FIXED: Improved static detection - check for HTML files first
   if (fileMap.has('index.html') && !Array.from(fileMap.keys()).some((p) => p.endsWith('package.json'))) {
     return { command: 'node', args: [STATIC_SERVER_FILE], cwd: '.' };
   }
@@ -181,7 +182,7 @@ const resolveStartCommand = (fileMap: Map<string, string>) => {
       if (scripts?.start) return { command: 'npm', args: ['run', 'start'], cwd };
       if (scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
     } catch {
-      // ignore parse errors (handled elsewhere)
+      // ignore parse errors
     }
   }
 
@@ -267,7 +268,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
           const ready = ports.some((port) => Boolean(urls[port]));
           if (ready) return resolve();
           if (Date.now() - start > timeoutMs) {
-            return reject(new Error('WebContainer server-ready timeout (10s). Check root /package.json scripts and ports 5173/3111.'));
+            return reject(new Error('Server startup timeout (15s). Check console logs for details.'));
           }
           setTimeout(tick, 120);
         };
@@ -280,11 +281,11 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     async (packagePaths: string[]) => {
       if (packagePaths.length === 0) return;
       updateStatus('installing', 'Installing dependencies...');
-      appendSystemConsoleContent(`${stamp()} [webcontainer] Installing dependencies...\n`);
+      appendSystemConsoleContent(`${stamp()} [webcontainer] Installing dependencies...\\n`);
 
       const logLine = createLineBuffer((line) => {
         if (shouldSuppressLine(line)) return;
-        appendSystemConsoleContent(`${stamp()} ${line}\n`);
+        appendSystemConsoleContent(`${stamp()} ${line}\\n`);
         addLog({ timestamp: Date.now(), type: 'info', message: line, source: 'npm' });
       });
 
@@ -304,15 +305,17 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const tree = normalizeFileSystem(files);
       if (!isPreviewOpen || isTreeEmpty(tree)) return;
 
-      const looksStatic =
-        treeHasPath(tree, 'index.html') &&
-        !treeContainsFileNamed(tree, 'package.json') &&
-        !treeHasPath(tree, 'vite.config.ts') &&
-        !treeHasPath(tree, 'vite.config.js');
+      // FIXED: Better static detection - any project with index.html and no package.json is static
+      const hasIndexHtml = treeHasPath(tree, 'index.html');
+      const hasPackageJson = treeContainsFileNamed(tree, 'package.json');
+      const hasViteConfig = treeHasPath(tree, 'vite.config.ts') || treeHasPath(tree, 'vite.config.js');
+      
+      const looksStatic = hasIndexHtml && !hasPackageJson && !hasViteConfig;
 
-      if (!looksStatic && !treeContainsFileNamed(tree, 'package.json')) {
-        updateStatus('idle', 'Waiting for package.json...');
-        appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for package.json before starting preview.\\n`);
+      // FIXED: Only wait for package.json if it's NOT a static project AND doesn't have index.html
+      if (!looksStatic && !hasPackageJson && !hasIndexHtml) {
+        updateStatus('idle', 'Waiting for code files...');
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for project files (package.json or index.html).\\n`);
         return;
       }
 
@@ -330,24 +333,27 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
         ensureRootPackageJson: false,
         rootPackageJson: DEFAULT_ROOT_PACKAGE_JSON
       });
+      
       if (injectedRootPackage) {
         appendSystemConsoleContent(`${stamp()} [webcontainer] Injected root /package.json (missing).\\n`);
       }
+      
       if (invalidPackageJsonPaths.length > 0) {
         appendSystemConsoleContent(
           `${stamp()} [webcontainer] Skipped invalid package.json: ${invalidPackageJsonPaths.join(', ')}\\n`
         );
       }
+      
       const fatalInvalid = invalidPackageJsonPaths.filter((p) => p !== 'package.json');
       if (fatalInvalid.length > 0) {
         throw new Error(`Invalid package.json generated: ${fatalInvalid.join(', ')}`);
       }
 
       const readyPackages = changedPackages.filter((path) => (fileMap.get(path) || '').trim().length > 10);
-      if (!looksStatic) {
+      if (!looksStatic && readyPackages.length > 0) {
         await installPackages(readyPackages);
-      } else if (!serverStartedRef.current || forceRestart) {
-        appendSystemConsoleContent(`${stamp()} [webcontainer] Static project detected; skipping npm install.\\n`);
+      } else if (looksStatic) {
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Static HTML project detected; skipping npm install.\\n`);
       }
 
       if (serverStartedRef.current && !forceRestart) {
@@ -357,7 +363,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       const startCommand = resolveStartCommand(fileMap);
       if (!startCommand) {
-        updateStatus('idle', 'Waiting for entrypoint...');
+        updateStatus('idle', 'No start command found. Add package.json with scripts, or use static HTML.');
         return;
       }
 
@@ -376,7 +382,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       serverStartedRef.current = true;
 
       await Promise.race([
-        waitForServerReady(10_000, [5173, 3111, 3000]),
+        waitForServerReady(15_000, [5173, 3111, 3000]),
         serverProcess.exit.then((code) => {
           throw new Error(`Server process exited (${code}). Check logs for details.`);
         })

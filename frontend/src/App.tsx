@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { AlertCircle, History, ListTodo, Menu, Play, X, Eye, EyeOff } from 'lucide-react';
+import { AlertCircle, History, ListTodo, Menu, X, Eye, EyeOff } from 'lucide-react';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { SubscriptionIndicator } from './components/SubscriptionIndicator';
 

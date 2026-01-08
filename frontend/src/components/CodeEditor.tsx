@@ -342,18 +342,46 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
         
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex items-center border-b border-white/10 glass-panel">
-            <div className="flex-1 flex overflow-x-auto scrollbar-thin">
+            <div className="flex items-center gap-2 px-3 flex-shrink-0">
+              <button
+                onClick={() => setEditorTheme(t => t === 'vs-dark' ? 'nord' : t === 'nord' ? 'dracula' : 'vs-dark')}
+                className="glass-button px-3 py-1.5 rounded text-xs font-medium"
+                title="Toggle theme"
+              >
+                {editorTheme === 'vs-dark' ? '🌙' : editorTheme === 'nord' ? '❄️' : '🧛'}
+              </button>
+              <button
+                onClick={handleRun}
+                className="glass-button px-3 py-1.5 rounded flex items-center justify-center gap-2 text-sm font-semibold"
+                disabled={files.length === 0 || isGenerating || Boolean(writingFilePath)}
+                title="Run project (Ctrl/Cmd + R)"
+              >
+                <Play className="w-4 h-4" />
+                <span className="hidden sm:inline">Run</span>
+              </button>
+              <button
+                onClick={handleDownload}
+                className="glass-button px-3 py-1.5 rounded flex items-center justify-center gap-2 text-sm font-semibold"
+                disabled={files.length === 0}
+                title="Download as ZIP"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">ZIP</span>
+              </button>
+            </div>
+            
+            <div className="flex-1 flex overflow-x-auto scrollbar-thin min-w-0">
               {openTabs.map(path => (
                 <div
                   key={path}
-                  className={`flex items-center gap-2 px-4 py-2 border-r border-white/10 cursor-pointer transition-colors whitespace-nowrap ${
+                  className={`flex items-center gap-2 px-3 py-2 border-r border-white/10 cursor-pointer transition-colors whitespace-nowrap min-w-0 ${
                     activeFile === path
                       ? 'bg-white/5 text-white/90'
                       : 'hover:bg-white/5'
                   }`}
                   onClick={() => setActiveFile(path)}
                 >
-                  <span className="text-sm truncate max-w-[150px]">
+                  <span className="text-sm truncate max-w-[120px]">
                     {path.split('/').pop()}
                   </span>
                   <X
@@ -362,32 +390,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
                   />
                 </div>
               ))}
-            </div>
-            
-            <div className="flex items-center gap-2 px-3">
-              <button
-                onClick={() => setEditorTheme(t => t === 'vs-dark' ? 'nord' : t === 'nord' ? 'dracula' : 'vs-dark')}
-                className="glass-button px-3 py-1.5 rounded text-xs font-medium"
-                title="Toggle theme"
-              >
-                {editorTheme === 'vs-dark' ? '🌙 Dark' : editorTheme === 'nord' ? '❄️ Nord' : '🧛 Dracula'}
-              </button>
-              <button
-                onClick={handleRun}
-                className="glass-button px-4 py-1.5 rounded flex items-center justify-center gap-2 text-sm"
-                disabled={files.length === 0 || isGenerating || Boolean(writingFilePath)}
-              >
-                <Play className="w-5 h-5" />
-                <span className="hidden sm:inline">Run</span>
-              </button>
-              <button
-                onClick={handleDownload}
-                className="glass-button px-4 py-1.5 rounded flex items-center justify-center gap-2 text-sm"
-                disabled={files.length === 0}
-              >
-                <Download className="w-5 h-5" />
-                <span className="hidden sm:inline">ZIP</span>
-              </button>
             </div>
           </div>
           

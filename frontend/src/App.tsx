@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { AlertCircle, History, ListTodo, Menu, X } from 'lucide-react';
+import { AlertCircle, History, ListTodo, Menu, Play, X, Eye, EyeOff } from 'lucide-react';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { SubscriptionIndicator } from './components/SubscriptionIndicator';
 
@@ -1031,7 +1031,7 @@ function App() {
         const cleaned = stripPartialMarkerAtEnd(existing.content || '');
         const healed = partial ? healHtmlDocument(cleaned) : cleaned;
         const branded = injectBrandingFooter(healed);
-        const finalText = partial ? `${branded}\n<!-- [[PARTIAL_FILE_CLOSED]] -->\n` : branded;
+        const finalText = branded;
 
         updateFile(path, finalText);
         upsertFileNode(path, finalText);
@@ -1515,6 +1515,28 @@ function App() {
             <div style={{ marginRight: '4px' }}>
               <LanguageSwitcher />
             </div>
+            <HeaderIconButton
+              type="button"
+              onClick={async () => {
+                const shouldOpen = !isPreviewOpen;
+                setIsPreviewOpen(shouldOpen);
+                if (shouldOpen && files.length > 0) {
+                  try {
+                    await deployAndRun();
+                  } catch (err) {
+                    console.error('Failed to start preview:', err);
+                  }
+                }
+              }}
+              aria-label={isPreviewOpen ? 'Close preview' : 'Open preview'}
+              title={isPreviewOpen ? 'Close preview' : 'Open preview'}
+              style={{
+                borderColor: isPreviewOpen ? 'rgba(34, 211, 238, 0.30)' : undefined,
+                background: isPreviewOpen ? 'rgba(34, 211, 238, 0.12)' : undefined,
+              }}
+            >
+              {isPreviewOpen ? <EyeOff size={18} /> : <Eye size={18} />}
+            </HeaderIconButton>
             <HeaderIconButton
               type="button"
               onClick={() => setHistoryOpen((v) => !v)}

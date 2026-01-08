@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTransition, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/context/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -12,7 +12,7 @@ const fadeUp = {
   show: { opacity: 1, y: 0, filter: 'blur(0px)' }
 };
 
-function TypingSearch() {
+function TypingSearch({ onClick }: { onClick: () => void }) {
   const { t } = useLanguage();
   const [text, setText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -49,11 +49,23 @@ function TypingSearch() {
     return () => clearTimeout(timer);
   }, [text, isDeleting, loopNum, typingSpeed, phrases]);
 
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      onClick();
+    }
+  };
+
   return (
     <div className="mt-6 max-w-2xl">
-      <div className="relative group">
+      <div 
+        className="relative group cursor-pointer"
+        onClick={onClick}
+        onKeyPress={handleKeyPress}
+        role="button"
+        tabIndex={0}
+      >
         <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-fuchsia-500/20 blur-xl group-hover:blur-2xl transition-all duration-300" />
-        <div className="relative rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+        <div className="relative rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:border-white/20 hover:shadow-[0_8px_40px_rgba(34,211,238,0.2)] transition-all">
           <div className="flex items-center gap-3 px-5 py-4">
             <svg className="h-5 w-5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -63,7 +75,7 @@ function TypingSearch() {
               value={text}
               readOnly
               placeholder=""
-              className="flex-1 bg-transparent text-white placeholder-white/40 outline-none"
+              className="flex-1 bg-transparent text-white placeholder-white/40 outline-none cursor-pointer"
             />
             <span className="h-4 w-0.5 bg-white/40 animate-pulse" />
           </div>
@@ -76,12 +88,10 @@ function TypingSearch() {
 export function Hero() {
   const { t } = useLanguage();
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
 
-  // BYPASS MODE: Navigate instantly without Convex blocking
-  // The IDE will handle Convex initialization in the background
+  // Navigate to IDE when search bar is clicked
   const handleStart = () => {
-    startTransition(() => router.push('/app'));
+    router.push('/app');
   };
 
   return (
@@ -118,7 +128,10 @@ export function Hero() {
         <p className="mt-4 max-w-2xl text-pretty text-base leading-relaxed text-white/70 md:text-lg">
           {t('hero.subtitle')}
         </p>
-        <TypingSearch />
+        <TypingSearch onClick={handleStart} />
+        <p className="mt-3 text-xs text-white/50 max-w-2xl">
+          ✨ Click the search bar or press Enter to start coding
+        </p>
       </motion.div>
 
       <motion.div
@@ -128,14 +141,12 @@ export function Hero() {
         transition={{ delay: 0.1, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
         className="mt-8 flex flex-wrap items-center gap-3"
       >
-        <button
-          type="button"
-          onClick={handleStart}
-          className="inline-flex items-center justify-center rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-md transition hover:bg-white/15 disabled:opacity-60"
-          disabled={isPending}
+        <Link
+          href="/pricing"
+          className="inline-flex items-center justify-center rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-md transition hover:bg-white/15"
         >
-          {isPending ? t('hero.loading') : t('hero.cta.start')}
-        </button>
+          View Pricing
+        </Link>
         <Link
           href="#demo"
           className="inline-flex items-center justify-center rounded-2xl border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold text-white/85 backdrop-blur-md transition hover:bg-white/5"

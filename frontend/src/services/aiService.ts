@@ -1,5 +1,6 @@
 import { ProjectFile } from '@/types';
 import { apiUrl, getApiBaseUrl } from '@/services/apiBase';
+import { useSubscriptionStore } from '@/stores/subscriptionStore';
 
 interface AIResponse {
   plan: string;
@@ -20,6 +21,13 @@ const getErrorMessage = (err: any, fallback: string) => {
 
 export const aiService = {
   async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
+    // Check subscription limits
+    const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
+    
+    if (!canMakeRequest()) {
+      throw new Error(`Daily limit reached. You have 0 requests remaining on the ${tier} plan. Upgrade to PRO for more requests.`);
+    }
+    
     try {
       const PLAN_URL = apiUrl('/ai/plan');
 
@@ -63,6 +71,10 @@ export const aiService = {
 
       const data: any = await response.json();
       const steps = Array.isArray(data?.steps) ? data.steps : [];
+      
+      // Increment request count on success
+      incrementRequests();
+      
       return { steps };
     } catch (error: any) {
       console.error('Plan Error Details:', error);
@@ -105,6 +117,17 @@ export const aiService = {
           }) => void;
         } = false
   ): Promise<void> {
+    // Check subscription limits
+    const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
+    
+    if (!canMakeRequest()) {
+      onError(`Daily limit reached. You have 0 requests remaining on the ${tier} plan. Upgrade to PRO for more requests.`);
+      return;
+    }
+    
+    // Mark request as used
+    incrementRequests();
+    
     try {
       const options = typeof thinkingModeOrOptions === 'boolean' ? { thinkingMode: thinkingModeOrOptions } : thinkingModeOrOptions;
       const thinkingMode = Boolean(options.thinkingMode);

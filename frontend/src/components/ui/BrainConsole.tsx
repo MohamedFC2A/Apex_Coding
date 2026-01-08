@@ -9,13 +9,14 @@ const Sheet = styled(motion.div)<{ $open: boolean }>`
   left: 0;
   right: 0;
   bottom: 0;
-  --console-open-height: 30vh;
-  height: ${(p) => (p.$open ? 'var(--console-open-height)' : '44px')};
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.8);
-  box-shadow: 0 -22px 60px rgba(0, 0, 0, 0.65);
+  --console-open-height: 35vh;
+  height: ${(p) => (p.$open ? 'var(--console-open-height)' : '48px')};
+  border-top: 1px solid rgba(34, 211, 238, 0.15);
+  background: linear-gradient(180deg, rgba(3, 7, 18, 0.98) 0%, rgba(0, 0, 0, 0.98) 100%);
+  box-shadow: 0 -24px 80px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(34, 211, 238, 0.08);
   overflow: hidden;
   z-index: 50;
+  backdrop-filter: blur(20px);
 
   @media (max-width: 768px) {
     --console-open-height: 50vh;
@@ -29,32 +30,56 @@ const Sheet = styled(motion.div)<{ $open: boolean }>`
 
 const Header = styled.button`
   width: 100%;
-  height: 44px;
+  height: 48px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0 16px;
   border: 0;
   cursor: pointer;
-  background: rgba(0, 0, 0, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--primary-color);
-  letter-spacing: 0.12em;
+  background: rgba(3, 7, 18, 0.95);
+  border-bottom: 1px solid rgba(34, 211, 238, 0.15);
+  color: rgba(34, 211, 238, 0.95);
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: rgba(3, 7, 18, 1);
+    border-bottom-color: rgba(34, 211, 238, 0.3);
+  }
 `;
 
 const Body = styled.div`
   position: relative;
-  height: calc(var(--console-open-height) - 44px);
+  height: calc(var(--console-open-height) - 48px);
   overflow: auto;
-  padding: 12px;
-  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--primary-color);
+  padding: 16px;
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(229, 231, 235, 0.9);
   white-space: pre-wrap;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.95);
+  
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: rgba(34, 211, 238, 0.3);
+    border-radius: 4px;
+  }
+  
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(34, 211, 238, 0.5);
+  }
 `;
 
 const blink = keyframes`
@@ -80,8 +105,73 @@ const Empty = styled.div`
   opacity: 0.55;
 `;
 
-const Prefix = styled.span`
-  color: var(--primary-color);
+const Prefix = styled.span<{ $type?: 'health' | 'status' | 'error' | 'thought' }>`
+  font-weight: 700;
+  color: ${p => {
+    switch(p.$type) {
+      case 'health': return 'rgba(34, 197, 94, 1)';
+      case 'status': return 'rgba(251, 191, 36, 1)';
+      case 'error': return 'rgba(239, 68, 68, 1)';
+      case 'thought': return 'rgba(168, 85, 247, 0.95)';
+      default: return 'rgba(34, 211, 238, 0.95)';
+    }
+  }};
+`;
+
+const ThoughtSection = styled.details`
+  margin-top: 12px;
+  
+  summary {
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    padding: 8px 0;
+    font-weight: 700;
+    color: rgba(168, 85, 247, 0.95);
+    
+    &::-webkit-details-marker {
+      display: none;
+    }
+    
+    &::before {
+      content: '▶ ';
+      display: inline-block;
+      transition: transform 0.2s;
+    }
+    
+    &:hover {
+      color: rgba(168, 85, 247, 1);
+    }
+  }
+  
+  &[open] summary::before {
+    transform: rotate(90deg);
+  }
+`;
+
+const ThoughtContent = styled.div`
+  padding: 12px;
+  margin-top: 4px;
+  border-left: 2px solid rgba(168, 85, 247, 0.3);
+  background: rgba(168, 85, 247, 0.05);
+  border-radius: 4px;
+  color: rgba(229, 231, 235, 0.85);
+`;
+
+const StatusLine = styled.div<{ $type?: 'health' | 'status' | 'error' }>`
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  
+  ${p => p.$type === 'error' && `
+    background: rgba(239, 68, 68, 0.08);
+    border-left: 3px solid rgba(239, 68, 68, 0.5);
+    padding-left: 12px;
+    margin-left: -12px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+  `}
 `;
 
 interface BrainConsoleProps {
@@ -136,17 +226,20 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onTog
           {open && (
             <Body>
               {cleanedHealth.length > 0 && (
-                <div style={{ marginBottom: 6, color: healthColor }}>
-                  <Prefix>[HEALTH]</Prefix> <span>{cleanedHealth}</span>
-                </div>
+                <StatusLine $type="health">
+                  <Prefix $type="health">[HEALTH]</Prefix>
+                  <span style={{ color: healthColor, fontWeight: 600 }}>{cleanedHealth}</span>
+                </StatusLine>
               )}
-              <div>
-                <Prefix>[STATUS]</Prefix> <span>{cleanedStatus || 'Idle'}</span>
-              </div>
+              <StatusLine $type="status">
+                <Prefix $type="status">[STATUS]</Prefix>
+                <span style={{ color: 'rgba(251, 191, 36, 0.9)', fontWeight: 600 }}>{cleanedStatus || 'Ready'}</span>
+              </StatusLine>
               {cleanedError.length > 0 && (
-                <div style={{ marginTop: 8, color: 'rgba(248,113,113,0.95)' }}>
-                  <Prefix>[ERROR]</Prefix> <span>{cleanedError}</span>
-                </div>
+                <StatusLine $type="error">
+                  <Prefix $type="error">[ERROR]</Prefix>
+                  <span style={{ color: 'rgba(239, 68, 68, 0.95)' }}>{cleanedError}</span>
+                </StatusLine>
               )}
               {canFixResume && onFixResume && (
                 <div style={{ marginTop: 10 }}>
@@ -167,11 +260,21 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onTog
                   </button>
                 </div>
               )}
-              <div style={{ marginTop: 10 }}>
-                <Prefix>[THOUGHT]</Prefix>{' '}
-                {cleanedThought.length === 0 ? <Empty>Reasoning not available.</Empty> : <span>{cleanedThought}</span>}
-                <Cursor />
-              </div>
+              <ThoughtSection open={cleanedThought.length > 0}>
+                <summary>
+                  <Prefix $type="thought">[THOUGHT]</Prefix> AI Reasoning Process
+                </summary>
+                <ThoughtContent>
+                  {cleanedThought.length === 0 ? (
+                    <Empty>Waiting for AI response...</Empty>
+                  ) : (
+                    <>
+                      {cleanedThought}
+                      <Cursor />
+                    </>
+                  )}
+                </ThoughtContent>
+              </ThoughtSection>
               {cleanedLogs.length > 0 && (
                 <div style={{ marginTop: 12, opacity: 0.92 }}>
                   {cleanedLogs}

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { AlertCircle, Eye, EyeOff, History, ListTodo, Menu, X } from 'lucide-react';
+import { AlertCircle, History, ListTodo, Menu, X } from 'lucide-react';
+import { LanguageSwitcher } from './components/LanguageSwitcher';
+import { SubscriptionIndicator } from './components/SubscriptionIndicator';
 
 import { useAIStore } from './stores/aiStore';
 import { useProjectStore } from './stores/projectStore';
@@ -282,28 +284,6 @@ const MobileMenuButton = styled.button`
 
   @media (max-width: 768px) {
     display: inline-flex;
-  }
-`;
-
-const PreviewToggleButton = styled.button`
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.8);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-
-  &:hover {
-    border-color: rgba(34, 211, 238, 0.24);
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  @media (max-width: 768px) {
-    display: none;
   }
 `;
 
@@ -1408,21 +1388,26 @@ function App() {
             <StatusPill $active={isGenerating}>{isGenerating ? thinkingStatus || 'Working…' : 'Ready'}</StatusPill>
           </HeaderLeft>
           <HeaderRight>
+            <SubscriptionIndicator />
+            <div style={{ marginRight: '4px' }}>
+              <LanguageSwitcher />
+            </div>
             <HeaderIconButton
               type="button"
               onClick={() => setHistoryOpen((v) => !v)}
-              aria-label={historyOpen ? 'Close history' : 'Open history'}
-              title="History"
+              aria-label="View history"
+              title="View history"
             >
               <History size={18} />
             </HeaderIconButton>
-            <PreviewToggleButton
+            <HeaderIconButton
               type="button"
-              onClick={() => setIsPreviewOpen(!isPreviewOpen)}
-              aria-label={isPreviewOpen ? 'Hide preview' : 'Show preview'}
+              onClick={() => setPlanOpen((v) => !v)}
+              aria-label="View plan"
+              title="View plan"
             >
-              {isPreviewOpen ? <EyeOff size={18} /> : <Eye size={18} />}
-            </PreviewToggleButton>
+              <ListTodo size={18} />
+            </HeaderIconButton>
             <MobileMenuButton type="button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
               <Menu size={18} />
             </MobileMenuButton>

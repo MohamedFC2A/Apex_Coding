@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import styled from 'styled-components';
-import { History } from 'lucide-react';
-import { useAIStore } from '@/stores/aiStore';
+import { History, Trash2, FolderOpen } from 'lucide-react';
+import { useAIStore, HistorySession } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { FileSystem, ProjectFile } from '@/types';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
@@ -153,13 +153,39 @@ const formatDayMonth = (timestamp: number) => {
 
 export const SidebarHistory: React.FC = () => {
   const { history, startNewChat, restoreSession } = useAIStore();
-  const { setFiles, setFileStructure, setActiveFile } = useProjectStore();
+  const { setFiles, setFileStructure, setActiveFile, setProjectName } = useProjectStore();
+
+  // Deduplicate sessions by projectName, keeping only the most recent
+  const deduplicatedHistory = useMemo(() => {
+    const seen = new Map<string, HistorySession>();
+    for (const session of history) {
+      const key = session.projectName || session.id;
+      const existing = seen.get(key);
+      if (!existing || (session.updatedAt || session.createdAt) > (existing.updatedAt || existing.createdAt)) {
+        seen.set(key, session);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => 
+      (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)
+    );
+  }, [history]);
+
+  const handleCleanDuplicates = useCallback(() => {
+    // Clean up duplicate sessions in storage
+    const cleaned = deduplicatedHistory;
+    useAIStore.setState({ history: cleaned });
+  }, [deduplicatedHistory]);
 
   const handleRestore = (sessionId: string) => {
-    const session = history.find((item) => item.id === sessionId);
+    const session = deduplicatedHistory.find((item) => item.id === sessionId);
     if (!session) return;
 
     restoreSession(sessionId);
+
+    // Restore project name
+    if (session.projectName) {
+      setProjectName(session.projectName);
+    }
 
     const projectFiles = flattenFileSystem(session.files);
     setFiles(projectFiles);
@@ -183,18 +209,29 @@ export const SidebarHistory: React.FC = () => {
           <History size={14} />
           New Chat
         </ActionButton>
+        {history.length > 0 && (
+          <ActionButton type="button" onClick={handleCleanDuplicates} title="Clean duplicate sessions">
+            <Trash2 size={14} />
+          </ActionButton>
+        )}
       </ActionRow>
 
       <SessionList className="scrollbar-thin scrollbar-glass">
-        {history.length === 0 ? (
+        {deduplicatedHistory.length === 0 ? (
           <EmptyState>No saved sessions yet.</EmptyState>
         ) : (
-          history.map((session) => {
+          deduplicatedHistory.map((session) => {
+            const displayName = session.projectName || session.title || 'Untitled Session';
+            const fileCount = Object.keys(flattenFileSystem(session.files)).length;
             return (
               <SessionCard key={session.id} type="button" onClick={() => handleRestore(session.id)}>
+                <FolderOpen size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
                 <SessionMain>
-                  <SessionTitle>{session.title || 'Untitled Session'}</SessionTitle>
-                  <SessionMeta>Date: {formatDayMonth(session.createdAt)}</SessionMeta>
+                  <SessionTitle>{displayName}</SessionTitle>
+                  <SessionMeta>
+                    {formatDayMonth(session.updatedAt || session.createdAt)}
+                    {fileCount > 0 && ` • ${fileCount} files`}
+                  </SessionMeta>
                 </SessionMain>
                 <RightMeta>Restore</RightMeta>
               </SessionCard>

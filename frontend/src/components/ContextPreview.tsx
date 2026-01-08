@@ -1,8 +1,13 @@
-import React, { useMemo } from 'react';
-import styled from 'styled-components';
-import { FileText, MessageSquare, CheckSquare, Layers } from 'lucide-react';
+import React, { useMemo, useEffect, useState } from 'react';
+import styled, { keyframes } from 'styled-components';
+import { FileText, MessageSquare, CheckSquare, Layers, Zap, AlertTriangle } from 'lucide-react';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
+
+// Context size constants
+const MAX_CONTEXT_SIZE = 128000;
+const COMPRESSION_THRESHOLD = 100000;
+const WARNING_THRESHOLD = 80000;
 
 const Wrapper = styled.div`
   width: 100%;
@@ -93,9 +98,105 @@ const EmptyHint = styled.div`
   text-align: center;
 `;
 
+const pulse = keyframes`
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+`;
+
+const ContextBar = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+`;
+
+const ContextBarHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+`;
+
+const ContextProgress = styled.div<{ $percentage: number; $warning: boolean; $critical: boolean }>`
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: ${props => Math.min(100, props.$percentage)}%;
+    background: ${props => 
+      props.$critical ? 'rgba(239, 68, 68, 0.9)' : 
+      props.$warning ? 'rgba(251, 191, 36, 0.9)' : 
+      'rgba(34, 211, 238, 0.9)'};
+    border-radius: 3px;
+    transition: width 0.3s ease, background 0.3s ease;
+    ${props => props.$critical && `animation: ${pulse} 1s ease-in-out infinite;`}
+  }
+`;
+
+const StatusIndicator = styled.span<{ $status: 'ok' | 'warning' | 'critical' }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: ${props => 
+    props.$status === 'critical' ? 'rgba(239, 68, 68, 0.95)' :
+    props.$status === 'warning' ? 'rgba(251, 191, 36, 0.95)' :
+    'rgba(34, 197, 94, 0.95)'};
+`;
+
+const LiveDot = styled.span`
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.9);
+  animation: ${pulse} 2s ease-in-out infinite;
+`;
+
 export const ContextPreview: React.FC = () => {
-  const { prompt, chatHistory, planSteps, lastPlannedPrompt } = useAIStore();
+  const { prompt, chatHistory, planSteps, lastPlannedPrompt, isGenerating } = useAIStore();
   const { files, projectName, stack } = useProjectStore();
+  const [, forceUpdate] = useState(0);
+
+  // Force update every 2 seconds for live display
+  useEffect(() => {
+    const interval = setInterval(() => forceUpdate(n => n + 1), 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate context size
+  const contextSize = useMemo(() => {
+    let size = 0;
+    
+    // Chat history size
+    for (const msg of chatHistory) {
+      size += msg.content.length + msg.role.length + 10;
+    }
+    
+    // Files size
+    for (const file of files) {
+      size += (file.path || file.name || '').length;
+      size += (file.content || '').length;
+    }
+    
+    return size;
+  }, [chatHistory, files]);
+
+  const contextPercentage = (contextSize / MAX_CONTEXT_SIZE) * 100;
+  const isWarning = contextSize > WARNING_THRESHOLD;
+  const isCritical = contextSize > COMPRESSION_THRESHOLD;
+  const isCompressed = isCritical;
 
   const contextSummary = useMemo(() => {
     const fileCount = files.length;
@@ -110,12 +211,55 @@ export const ContextPreview: React.FC = () => {
     return files.slice(0, 10).map(f => f.path || f.name);
   }, [files]);
 
+  const formatSize = (size: number) => {
+    if (size < 1000) return `${size} chars`;
+    if (size < 100000) return `${(size / 1000).toFixed(1)}K`;
+    return `${(size / 1000).toFixed(0)}K`;
+  };
+
+  const contextStatus = isCritical ? 'critical' : isWarning ? 'warning' : 'ok';
+
   return (
     <Wrapper>
       <Title>
         <Layers size={16} />
         Live Context
+        <LiveDot title="Live updating" />
+        {isGenerating && <Zap size={12} style={{ color: 'rgba(251, 191, 36, 0.9)' }} />}
       </Title>
+
+      {/* Context Size Bar */}
+      <ContextBar>
+        <ContextBarHeader>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: 'rgba(255,255,255,0.7)' }}>Context Size</span>
+            {isCompressed && (
+              <span style={{ 
+                fontSize: 9, 
+                background: 'rgba(251, 191, 36, 0.2)', 
+                color: 'rgba(251, 191, 36, 0.95)',
+                padding: '2px 6px',
+                borderRadius: 4,
+                fontWeight: 600
+              }}>
+                COMPRESSED
+              </span>
+            )}
+          </span>
+          <StatusIndicator $status={contextStatus}>
+            {isCritical && <AlertTriangle size={10} />}
+            {formatSize(contextSize)} / {formatSize(MAX_CONTEXT_SIZE)}
+          </StatusIndicator>
+        </ContextBarHeader>
+        <ContextProgress 
+          $percentage={contextPercentage} 
+          $warning={isWarning} 
+          $critical={isCritical} 
+        />
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', textAlign: 'right' }}>
+          {contextPercentage.toFixed(1)}% used
+        </div>
+      </ContextBar>
 
       <Section>
         <SectionHeader>

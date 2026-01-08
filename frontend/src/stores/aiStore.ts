@@ -25,11 +25,14 @@ export interface PlanStep {
 export interface HistorySession {
   id: string;
   createdAt: number;
+  updatedAt: number;
   title: string;
+  projectName: string;
   files: FileSystem;
   chatHistory: ChatMessage[];
   plan: string;
   planSteps: PlanStep[];
+  contextSize: number;
 }
 
 interface AISections {
@@ -177,6 +180,84 @@ const BACKEND_FILES = new Set([
 
 const createInitialFiles = (): FileSystemState => {
   return {};
+};
+
+// Context compression constants
+const MAX_MESSAGE_LENGTH = 4000;
+const COMPRESSION_THRESHOLD = 100000;
+
+// Calculate total context size in characters
+const calculateContextSize = (chatHistory: ChatMessage[], files: FileSystem): number => {
+  let size = 0;
+  
+  // Chat history size
+  for (const msg of chatHistory) {
+    size += msg.content.length + msg.role.length + 10;
+  }
+  
+  // Files size
+  const countFileSize = (tree: FileSystem): number => {
+    let total = 0;
+    for (const [name, entry] of Object.entries(tree)) {
+      total += name.length;
+      if (entry.file?.contents) {
+        total += entry.file.contents.length;
+      }
+      if (entry.directory) {
+        total += countFileSize(entry.directory);
+      }
+    }
+    return total;
+  };
+  
+  size += countFileSize(files);
+  return size;
+};
+
+// Compress chat history when context is too large
+const compressChatHistory = (history: ChatMessage[]): ChatMessage[] => {
+  if (history.length === 0) return [];
+  
+  const totalSize = history.reduce((acc, msg) => acc + msg.content.length, 0);
+  
+  // If under threshold, return as-is
+  if (totalSize < COMPRESSION_THRESHOLD) {
+    return history.map(msg => ({ ...msg }));
+  }
+  
+  // Compress older messages, keep recent ones intact
+  const keepRecentCount = Math.min(6, history.length);
+  const recentMessages = history.slice(-keepRecentCount);
+  const olderMessages = history.slice(0, -keepRecentCount);
+  
+  const compressed: ChatMessage[] = [];
+  
+  // Summarize older messages
+  if (olderMessages.length > 0) {
+    const summary = olderMessages.map(msg => {
+      const truncated = msg.content.length > MAX_MESSAGE_LENGTH 
+        ? msg.content.slice(0, MAX_MESSAGE_LENGTH) + '... [truncated]'
+        : msg.content;
+      return `[${msg.role}]: ${truncated.slice(0, 200)}...`;
+    }).join('\n');
+    
+    compressed.push({
+      role: 'system',
+      content: `[COMPRESSED HISTORY - ${olderMessages.length} messages]\n${summary.slice(0, 2000)}`
+    });
+  }
+  
+  // Add recent messages as-is
+  for (const msg of recentMessages) {
+    compressed.push({
+      role: msg.role,
+      content: msg.content.length > MAX_MESSAGE_LENGTH
+        ? msg.content.slice(0, MAX_MESSAGE_LENGTH) + '... [truncated]'
+        : msg.content
+    });
+  }
+  
+  return compressed;
 };
 
 const normalizeFileSystem = (files: FileSystemState): FileSystem => (Array.isArray(files) ? {} : files);
@@ -541,7 +622,9 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
       saveCurrentSession: () => {
         const state = get();
-        const projectFiles = useProjectStore.getState().files;
+        const projectStore = useProjectStore.getState();
+        const projectFiles = projectStore.files;
+        const projectName = projectStore.projectName || '';
 
         const snapshotFiles = projectFiles.length > 0
           ? buildTreeFromProjectFiles(projectFiles)
@@ -557,32 +640,69 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
         if (!hasAnyContext) return;
 
-        const titleSource = state.lastPlannedPrompt || state.prompt || 'Untitled Session';
+        // Generate stable session ID based on projectName
+        const sanitizedName = projectName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 50) || 'untitled';
+        
+        // Use existing session ID or find by projectName, or create new stable ID
+        let sessionId = state.currentSessionId;
+        if (!sessionId && projectName) {
+          // Check if session with this projectName already exists
+          const existingSession = state.history.find(s => s.projectName === projectName);
+          if (existingSession) {
+            sessionId = existingSession.id;
+          }
+        }
+        if (!sessionId) {
+          sessionId = `project-${sanitizedName}-${Date.now()}`;
+        }
+
+        const titleSource = projectName || state.lastPlannedPrompt || state.prompt || 'Untitled Session';
+        
+        // Calculate context size for compression indicator
+        const contextSize = calculateContextSize(state.chatHistory, snapshotFiles);
+        
+        const existingSession = state.history.find(s => s.id === sessionId);
+        const createdAt = existingSession?.createdAt || Date.now();
+
         const snapshot: HistorySession = {
-          id: state.currentSessionId || `session-${Date.now()}`,
-          createdAt: Date.now(),
+          id: sessionId,
+          createdAt,
+          updatedAt: Date.now(),
           title: titleSource.slice(0, 60),
+          projectName,
           files: cloneFileSystem(snapshotFiles),
-          chatHistory: state.chatHistory.map((msg) => ({ ...msg })),
+          chatHistory: compressChatHistory(state.chatHistory),
           plan: state.plan,
-          planSteps: state.planSteps.map((step) => ({ ...step }))
+          planSteps: state.planSteps.map((step) => ({ ...step })),
+          contextSize
         };
 
-        // Update existing session or add new one
-        if (state.currentSessionId) {
-          set((state) => ({
-            history: state.history.map((s) =>
-              s.id === state.currentSessionId ? snapshot : s
-            )
+        // Update existing session or add new one - always update same session
+        const existingIndex = state.history.findIndex(s => s.id === sessionId);
+        if (existingIndex >= 0) {
+          set((prevState) => ({
+            history: prevState.history.map((s) =>
+              s.id === sessionId ? snapshot : s
+            ),
+            currentSessionId: sessionId
           }));
         } else {
-          set({ history: [snapshot, ...state.history], currentSessionId: snapshot.id });
+          set({ history: [snapshot, ...state.history], currentSessionId: sessionId });
         }
       },
 
       restoreSession: (sessionId) => {
         const session = get().history.find((item) => item.id === sessionId);
         if (!session) return;
+
+        // Restore project name in projectStore
+        if (session.projectName) {
+          useProjectStore.getState().setProjectName(session.projectName);
+        }
 
         set({
           files: cloneFileSystem(session.files),

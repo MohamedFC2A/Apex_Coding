@@ -1720,52 +1720,87 @@ function App() {
                   outline: 'none'
                 }}
               />
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                This name is used for saving and restoring your project.
+              </div>
             </div>
 
             <div style={{ display: 'grid', gap: 6 }}>
-              <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
-                Stack
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
+                  Stack
+                </div>
+                <span style={{ 
+                  fontSize: 9, 
+                  background: 'rgba(34, 211, 238, 0.15)', 
+                  color: 'rgba(34, 211, 238, 0.95)',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  fontWeight: 600
+                }}>
+                  AUTO
+                </span>
               </div>
               <input
-                value={stack}
-                onChange={(e) => setStack(e.target.value)}
-                placeholder="react-vite"
+                value={stack || 'Detected automatically by AI'}
+                readOnly
                 style={{
                   height: 40,
                   borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(255,255,255,0.05)',
-                  color: 'rgba(255,255,255,0.90)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'rgba(255,255,255,0.02)',
+                  color: 'rgba(255,255,255,0.60)',
                   padding: '0 12px',
-                  outline: 'none'
+                  outline: 'none',
+                  cursor: 'not-allowed'
                 }}
               />
             </div>
 
             <div style={{ display: 'grid', gap: 6 }}>
-              <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
-                Description
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
+                  Description
+                </div>
+                <span style={{ 
+                  fontSize: 9, 
+                  background: 'rgba(34, 211, 238, 0.15)', 
+                  color: 'rgba(34, 211, 238, 0.95)',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  fontWeight: 600
+                }}>
+                  AUTO
+                </span>
               </div>
               <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="What this project does…"
+                value={description || 'Generated automatically from your prompt'}
+                readOnly
                 rows={3}
                 className="scrollbar-thin"
                 style={{
                   borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(255,255,255,0.05)',
-                  color: 'rgba(255,255,255,0.90)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'rgba(255,255,255,0.02)',
+                  color: 'rgba(255,255,255,0.60)',
                   padding: '10px 12px',
                   outline: 'none',
-                  resize: 'vertical'
+                  resize: 'none',
+                  cursor: 'not-allowed'
                 }}
               />
             </div>
 
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>
-              Autosave is enabled. Generated projects must include the Nexus Apex footer.
+            <div style={{ 
+              fontSize: 11, 
+              color: 'rgba(34, 197, 94, 0.85)', 
+              lineHeight: 1.4,
+              background: 'rgba(34, 197, 94, 0.1)',
+              padding: '8px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(34, 197, 94, 0.2)'
+            }}>
+              Auto-save enabled. AI determines stack and description automatically.
             </div>
           </div>
         </OverlayBody>

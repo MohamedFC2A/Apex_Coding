@@ -1,7 +1,3 @@
-'use client';
-
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/context/LanguageContext';
@@ -87,22 +83,21 @@ function TypingSearch({ onClick }: { onClick: () => void }) {
 
 export function Hero() {
   const { t } = useLanguage();
-  const router = useRouter();
 
   // Navigate to IDE when search bar is clicked
   const handleStart = () => {
-    router.push('/app');
+    window.location.href = '/app';
   };
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-56px)] max-w-6xl flex-col justify-center px-6 pt-14 pb-12 md:pt-20">
       <div className="flex items-center justify-between gap-4">
-        <Link href="/" className="inline-flex items-center gap-3">
+        <a href="/" className="inline-flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
             <span className="h-5 w-5 rounded-full bg-gradient-to-br from-cyan-300/90 via-fuchsia-300/90 to-cyan-300/90" />
           </span>
           <span className="text-sm font-semibold tracking-wide text-white/85">{t('brand.name')}</span>
-        </Link>
+        </a>
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 backdrop-blur-md">
@@ -141,18 +136,18 @@ export function Hero() {
         transition={{ delay: 0.1, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
         className="mt-8 flex flex-wrap items-center gap-3"
       >
-        <Link
+        <a
           href="/pricing"
           className="inline-flex items-center justify-center rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-md transition hover:bg-white/15"
         >
           View Pricing
-        </Link>
-        <Link
+        </a>
+        <a
           href="#demo"
           className="inline-flex items-center justify-center rounded-2xl border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold text-white/85 backdrop-blur-md transition hover:bg-white/5"
         >
           {t('hero.cta.demo')}
-        </Link>
+        </a>
       </motion.div>
 
       <motion.div

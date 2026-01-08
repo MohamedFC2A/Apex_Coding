@@ -1,9 +1,8 @@
 import styled from 'styled-components';
 import { Zap, Crown } from 'lucide-react';
 import { useSubscriptionStore } from '@/stores/subscriptionStore';
-import Link from 'next/link';
 
-const Indicator = styled(Link)<{ $isPro: boolean }>`
+const Indicator = styled.a<{ $isPro: boolean }>`
   display: inline-flex;
   align-items: center;
   gap: 6px;

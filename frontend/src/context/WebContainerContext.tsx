@@ -529,11 +529,12 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   );
 
   // Generate a data URL for simple iframe preview (no WebContainer needed)
+  // CRITICAL: Handles both static HTML AND React/TSX projects
   const generateSimplePreview = useCallback(() => {
     const tree = normalizeFileSystem(files);
     if (isTreeEmpty(tree)) return null;
     
-    // Find index.html
+    // Helper to find file by name (case-insensitive, searches recursively)
     const findFile = (node: FileSystem, name: string): string | null => {
       for (const [key, entry] of Object.entries(node) as [string, FileSystemEntry][]) {
         if (key.toLowerCase() === name.toLowerCase() && entry.file) {
@@ -547,41 +548,211 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return null;
     };
     
+    // Helper to find file by pattern
+    const findFileByPattern = (node: FileSystem, pattern: RegExp, prefix = ''): { path: string; content: string } | null => {
+      for (const [key, entry] of Object.entries(node) as [string, FileSystemEntry][]) {
+        const fullPath = prefix ? `${prefix}/${key}` : key;
+        if (entry.file && pattern.test(key)) {
+          return { path: fullPath, content: entry.file.contents || '' };
+        }
+        if (entry.directory) {
+          const found = findFileByPattern(entry.directory, pattern, fullPath);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    // Collect all CSS files
+    const collectAllCSS = (node: FileSystem): string[] => {
+      const cssFiles: string[] = [];
+      const collect = (n: FileSystem) => {
+        for (const [key, entry] of Object.entries(n) as [string, FileSystemEntry][]) {
+          if (entry.file && /\.css$/i.test(key)) {
+            cssFiles.push(entry.file.contents || '');
+          }
+          if (entry.directory) collect(entry.directory);
+        }
+      };
+      collect(node);
+      return cssFiles;
+    };
+    
+    // Detect if this is a React project
+    const hasReactFiles = findFileByPattern(tree, /\.(tsx|jsx)$/i);
+    const packageJson = findFile(tree, 'package.json');
+    const isReactProject = hasReactFiles || (packageJson && packageJson.includes('react'));
+    
+    // Collect all CSS
+    const allCSS = collectAllCSS(tree).join('\n');
+    
+    // ========================================
+    // REACT/TSX PROJECT HANDLING
+    // ========================================
+    if (isReactProject) {
+      // Find App component
+      const appFile = findFileByPattern(tree, /^App\.(tsx|jsx)$/i) || 
+                      findFileByPattern(tree, /^app\.(tsx|jsx)$/i);
+      
+      // Find all component files
+      const componentFiles: { name: string; content: string }[] = [];
+      const collectComponents = (node: FileSystem) => {
+        for (const [key, entry] of Object.entries(node) as [string, FileSystemEntry][]) {
+          if (entry.file && /\.(tsx|jsx)$/i.test(key) && !/index\.(tsx|jsx)$/i.test(key)) {
+            componentFiles.push({ 
+              name: key.replace(/\.(tsx|jsx)$/i, ''),
+              content: entry.file.contents || '' 
+            });
+          }
+          if (entry.directory) collectComponents(entry.directory);
+        }
+      };
+      collectComponents(tree);
+      
+      // Clean TSX code for browser (remove imports/exports, type annotations)
+      const cleanTSXForBrowser = (code: string): string => {
+        return code
+          // Remove import statements
+          .replace(/^import\s+.*?['"];?\s*$/gm, '')
+          .replace(/^import\s+[\s\S]*?from\s+['"].*?['"];?\s*$/gm, '')
+          // Remove export statements but keep the content
+          .replace(/^export\s+default\s+/gm, '')
+          .replace(/^export\s+/gm, '')
+          // Remove type annotations (simplified)
+          .replace(/:\s*React\.FC\s*/g, '')
+          .replace(/:\s*\w+\s*(?=[,)=])/g, '')
+          .replace(/<\w+>\s*(?=\()/g, '')
+          // Clean up empty lines
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      };
+      
+      // Build component code
+      let componentsCode = '';
+      for (const comp of componentFiles) {
+        if (comp.name !== 'App') {
+          const cleanCode = cleanTSXForBrowser(comp.content);
+          // Wrap in a const if it looks like a function component
+          if (cleanCode.includes('function') || cleanCode.includes('=>')) {
+            componentsCode += `const ${comp.name} = ${cleanCode.replace(/^function\s+\w+/, 'function')}\n\n`;
+          } else {
+            componentsCode += cleanCode + '\n\n';
+          }
+        }
+      }
+      
+      // Add App component
+      let appCode = '';
+      if (appFile) {
+        appCode = cleanTSXForBrowser(appFile.content);
+        if (!appCode.startsWith('function') && !appCode.startsWith('const App')) {
+          appCode = `function App() ${appCode}`;
+        }
+      } else {
+        // Default App if not found
+        appCode = `function App() {
+          return React.createElement('div', { style: { padding: '20px', fontFamily: 'system-ui' } },
+            React.createElement('h1', null, 'React App Loaded'),
+            React.createElement('p', null, 'No App.tsx found - showing fallback')
+          );
+        }`;
+      }
+      
+      // Generate React preview HTML with Babel standalone for TSX compilation
+      const reactPreviewHtml = `<!DOCTYPE html>
+<html lang="en" dir="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Preview</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin><\/script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin><\/script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    #root { min-height: 100vh; }
+    ${allCSS}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react,typescript">
+    // Components
+    ${componentsCode}
+    
+    // App
+    ${appCode}
+    
+    // Mount
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  <\/script>
+  <script>
+    // Error handling
+    window.onerror = function(msg, url, line) {
+      document.getElementById('root').innerHTML = '<div style="padding:20px;color:red;"><h2>Error</h2><pre>' + msg + '</pre></div>';
+    };
+  <\/script>
+</body>
+</html>`;
+      
+      return `data:text/html;charset=utf-8,${encodeURIComponent(reactPreviewHtml)}`;
+    }
+    
+    // ========================================
+    // STATIC HTML PROJECT HANDLING
+    // ========================================
     const indexHtml = findFile(tree, 'index.html');
-    if (!indexHtml) return null;
     
-    // Find CSS and JS files
-    const stylesCSS = findFile(tree, 'styles.css') || findFile(tree, 'style.css') || '';
-    const scriptJS = findFile(tree, 'script.js') || findFile(tree, 'main.js') || findFile(tree, 'app.js') || '';
-    
-    // Inject CSS and JS into HTML
-    let finalHtml = indexHtml;
-    
-    // Replace CSS link with inline styles
-    if (stylesCSS) {
-      finalHtml = finalHtml.replace(
-        /<link[^>]*href=["'](?:.*\/)?styles?\.css["'][^>]*>/gi,
-        `<style>${stylesCSS}</style>`
-      );
-      // Also add styles if no link tag found
-      if (!finalHtml.includes('<style>')) {
-        finalHtml = finalHtml.replace('</head>', `<style>${stylesCSS}</style></head>`);
+    if (indexHtml) {
+      let finalHtml = indexHtml;
+      
+      // Ensure proper meta tags
+      if (!finalHtml.includes('charset')) {
+        finalHtml = finalHtml.replace('<head>', '<head>\n<meta charset="UTF-8">');
       }
+      if (!finalHtml.includes('viewport')) {
+        finalHtml = finalHtml.replace('</head>', '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n</head>');
+      }
+      
+      // Inject all CSS
+      if (allCSS) {
+        // Remove CSS link tags and add inline styles
+        finalHtml = finalHtml.replace(/<link[^>]*\.css["'][^>]*>/gi, '');
+        finalHtml = finalHtml.replace('</head>', `<style>${allCSS}</style>\n</head>`);
+      }
+      
+      // Find and inject JS files
+      const scriptJS = findFile(tree, 'script.js') || findFile(tree, 'main.js') || findFile(tree, 'app.js') || '';
+      if (scriptJS) {
+        finalHtml = finalHtml.replace(/<script[^>]*src=["'][^"']*\.js["'][^>]*><\/script>/gi, '');
+        finalHtml = finalHtml.replace('</body>', `<script>${scriptJS}</script>\n</body>`);
+      }
+      
+      return `data:text/html;charset=utf-8,${encodeURIComponent(finalHtml)}`;
     }
     
-    // Replace JS script with inline script
-    if (scriptJS) {
-      finalHtml = finalHtml.replace(
-        /<script[^>]*src=["'](?:.*\/)?(?:script|main|app)\.js["'][^>]*><\/script>/gi,
-        `<script>${scriptJS}</script>`
-      );
-      // Also add script if no script tag found
-      if (!finalHtml.includes('<script>') && scriptJS.trim()) {
-        finalHtml = finalHtml.replace('</body>', `<script>${scriptJS}</script></body>`);
-      }
-    }
+    // ========================================
+    // FALLBACK: Generate minimal HTML
+    // ========================================
+    const fallbackHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview</title>
+  <style>${allCSS}</style>
+</head>
+<body>
+  <div style="padding: 40px; text-align: center; font-family: system-ui;">
+    <h1>No index.html found</h1>
+    <p>Create an index.html file to see your preview.</p>
+  </div>
+</body>
+</html>`;
     
-    return `data:text/html;charset=utf-8,${encodeURIComponent(finalHtml)}`;
+    return `data:text/html;charset=utf-8,${encodeURIComponent(fallbackHtml)}`;
   }, [files]);
 
   const deployAndRun = useCallback(async () => {

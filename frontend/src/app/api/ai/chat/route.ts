@@ -82,13 +82,14 @@ export async function POST(req: Request) {
       }, 10_000);
 
       const abortController = new AbortController();
+      // FIXED: Increased timeout from 55s to 180s (3 minutes) for large projects
       const abortTimer = setTimeout(() => {
         try {
           abortController.abort();
         } catch {
           // ignore
         }
-      }, 55_000);
+      }, 180_000);
 
       try {
         const body = await req.json().catch(() => ({} as any));
@@ -190,7 +191,7 @@ export async function POST(req: Request) {
         controller.close();
       } catch (e: any) {
         try {
-          const message = e?.name === 'AbortError' ? 'Upstream timed out' : e?.message || 'Streaming error';
+          const message = e?.name === 'AbortError' ? 'Request timeout - please try a simpler prompt or break it into smaller tasks' : e?.message || 'Streaming error';
           writeSse('status', `error:${message}`);
         } catch {
           // ignore

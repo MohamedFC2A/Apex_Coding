@@ -21,7 +21,6 @@ const getErrorMessage = (err: any, fallback: string) => {
 
 export const aiService = {
   async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
-    // Check subscription limits
     const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
     
     if (!canMakeRequest()) {
@@ -33,7 +32,8 @@ export const aiService = {
 
       const postOnce = async () => {
         const controller = new AbortController();
-        const timer = globalThis.setTimeout(() => controller.abort(), 12_000);
+        // FIXED: Increased from 12s to 60s for plan generation
+        const timer = globalThis.setTimeout(() => controller.abort(), 60_000);
         try {
           return await fetch(PLAN_URL, {
             method: 'POST',
@@ -47,18 +47,18 @@ export const aiService = {
       };
 
       let response: Response | null = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
         try {
           response = await postOnce();
           if (response.ok) break;
           if (response.status === 502 || response.status === 503 || response.status === 504) {
-            await new Promise((r) => globalThis.setTimeout(r as any, 450));
+            await new Promise((r) => globalThis.setTimeout(r as any, 1000));
             continue;
           }
           break;
-        } catch {
-          if (attempt >= 1) throw new Error('Upstream timed out');
-          await new Promise((r) => globalThis.setTimeout(r as any, 450));
+        } catch (e: any) {
+          if (attempt >= 2) throw new Error('Plan generation timeout - please try again');
+          await new Promise((r) => globalThis.setTimeout(r as any, 1000));
         }
       }
 
@@ -72,7 +72,6 @@ export const aiService = {
       const data: any = await response.json();
       const steps = Array.isArray(data?.steps) ? data.steps : [];
       
-      // Increment request count on success
       incrementRequests();
       
       return { steps };
@@ -83,8 +82,6 @@ export const aiService = {
   },
 
   async generateCode(prompt: string): Promise<AIResponse> {
-    // Legacy endpoint previously returned JSON; the app now relies on streaming (`generateCodeStream`).
-    // Keep this method for compatibility but surface an explicit error.
     void prompt;
     throw new Error('generateCode() is deprecated; use generateCodeStream()');
   },
@@ -105,7 +102,7 @@ export const aiService = {
           architectMode?: boolean;
           includeReasoning?: boolean;
           history?: any[];
-          typingMs?: number; // 0 disables typing playback (useful for tests)
+          typingMs?: number;
           onFileEvent?: (event: {
             type: 'start' | 'chunk' | 'end';
             path: string;
@@ -117,7 +114,6 @@ export const aiService = {
           }) => void;
         } = false
   ): Promise<void> {
-    // Check subscription limits
     const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
     
     if (!canMakeRequest()) {
@@ -125,7 +121,6 @@ export const aiService = {
       return;
     }
     
-    // Mark request as used
     incrementRequests();
     
     try {
@@ -146,13 +141,12 @@ export const aiService = {
         const dataLines: string[] = [];
 
         for (const line of lines) {
-          if (line.startsWith(':')) continue; // keep-alive/comment
+          if (line.startsWith(':')) continue;
           if (line.startsWith('event:')) {
             eventName = line.slice('event:'.length).trim();
             continue;
           }
           if (line.startsWith('data:')) {
-            // Preserve all content including leading spaces; only strip the single optional space after `data:`.
             const rest = line.slice('data:'.length);
             dataLines.push(rest.startsWith(' ') ? rest.slice(1) : rest);
             continue;
@@ -277,7 +271,6 @@ export const aiService = {
               continue;
             }
 
-            // No marker found: flush most of the buffer but keep a tail to allow marker split across chunks.
             const keep = Math.max(startToken.length + 8, editToken.length + 8, endToken.length + 8);
             if (this.scan.length <= keep) return;
 
@@ -436,8 +429,9 @@ export const aiService = {
         let sawDoneStatus = false;
         let streamErrored = false;
 
-        const stallMsRaw = Number((options as any).stallTimeoutMs ?? 35_000);
-        const stallMs = Number.isFinite(stallMsRaw) ? Math.max(8_000, stallMsRaw) : 35_000;
+        // FIXED: Increased stall timeout from 35s to 120s (2 minutes)
+        const stallMsRaw = Number((options as any).stallTimeoutMs ?? 120_000);
+        const stallMs = Number.isFinite(stallMsRaw) ? Math.max(30_000, stallMsRaw) : 120_000;
         let lastUsefulAt = Date.now();
         let stallTimer: any = null;
 
@@ -445,7 +439,6 @@ export const aiService = {
           lastUsefulAt = Date.now();
           if (!stallTimer) {
             stallTimer = globalThis.setInterval(() => {
-              // Only enforce stall detection after we have begun receiving tokens.
               if (!sawAnyToken) return;
               const idleFor = Date.now() - lastUsefulAt;
               if (idleFor < stallMs) return;
@@ -454,7 +447,7 @@ export const aiService = {
               } catch {
                 // ignore
               }
-            }, 1000);
+            }, 2000);
           }
         };
 
@@ -481,7 +474,6 @@ export const aiService = {
             const decoded = decoder.decode(value, { stream: true });
             if (decoded.length === 0) continue;
 
-            // If backend sends raw chunks (not SSE framed), forward immediately.
             const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
             if (!looksLikeSse && buffer.length === 0) {
               const cleaned = decoded.replace(/^:[^\n]*\n+/gm, '');
@@ -527,7 +519,6 @@ export const aiService = {
               }
             }
 
-            // If we have a buffer that isn't SSE-framed, treat it as raw content.
             if (buffer.length > 0 && !/(^|\n)event:\s/.test(buffer) && !/(^|\n)data:\s/.test(buffer)) {
               const cleaned = buffer.replace(/^:[^\n]*\n+/gm, '');
               buffer = '';
@@ -536,7 +527,6 @@ export const aiService = {
           }
         } catch (e: any) {
           streamErrored = true;
-          // If we already received output, treat this as a cut-off stream and let the resume logic heal it.
           if (!sawAnyToken) throw e;
         }
 
@@ -562,14 +552,14 @@ export const aiService = {
       const maxResumeAttempts = 2;
 
       let first: { markerParser: any } | null = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
         try {
           first = await runStreamOnce(prompt);
           break;
         } catch (e: any) {
-          if (attempt >= 1) throw e;
+          if (attempt >= 2) throw e;
           onStatus('streaming', 'Retrying…');
-          await new Promise((r) => setTimeout(r, 550));
+          await new Promise((r) => setTimeout(r, 1000));
         }
       }
       if (!first) throw new Error('Streaming failed');

@@ -304,13 +304,6 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const tree = normalizeFileSystem(files);
       if (!isPreviewOpen || isTreeEmpty(tree)) return;
 
-      const convexEnabled = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL);
-      if (convexEnabled && (isHydrating || !projectId)) {
-        updateStatus('idle', 'Initializing Development Environment...');
-        appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for Convex initialization...\\n`);
-        return;
-      }
-
       const looksStatic =
         treeHasPath(tree, 'index.html') &&
         !treeContainsFileNamed(tree, 'package.json') &&

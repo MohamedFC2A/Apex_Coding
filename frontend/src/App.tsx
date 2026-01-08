@@ -1417,6 +1417,7 @@ function App() {
         <InputArea>
           <PromptInput
             ref={promptRef}
+            onSubmit={handleMainActionClick}
             controls={
               <>
                 <Popover>

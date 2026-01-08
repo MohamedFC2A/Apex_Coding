@@ -104,8 +104,7 @@ interface PreviewWindowProps {
 
 export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
   const { previewUrl, runtimeStatus, runtimeMessage } = usePreviewStore();
-  const { files: projectFiles, projectId, isHydrating } = useProjectStore();
-  const convexEnabled = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL);
+  const { files: projectFiles } = useProjectStore();
 
   const hasOnlyBaseStructure = projectFiles.length === 0;
 
@@ -119,16 +118,14 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
 
   const canMountFrame = indexHtmlContent.trim().length > 10;
   const canShowFrame = Boolean(previewUrl) && canMountFrame;
-  const mustWaitForConvex = convexEnabled && (isHydrating || !projectId);
-  const showOverlay = mustWaitForConvex || !canShowFrame || runtimeStatus !== 'ready';
+  const showOverlay = !canShowFrame || runtimeStatus !== 'ready';
 
   const overlayMessage = useMemo(() => {
-    if (mustWaitForConvex) return 'Initializing Development Environment...';
     if (runtimeStatus === 'error') return runtimeMessage || 'Runtime error. Check logs.';
     if (runtimeMessage) return runtimeMessage;
     if (!canShowFrame) return 'Waiting for Code...';
     return 'Booting container...';
-  }, [canShowFrame, mustWaitForConvex, runtimeMessage, runtimeStatus]);
+  }, [canShowFrame, runtimeMessage, runtimeStatus]);
 
   if (hasOnlyBaseStructure) {
     return (
@@ -170,7 +167,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
         {showOverlay && (
           <Overlay initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-              {(mustWaitForConvex || (runtimeStatus !== 'idle' && runtimeStatus !== 'ready')) && (
+              {(runtimeStatus !== 'idle' && runtimeStatus !== 'ready') && (
                 <Loader2 size={18} className="animate-spin" />
               )}
               {overlayMessage}
@@ -178,7 +175,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
           </Overlay>
         )}
 
-        {canShowFrame && !mustWaitForConvex && (
+        {canShowFrame && (
           <Frame
             src={previewUrl ?? undefined}
             className="w-full h-full border-none bg-white"

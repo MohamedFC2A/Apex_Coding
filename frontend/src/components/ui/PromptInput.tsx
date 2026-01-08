@@ -180,9 +180,10 @@ interface PromptInputProps {
   placeholder?: string;
   controls?: React.ReactNode;
   className?: string;
+  onSubmit?: () => void;
 }
 
-export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(({ placeholder, controls, className }, ref) => {
+export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(({ placeholder, controls, className, onSubmit }, ref) => {
   const { prompt, setPrompt, isGenerating, interactionMode } = useAIStore();
   const mode = interactionMode === 'edit' ? 'edit' : 'create';
   const [focused, setFocused] = useState(false);
@@ -208,6 +209,15 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(({ 
   const displayedPlaceholder =
     placeholder ||
     (mode === 'edit' ? 'What would you like to change in the current code?' : showCreativeHint ? '' : 'Describe what you want to build…');
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (onSubmit && prompt.trim()) {
+        onSubmit();
+      }
+    }
+  };
 
   return (
     <Shell className={className} $mode={mode}>
@@ -240,6 +250,7 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(({ 
           $mode={mode}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder={displayedPlaceholder}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

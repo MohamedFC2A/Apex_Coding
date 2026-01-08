@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import Editor from '@monaco-editor/react';
+import Editor, { Monaco, OnMount } from '@monaco-editor/react';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAIStore } from '@/stores/aiStore';
 import { shallow } from 'zustand/shallow';
@@ -10,6 +10,7 @@ import { downloadService } from '@/services/downloadService';
 import { usePreviewStore } from '@/stores/previewStore';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 import { useWebContainer } from '@/context/WebContainerContext';
+import type * as monaco from 'monaco-editor';
 
 interface CodeEditorProps {
   showFileTree?: boolean;
@@ -33,6 +34,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
   const { addLog } = usePreviewStore();
   const { runProject } = useWebContainer();
   const [openTabs, setOpenTabs] = React.useState<string[]>([]);
+  const [editorTheme, setEditorTheme] = React.useState<'vs-dark' | 'nord' | 'dracula'>('vs-dark');
+
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
 
   const currentFile = files.find(f => f.path === activeFile);
   const currentFileLanguage = currentFile
@@ -49,14 +54,71 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
 
   useEffect(() => {
     if (files.length === 0) return;
-
     const activeExists = Boolean(activeFile && files.some((file) => file.path === activeFile));
     if (activeExists) return;
-
     const firstFile = files[0];
     const nextPath = firstFile.path || firstFile.name;
     if (nextPath) setActiveFile(nextPath);
   }, [activeFile, files, setActiveFile]);
+
+  const handleEditorDidMount: OnMount = React.useCallback((editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+
+    // Define Nord theme
+    monaco.editor.defineTheme('nord', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '616e88', fontStyle: 'italic' },
+        { token: 'keyword', foreground: '81a1c1' },
+        { token: 'string', foreground: 'a3be8c' },
+        { token: 'number', foreground: 'b48ead' },
+        { token: 'type', foreground: '8fbcbb' },
+        { token: 'function', foreground: '88c0d0' },
+      ],
+      colors: {
+        'editor.background': '#2e3440',
+        'editor.foreground': '#d8dee9',
+        'editor.lineHighlightBackground': '#3b4252',
+        'editor.selectionBackground': '#434c5e',
+        'editorCursor.foreground': '#d8dee9',
+      },
+    });
+
+    // Define Dracula theme
+    monaco.editor.defineTheme('dracula', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '6272a4', fontStyle: 'italic' },
+        { token: 'keyword', foreground: 'ff79c6' },
+        { token: 'string', foreground: 'f1fa8c' },
+        { token: 'number', foreground: 'bd93f9' },
+      ],
+      colors: {
+        'editor.background': '#282a36',
+        'editor.foreground': '#f8f8f2',
+        'editor.lineHighlightBackground': '#44475a',
+        'editor.selectionBackground': '#44475a',
+      },
+    });
+
+    // Configure TypeScript
+    monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+      target: monaco.languages.typescript.ScriptTarget.ESNext,
+      allowNonTsExtensions: true,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      module: monaco.languages.typescript.ModuleKind.CommonJS,
+      noEmit: true,
+      jsx: monaco.languages.typescript.JsxEmit.React,
+    });
+
+    // Add format on save shortcut
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      editor.getAction('editor.action.formatDocument')?.run();
+    });
+  }, []);
 
   const handleEditorChange = (value: string | undefined) => {
     if (isGenerating) return;
@@ -96,10 +158,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
 
   const handleDownload = async () => {
     if (files.length === 0) return;
-
     try {
       await downloadService.downloadAsZip(files, projectName || 'nexus-project');
-      
       addLog({
         timestamp: Date.now(),
         type: 'success',
@@ -136,7 +196,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
       return;
     }
 
-    // During generation, render a "typewriter" view that gently trails the real file content.
     setTypedValue((prev) => (targetContentRef.current.startsWith(prev) ? prev : targetContentRef.current));
 
     if (!typingTimerRef.current) {
@@ -144,7 +203,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
         setTypedValue((prev) => {
           const target = targetContentRef.current;
           if (prev === target) return prev;
-
           const step = 140;
           const nextBoundary = target.indexOf('\n', prev.length);
           const maxNext = Math.min(prev.length + step, target.length);
@@ -152,7 +210,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
             nextBoundary !== -1 && nextBoundary < maxNext
               ? Math.min(nextBoundary + 1, target.length)
               : maxNext;
-
           return target.slice(0, nextLen);
         });
       }, 22);
@@ -164,13 +221,102 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
         typingTimerRef.current = null;
       }
     };
-  }, [activeFile, currentFile, isGenerating]);
+  }, [activeFile, currentFile, isGenerating, storeContent]);
 
   const editorValue = useMemo(() => {
     if (isStreamingView) return streamText;
     if (!currentFile) return undefined;
     return isGenerating ? typedValue : storeContent;
   }, [currentFile, isGenerating, isStreamingView, storeContent, streamText, typedValue]);
+
+  // ENHANCED OPTIONS - 100x better
+  const editorOptions: monaco.editor.IStandaloneEditorConstructionOptions = {
+    readOnly: isStreamingView,
+    automaticLayout: true,
+    fontSize: 14,
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+    fontLigatures: true,
+    lineNumbers: 'on',
+    renderWhitespace: 'selection',
+    renderLineHighlight: 'all',
+    scrollBeyondLastLine: false,
+    minimap: {
+      enabled: true,
+      side: 'right',
+      showSlider: 'mouseover',
+      renderCharacters: true,
+      maxColumn: 120,
+    },
+    scrollbar: {
+      vertical: 'visible',
+      horizontal: 'visible',
+      useShadows: true,
+      verticalScrollbarSize: 10,
+      horizontalScrollbarSize: 10,
+    },
+    suggest: {
+      showMethods: true,
+      showFunctions: true,
+      showConstructors: true,
+      showFields: true,
+      showVariables: true,
+      showClasses: true,
+      showKeywords: true,
+      showSnippets: true,
+    },
+    quickSuggestions: {
+      other: true,
+      comments: false,
+      strings: true,
+    },
+    parameterHints: {
+      enabled: true,
+      cycle: true,
+    },
+    hover: {
+      enabled: true,
+      delay: 300,
+      sticky: true,
+    },
+    bracketPairColorization: {
+      enabled: true,
+    },
+    guides: {
+      bracketPairs: true,
+      indentation: true,
+      highlightActiveIndentation: true,
+    },
+    stickyScroll: {
+      enabled: true,
+      maxLineCount: 5,
+    },
+    folding: true,
+    foldingStrategy: 'indentation',
+    showFoldingControls: 'mouseover',
+    matchBrackets: 'always',
+    autoClosingBrackets: 'always',
+    autoClosingQuotes: 'always',
+    autoIndent: 'full',
+    formatOnPaste: true,
+    formatOnType: true,
+    tabSize: 2,
+    insertSpaces: true,
+    detectIndentation: true,
+    trimAutoWhitespace: true,
+    wordWrap: 'on',
+    wrappingIndent: 'indent',
+    rulers: [80, 120],
+    cursorBlinking: 'smooth',
+    smoothScrolling: true,
+    mouseWheelZoom: true,
+    multiCursorModifier: 'alt',
+    padding: {
+      top: 16,
+      bottom: 16,
+    },
+    links: true,
+    colorDecorators: true,
+  };
 
   if (isHydrating && files.length === 0) {
     return (
@@ -220,6 +366,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
             
             <div className="flex items-center gap-2 px-3">
               <button
+                onClick={() => setEditorTheme(t => t === 'vs-dark' ? 'nord' : t === 'nord' ? 'dracula' : 'vs-dark')}
+                className="glass-button px-3 py-1.5 rounded text-xs font-medium"
+                title="Toggle theme"
+              >
+                {editorTheme === 'vs-dark' ? '🌙 Dark' : editorTheme === 'nord' ? '❄️ Nord' : '🧛 Dracula'}
+              </button>
+              <button
                 onClick={handleRun}
                 className="glass-button px-4 py-1.5 rounded flex items-center justify-center gap-2 text-sm"
                 disabled={files.length === 0 || isGenerating || Boolean(writingFilePath)}
@@ -245,18 +398,14 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
                 language={isStreamingView ? 'markdown' : currentFileLanguage}
                 value={editorValue}
                 onChange={handleEditorChange}
-                theme="vs-dark"
-                options={{
-                  minimap: { enabled: true },
-                  fontSize: 14,
-                  lineNumbers: 'on',
-                  roundedSelection: true,
-                  scrollBeyondLastLine: false,
-                  automaticLayout: true,
-                  tabSize: 2,
-                  wordWrap: 'on',
-                  readOnly: isStreamingView,
-                }}
+                onMount={handleEditorDidMount}
+                theme={editorTheme}
+                options={editorOptions}
+                loading={
+                  <div className="flex items-center justify-center h-full">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400" />
+                  </div>
+                }
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-500">
@@ -274,7 +423,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
                   : 'Ready'}
             </div>
             <div className="text-xs text-white/50">
-              {modelMode === 'thinking' ? 'Thinking mode' : 'Fast mode'}
+              {modelMode === 'thinking' ? '🧠 Thinking' : '⚡ Fast'} • {editorTheme}
             </div>
           </div>
         </div>

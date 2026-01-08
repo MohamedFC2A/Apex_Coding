@@ -464,7 +464,7 @@ BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.
 REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files.`.trim();
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
-app.post('/ai/plan', async (req, res) => {
+app.post(['/ai/plan', '/api/ai/plan'], async (req, res) => {
   try {
     const { prompt } = req.body || {};
     console.log('[plan] Generating plan for prompt:', typeof prompt === 'string' ? prompt.slice(0, 500) : prompt);

@@ -3,12 +3,18 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "npm install",
   "framework": null,
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/index.js" }
+    { "source": "/api/ai/plan", "destination": "/api/plan" },
+    { "source": "/api/ai/generate", "destination": "/api/generate" }
   ],
   "headers": [
     {
-      "source": "/api/:path*",
+      "source": "/api/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },

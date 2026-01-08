@@ -158,13 +158,15 @@ const getPackageDir = (path: string) => {
 };
 
 const resolveStartCommand = (fileMap: Map<string, string>) => {
-  // FIXED: Improved static detection - check for HTML files first
+  // Check for static HTML project first
   if (fileMap.has('index.html') && !Array.from(fileMap.keys()).some((p) => p.endsWith('package.json'))) {
     return { command: 'node', args: [STATIC_SERVER_FILE], cwd: '.' };
   }
 
   const packagePaths = Array.from(fileMap.keys()).filter((p) => p.endsWith('package.json'));
-  const preferred = ['package.json', 'frontend/package.json', 'client/package.json', 'backend/package.json'];
+  
+  // Priority order: frontend > client > root > backend
+  const preferred = ['frontend/package.json', 'client/package.json', 'package.json', 'backend/package.json'];
   packagePaths.sort((a, b) => {
     const ai = preferred.indexOf(a);
     const bi = preferred.indexOf(b);
@@ -179,24 +181,25 @@ const resolveStartCommand = (fileMap: Map<string, string>) => {
       const parsed = JSON.parse(raw);
       const scripts = parsed?.scripts || {};
       const cwd = getPackageDir(pkgPath);
-      if (scripts?.start) return { command: 'npm', args: ['run', 'start'], cwd };
-      if (scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+      
+      // Check for Next.js specifically - prefer dev script
+      const isNextJs = parsed?.dependencies?.next || parsed?.devDependencies?.next;
+      
+      if (isNextJs && scripts?.dev) {
+        return { command: 'npm', args: ['run', 'dev'], cwd };
+      }
+      if (scripts?.dev) {
+        return { command: 'npm', args: ['run', 'dev'], cwd };
+      }
+      if (scripts?.start) {
+        return { command: 'npm', args: ['run', 'start'], cwd };
+      }
     } catch {
       // ignore parse errors
     }
   }
 
-  const rootPackage = fileMap.get('package.json');
-  if (rootPackage) {
-    try {
-      const parsed = JSON.parse(rootPackage);
-      const scripts = parsed?.scripts || {};
-      if (scripts?.start) return { command: 'npm', args: ['run', 'start'], cwd: '.' };
-    } catch {
-      // fall through
-    }
-  }
-
+  // Fallback: check for common server files
   if (fileMap.has('backend/server.js')) {
     return { command: 'node', args: ['backend/server.js'], cwd: '.' };
   }
@@ -385,7 +388,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       serverStartedRef.current = true;
 
       await Promise.race([
-        waitForServerReady(15_000, [5173, 3111, 3000]),
+        waitForServerReady(20_000, [3000, 3111, 5173]),
         serverProcess.exit.then((code) => {
           throw new Error(`Server process exited (${code}). Check logs for details.`);
         })

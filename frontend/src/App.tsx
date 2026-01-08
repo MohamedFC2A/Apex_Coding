@@ -1067,14 +1067,33 @@ function App() {
 
       const applySearchReplaceBlocks = (original: string, blocks: Array<{ search: string; replace: string }>) => {
         let out = original;
+        let appliedChanges = 0;
+        
         for (const block of blocks) {
           if (!block.search) continue;
-          if (out.includes(block.search)) {
-            out = out.replace(block.search, block.replace);
+          
+          // Skip if search and replace are identical (no change needed)
+          if (block.search === block.replace) {
             continue;
           }
-          // Fallback: ignore missing search blocks.
+          
+          // Skip if search block is not found in content
+          if (!out.includes(block.search)) {
+            continue;
+          }
+          
+          // Apply the replacement
+          out = out.replace(block.search, block.replace);
+          appliedChanges++;
         }
+        
+        // Log if no changes were applied (helps detect AI issues)
+        if (blocks.length > 0 && appliedChanges === 0) {
+          logSystem('[STATUS] Edit mode: No changes applied (search blocks not found or identical to replace)');
+        } else if (appliedChanges > 0) {
+          logSystem(`[STATUS] Edit mode: Applied ${appliedChanges} change(s)`);
+        }
+        
         return out;
       };
 

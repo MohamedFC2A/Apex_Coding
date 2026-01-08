@@ -8,10 +8,8 @@
       "maxDuration": 60
     }
   },
-  "rewrites": [
-    { "source": "/api/ai/plan", "destination": "/api/plan" },
-    { "source": "/api/ai/generate", "destination": "/api/generate" }
-  ],
+  // No rewrites needed - Next.js API routes are automatically deployed as Serverless Functions
+// "rewrites": [],
   "headers": [
     {
       "source": "/api/(.*)",

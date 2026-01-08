@@ -20,7 +20,7 @@ const getErrorMessage = (err: any, fallback: string) => {
 };
 
 export const aiService = {
-  async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ steps: Array<{ id: string; title: string }> }> {
+  async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ title?: string; description?: string; stack?: string; fileTree?: string[]; steps: Array<{ id: string; title: string; category?: string; files?: string[]; description?: string }> }> {
     const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
     
     if (!canMakeRequest()) {
@@ -71,10 +71,14 @@ export const aiService = {
 
       const data: any = await response.json();
       const steps = Array.isArray(data?.steps) ? data.steps : [];
+      const title = typeof data?.title === 'string' ? data.title : undefined;
+      const description = typeof data?.description === 'string' ? data.description : undefined;
+      const stack = typeof data?.stack === 'string' ? data.stack : undefined;
+      const fileTree = Array.isArray(data?.fileTree) ? data.fileTree : undefined;
       
       incrementRequests();
       
-      return { steps };
+      return { title, description, stack, fileTree, steps };
     } catch (error: any) {
       console.error('Plan Error Details:', error);
       throw new Error(getErrorMessage(error, 'Failed to generate plan'));
@@ -387,13 +391,41 @@ export const aiService = {
           prompt,
           '',
           'SYSTEM: You were cut off mid-stream. Resume using ONLY the File-Marker protocol.',
+          'CRITICAL AUTO-CONTINUE RULES:',
+          '- NEVER output status messages like "Searching...", "Replacing...", "Found X", "Replaced X with Y"',
+          '- NEVER explain what you are doing - just output the code',
+          '- Output ONLY [[START_FILE:...]] or [[EDIT_NODE:...]] markers and actual code',
+          '- NO commentary, NO explanations, NO status updates',
+          '',
           `The last file ${cutPath} was cut off at line ${cutLine}. Continue the stream exactly from line ${cutLine + 1} (do not repeat earlier lines).`,
           completedList ? `DO NOT repeat these already completed files: ${completedList}` : '',
           tail ? `Last received tail (for context, may be truncated):\n${tail}` : '',
-          'Output only markers + code. No filler.'
+          'Output ONLY markers + code. Absolutely NO filler or status messages.'
         ]
           .filter(Boolean)
           .join('\n');
+      };
+
+      // Filter to remove protocol noise from AI output
+      const filterProtocolNoise = (text: string): string => {
+        // Remove common noise patterns that AI might output
+        const noisePatterns = [
+          /^Searching\.{0,3}$/gm,
+          /^Replacing\.{0,3}$/gm,
+          /^Found \d+ match(es)?.*$/gm,
+          /^Replaced .* with .*$/gm,
+          /^Processing\.{0,3}$/gm,
+          /^Working\.{0,3}$/gm,
+          /^Continuing\.{0,3}$/gm,
+          /^\[\[SEARCH\]\]\s*$/gm,
+          /^\[\[REPLACE\]\]\s*$/gm,
+          /^\[\[END_EDIT\]\]\s*$/gm
+        ];
+        let result = text;
+        for (const pattern of noisePatterns) {
+          result = result.replace(pattern, '');
+        }
+        return result;
       };
 
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
@@ -460,10 +492,13 @@ export const aiService = {
 
         const consumeToken = (tokenChunk: string) => {
           if (!tokenChunk) return;
+          // Filter out protocol noise from AI output (e.g., "Searching...", "Replacing...")
+          const cleanedChunk = filterProtocolNoise(tokenChunk);
+          if (!cleanedChunk.trim()) return; // Skip if chunk is only noise
           sawAnyToken = true;
           kickStallTimer();
-          streamTail = (streamTail + tokenChunk).slice(-streamTailMax);
-          player.enqueue(tokenChunk);
+          streamTail = (streamTail + cleanedChunk).slice(-streamTailMax);
+          player.enqueue(cleanedChunk);
         };
 
         try {

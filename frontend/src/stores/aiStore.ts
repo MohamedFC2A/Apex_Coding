@@ -20,6 +20,9 @@ export interface PlanStep {
   id: string;
   title: string;
   completed: boolean;
+  category?: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment';
+  files?: string[];
+  description?: string;
 }
 
 export interface HistorySession {
@@ -535,11 +538,14 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             .map((s, i) => ({
               id: String(s?.id ?? i + 1),
               title: String(s?.title ?? s?.text ?? s?.step ?? '').trim(),
-              completed: false
+              completed: false,
+              category: (s?.category || 'frontend') as PlanStep['category'],
+              files: Array.isArray(s?.files) ? s.files : [],
+              description: String(s?.description ?? '')
             }))
             .filter((s) => s.title.length > 0);
 
-          set({ planSteps, lastPlannedPrompt: prompt });
+          set({ planSteps, lastPlannedPrompt: prompt, plan: data?.title || 'Architecture Plan' });
         } catch (err: any) {
           set({ error: err?.message || 'Failed to generate plan' });
         } finally {

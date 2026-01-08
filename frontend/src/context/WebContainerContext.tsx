@@ -23,6 +23,15 @@ const normalizeFileSystem = (files: FileSystem | []) => (Array.isArray(files) ? 
 
 const isTreeEmpty = (tree: FileSystem) => Object.keys(tree).length === 0;
 
+const countFiles = (tree: FileSystem): number => {
+  let count = 0;
+  for (const [, entry] of Object.entries(tree) as [string, FileSystemEntry][]) {
+    if (entry.file) count++;
+    if (entry.directory) count += countFiles(entry.directory);
+  }
+  return count;
+};
+
 const treeContainsFileNamed = (tree: FileSystem, filename: string): boolean => {
   for (const [name, entry] of Object.entries(tree) as [string, FileSystemEntry][]) {
     if (name.toLowerCase() === filename.toLowerCase() && entry.file) return true;
@@ -44,6 +53,21 @@ const treeHasPath = (tree: FileSystem, path: string): boolean => {
     node = entry.directory;
   }
   return false;
+};
+
+const treeContainsAnyCodeFile = (tree: FileSystem): boolean => {
+  const codeExtensions = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.vue', '.svelte', '.py', '.json'];
+  const check = (node: FileSystem): boolean => {
+    for (const [name, entry] of Object.entries(node) as [string, FileSystemEntry][]) {
+      if (entry.file) {
+        const lower = name.toLowerCase();
+        if (codeExtensions.some(ext => lower.endsWith(ext))) return true;
+      }
+      if (entry.directory && check(entry.directory)) return true;
+    }
+    return false;
+  };
+  return check(tree);
 };
 
 const STATIC_SERVER_FILE = '.apex/static-server.cjs';
@@ -158,15 +182,21 @@ const getPackageDir = (path: string) => {
 };
 
 const resolveStartCommand = (fileMap: Map<string, string>) => {
-  // Check for static HTML project first
-  if (fileMap.has('index.html') && !Array.from(fileMap.keys()).some((p) => p.endsWith('package.json'))) {
+  // Check for static HTML project first - serve with our static server
+  const hasPackageJson = Array.from(fileMap.keys()).some((p) => p.endsWith('package.json'));
+  const hasIndexHtml = fileMap.has('index.html');
+  const hasViteConfig = fileMap.has('vite.config.ts') || fileMap.has('vite.config.js');
+  const hasNextConfig = fileMap.has('next.config.js') || fileMap.has('next.config.mjs') || fileMap.has('next.config.ts');
+  
+  // Static project detection: has index.html but no package.json/build tools
+  if (hasIndexHtml && !hasPackageJson && !hasViteConfig && !hasNextConfig) {
     return { command: 'node', args: [STATIC_SERVER_FILE], cwd: '.' };
   }
 
   const packagePaths = Array.from(fileMap.keys()).filter((p) => p.endsWith('package.json'));
   
-  // Priority order: frontend > client > root > backend
-  const preferred = ['frontend/package.json', 'client/package.json', 'package.json', 'backend/package.json'];
+  // Priority order: src > frontend > client > root > backend (typical project structures)
+  const preferred = ['src/package.json', 'frontend/package.json', 'client/package.json', 'package.json', 'backend/package.json', 'server/package.json'];
   packagePaths.sort((a, b) => {
     const ai = preferred.indexOf(a);
     const bi = preferred.indexOf(b);
@@ -180,32 +210,78 @@ const resolveStartCommand = (fileMap: Map<string, string>) => {
     try {
       const parsed = JSON.parse(raw);
       const scripts = parsed?.scripts || {};
+      const deps = { ...parsed?.dependencies, ...parsed?.devDependencies };
       const cwd = getPackageDir(pkgPath);
       
-      // Check for Next.js specifically - prefer dev script
-      const isNextJs = parsed?.dependencies?.next || parsed?.devDependencies?.next;
+      // Detect framework type for better start command selection
+      const isNextJs = deps?.next;
+      const isVite = deps?.vite;
+      const isReactScripts = deps?.['react-scripts'];
+      const isRemix = deps?.['@remix-run/react'];
+      const isAstro = deps?.astro;
+      const isSvelte = deps?.svelte || deps?.['@sveltejs/kit'];
+      const isVue = deps?.vue;
+      const isNuxt = deps?.nuxt;
+      const isExpress = deps?.express && !isNextJs && !isVite;
       
-      if (isNextJs && scripts?.dev) {
-        return { command: 'npm', args: ['run', 'dev'], cwd };
+      // Framework-specific commands
+      if (isNextJs) {
+        if (scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+        return { command: 'npx', args: ['next', 'dev'], cwd };
       }
-      if (scripts?.dev) {
-        return { command: 'npm', args: ['run', 'dev'], cwd };
+      if (isVite) {
+        if (scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+        return { command: 'npx', args: ['vite'], cwd };
       }
-      if (scripts?.start) {
-        return { command: 'npm', args: ['run', 'start'], cwd };
+      if (isReactScripts) {
+        if (scripts?.start) return { command: 'npm', args: ['run', 'start'], cwd };
+        return { command: 'npx', args: ['react-scripts', 'start'], cwd };
       }
+      if (isRemix && scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+      if (isAstro && scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+      if (isSvelte && scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+      if (isVue || isNuxt) {
+        if (scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+        if (scripts?.serve) return { command: 'npm', args: ['run', 'serve'], cwd };
+      }
+      if (isExpress) {
+        if (scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+        if (scripts?.start) return { command: 'npm', args: ['run', 'start'], cwd };
+        // Try to find main entry point
+        const main = parsed?.main || 'index.js';
+        if (fileMap.has(`${cwd === '.' ? '' : cwd + '/'}${main}`)) {
+          return { command: 'node', args: [main], cwd };
+        }
+      }
+      
+      // Generic fallback: prefer dev > start > build
+      if (scripts?.dev) return { command: 'npm', args: ['run', 'dev'], cwd };
+      if (scripts?.start) return { command: 'npm', args: ['run', 'start'], cwd };
+      if (scripts?.serve) return { command: 'npm', args: ['run', 'serve'], cwd };
     } catch {
       // ignore parse errors
     }
   }
 
   // Fallback: check for common server files
-  if (fileMap.has('backend/server.js')) {
-    return { command: 'node', args: ['backend/server.js'], cwd: '.' };
+  const serverFiles = [
+    'server.js', 'server.ts', 'index.js', 'app.js',
+    'src/server.js', 'src/index.js', 'src/app.js',
+    'backend/server.js', 'backend/index.js', 'backend/app.js',
+    'backend/src/server.js', 'backend/src/index.js'
+  ];
+  
+  for (const serverFile of serverFiles) {
+    if (fileMap.has(serverFile)) {
+      const dir = serverFile.includes('/') ? serverFile.split('/').slice(0, -1).join('/') : '.';
+      const file = serverFile.includes('/') ? serverFile.split('/').pop() : serverFile;
+      return { command: 'node', args: [file!], cwd: dir };
+    }
   }
 
-  if (fileMap.has('backend/src/server.js')) {
-    return { command: 'node', args: ['backend/src/server.js'], cwd: '.' };
+  // Last resort: if there's an index.html anywhere, serve statically
+  if (hasIndexHtml) {
+    return { command: 'node', args: [STATIC_SERVER_FILE], cwd: '.' };
   }
 
   return null;
@@ -306,24 +382,39 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const bootAndRun = useCallback(
     async (forceRestart: boolean) => {
       const tree = normalizeFileSystem(files);
-      if (!isPreviewOpen || isTreeEmpty(tree)) {
+      const fileCount = countFiles(tree);
+      
+      // Don't run if preview is closed or no files at all
+      if (!isPreviewOpen) {
+        updateStatus('idle', 'Preview closed');
+        return;
+      }
+      
+      if (isTreeEmpty(tree) || fileCount === 0) {
         updateStatus('idle', 'Waiting for project files...');
         return;
       }
 
-      // FIXED: Better static detection - any project with index.html and no package.json is static
+      // Detect project type
       const hasIndexHtml = treeHasPath(tree, 'index.html');
       const hasPackageJson = treeContainsFileNamed(tree, 'package.json');
       const hasViteConfig = treeHasPath(tree, 'vite.config.ts') || treeHasPath(tree, 'vite.config.js');
+      const hasNextConfig = treeHasPath(tree, 'next.config.js') || treeHasPath(tree, 'next.config.mjs') || treeHasPath(tree, 'next.config.ts');
+      const hasAnyCode = treeContainsAnyCodeFile(tree);
       
-      const looksStatic = hasIndexHtml && !hasPackageJson && !hasViteConfig;
+      // A project is static if it has index.html and no package.json, OR no package.json and no build tools
+      const looksStatic = (hasIndexHtml && !hasPackageJson && !hasViteConfig && !hasNextConfig) || 
+                          (!hasPackageJson && hasAnyCode && !hasViteConfig && !hasNextConfig);
 
-      // FIXED: Only wait for package.json if it's NOT a static project AND doesn't have index.html
-      if (!looksStatic && !hasPackageJson && !hasIndexHtml) {
+      // Allow any project that has code files to proceed - we'll figure out how to run it
+      if (!looksStatic && !hasPackageJson && !hasIndexHtml && !hasAnyCode) {
         updateStatus('idle', 'Waiting for project files (package.json or index.html)...');
         appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for project files (package.json or index.html).\n`);
         return;
       }
+      
+      // Log what we detected
+      appendSystemConsoleContent(`${stamp()} [webcontainer] Project detected: ${fileCount} files, static=${looksStatic}, hasPackageJson=${hasPackageJson}, hasIndexHtml=${hasIndexHtml}\n`);
 
       setError(null);
       if (!serverStartedRef.current || forceRestart) updateUrl(null);
@@ -408,6 +499,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     ]
   );
 
+  // Auto-detect file changes and trigger re-run when preview is open
   useEffect(() => {
     if (!isPreviewOpen) {
       updateStatus('idle');
@@ -416,14 +508,25 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
 
     const tree = normalizeFileSystem(files);
-    if (isTreeEmpty(tree)) {
+    const fileCount = countFiles(tree);
+    
+    if (isTreeEmpty(tree) || fileCount === 0) {
       resetWebContainerState();
       serverStartedRef.current = false;
       updateStatus('idle');
       updateUrl(null);
       return;
     }
-  }, [files, isPreviewOpen, updateStatus, updateUrl]);
+    
+    // Auto-trigger bootAndRun when files change and preview is open
+    if (fileCount > 0 && !pendingRef.current && !isGenerating) {
+      // Small delay to batch file updates
+      const timer = setTimeout(() => {
+        void bootAndRun(false).catch(() => {});
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [files, isPreviewOpen, isGenerating, updateStatus, updateUrl, bootAndRun]);
 
   const deployAndRun = useCallback(async () => {
     if (isGenerating) {

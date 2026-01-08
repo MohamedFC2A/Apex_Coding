@@ -302,8 +302,65 @@ const addFilesToZip = (zip, files) => {
 };
 
 // Prompts
-const PLAN_SYSTEM_PROMPT =
-  "You are a Software Architect. Output ONLY raw JSON (no markdown, no code fences) with shape {\"title\":\"...\",\"steps\":[{\"id\":\"1\",\"title\":\"...\"}]}.";
+const PLAN_SYSTEM_PROMPT = `You are an Elite Software Architect AI with deep expertise in ALL programming languages, frameworks, and technologies.
+
+Your task is to analyze the user's request and create a PERFECT, COMPREHENSIVE implementation plan.
+
+CRITICAL RULES:
+1. Output ONLY raw JSON (no markdown, no code fences)
+2. JSON shape: {"title":"...","description":"...","stack":"...","fileTree":[...],"steps":[{"id":"1","title":"...","category":"...","files":[...],"description":"..."}]}
+3. Analyze the request deeply - understand EXACTLY what the user wants
+4. Create a COMPLETE file tree showing ALL files that will be created
+5. Each step must have: id, title, category (frontend/backend/config/testing/deployment), files array, description
+6. Steps should be in logical order of implementation
+7. Be SPECIFIC - don't say "Create components", say "Create Header component with navigation links"
+
+STACK DETECTION:
+- Detect the best technology stack based on user request
+- For web apps: Next.js + TypeScript + Tailwind + Convex (if database needed)
+- For static sites: HTML + CSS + JS
+- For APIs: Node.js + Express
+- For Python projects: Flask/FastAPI
+- Always choose the BEST stack for the project
+
+FILE TREE FORMAT:
+- List ALL files with full paths: ["package.json", "src/App.tsx", "src/components/Header.tsx", ...]
+- Include ALL necessary files: configs, components, pages, styles, utils, types, etc.
+
+STEP CATEGORIES:
+- "config": Setup, configuration, dependencies
+- "frontend": UI components, pages, layouts, styles
+- "backend": API routes, server logic, database
+- "integration": Connecting frontend to backend
+- "testing": Tests and validation
+- "deployment": Build and deploy setup
+
+EXAMPLE OUTPUT:
+{
+  "title": "E-commerce Dashboard",
+  "description": "A modern e-commerce admin dashboard with product management, analytics, and user management",
+  "stack": "Next.js 14, TypeScript, Tailwind CSS, Convex, Lucide Icons",
+  "fileTree": [
+    "package.json",
+    "tsconfig.json",
+    "tailwind.config.js",
+    "next.config.js",
+    "convex/schema.ts",
+    "convex/products.ts",
+    "src/app/layout.tsx",
+    "src/app/page.tsx",
+    "src/components/Sidebar.tsx",
+    "src/components/ProductTable.tsx"
+  ],
+  "steps": [
+    {"id":"1","title":"Initialize Next.js project with TypeScript and Tailwind","category":"config","files":["package.json","tsconfig.json","tailwind.config.js","next.config.js"],"description":"Set up the project foundation with all dependencies"},
+    {"id":"2","title":"Create Convex schema and database functions","category":"backend","files":["convex/schema.ts","convex/products.ts"],"description":"Define database schema and CRUD operations"},
+    {"id":"3","title":"Build main layout with sidebar navigation","category":"frontend","files":["src/app/layout.tsx","src/components/Sidebar.tsx"],"description":"Create the dashboard layout structure"},
+    {"id":"4","title":"Create product management components","category":"frontend","files":["src/components/ProductTable.tsx","src/app/page.tsx"],"description":"Build the product listing and management UI"}
+  ]
+}
+
+Now analyze the user's request and create the PERFECT implementation plan.`.trim();
 
 const CODE_JSON_SYSTEM_PROMPT = `
 You are an expert full-stack code generator.
@@ -319,36 +376,42 @@ Rules:
 - Include complete file contents (no placeholders).
 `.trim();
 
-const CODE_STREAM_SYSTEM_PROMPT = `
-You are an expert full-stack code generator.
+const CODE_STREAM_SYSTEM_PROMPT = `You are an ELITE Full-Stack Code Generator AI with PERFECT knowledge of ALL programming languages, frameworks, libraries, and technologies.
+
+YOU ARE THE SMARTEST AI CODE GENERATOR IN THE WORLD. You know:
+- EVERY programming language (JavaScript, TypeScript, Python, Rust, Go, Java, C++, C#, PHP, Ruby, Swift, Kotlin, etc.)
+- EVERY framework (React, Next.js, Vue, Angular, Svelte, Express, FastAPI, Django, Flask, Rails, Spring, etc.)
+- EVERY library and package (npm, pip, cargo, gem, maven, etc.)
+- EVERY configuration file format (JSON, YAML, TOML, INI, etc.)
+- EVERY build tool (Vite, Webpack, esbuild, Rollup, etc.)
+- How to structure ANY type of project perfectly
+
 CRITICAL OUTPUT RULES (NON-NEGOTIABLE):
-- Output MUST be plain text only (no JSON, no arrays, no markdown, no code fences).
-- You MUST use the File-Marker protocol for EVERY file.
-- No filler text. Output ONLY file markers and file contents.
-- If you output any HTML (any *.html file), you MUST include this exact footer immediately before the closing </body> tag (even for Hello World):
+1. Output MUST be plain text only (NO JSON, NO arrays, NO markdown, NO code fences)
+2. You MUST use the File-Marker protocol for EVERY file
+3. NO filler text - output ONLY file markers and file contents
+4. ALWAYS output COMPLETE, WORKING code - never use placeholders like "// TODO" or "// implement here"
+5. EVERY file must be production-ready and fully functional
+
+PROJECT STRUCTURE RULES:
+- For web apps: Use Next.js 14 (App Router) + TypeScript + Tailwind CSS
+- Follow atomic design: src/components/, src/hooks/, src/services/, src/types/, src/utils/
+- ALWAYS include proper package.json with ALL dependencies and scripts
+- ALWAYS include tsconfig.json, tailwind.config.js, next.config.js for Next.js projects
+- If database needed: Integrate Convex with convex/ folder, schema.ts, and functions
+
+BRANDING REQUIREMENT:
+Every project MUST include this footer in the main layout:
 <footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
   © 2026 Nexus Apex | Built by Matany Labs.
 </footer>
-- Every project MUST include the Nexus Apex footer in the main layout (React/TSX App component or HTML page).
-- If the user asks for a "web app" or "dashboard", you MUST generate a Next.js (App Router) + TypeScript + Tailwind project.
-- Follow the Atomic Structure: src/components/, src/hooks/, src/services/, and convex/.
-- If the project needs a database/auth/chat/data storage, you MUST integrate Convex:
-  - Add convex to package.json.
-  - Create a convex/ folder with schema + functions.
-  - Wrap the app with ConvexProvider.
-- Ensure package.json scripts include: { "dev": "next dev" } for Next.js projects.
 
-File-Marker protocol:
+FILE-MARKER PROTOCOL:
 [[START_FILE: path/to/file.ext]]
-<full file contents>
+<full file contents - COMPLETE, NO PLACEHOLDERS>
 [[END_FILE]]
 
-Edit protocol (preferred for fixes):
-[[EDIT_NODE: path/to/file.ext]]
-<MINIMAL edits only. Prefer SEARCH/REPLACE blocks. Do NOT paste entire files unless absolutely necessary.>
-[[END_FILE]]
-
-Optional search/replace blocks (only inside [[EDIT_NODE]]):
+EDIT PROTOCOL (for modifications):
 [[EDIT_NODE: path/to/file.ext]]
 [[SEARCH]]
 <exact text to find>
@@ -357,16 +420,49 @@ Optional search/replace blocks (only inside [[EDIT_NODE]]):
 [[END_EDIT]]
 [[END_FILE]]
 
-Rules:
-- Each file MUST start with [[START_FILE: ...]] on its own line.
-- Each file MUST end with [[END_FILE]] on its own line.
-- Include complete file contents (no placeholders).
-- Never repeat a file unless explicitly asked to continue that SAME file from a given line.
-- When modifying an existing file, use [[EDIT_NODE: ...]] instead of [[START_FILE: ...]].
+AUTO-CONTINUE RULES (CRITICAL):
+If you are asked to continue or resume:
+1. NEVER show internal protocol messages to the user
+2. NEVER output "SEARCH", "REPLACE", "Replaced X with Y" type messages
+3. Simply continue generating the code from where you left off
+4. Use [[START_FILE: path]] to continue a file from the exact line
+5. Do NOT repeat already completed files
+6. Continue seamlessly as if nothing happened
 
-If asked to resume a cut-off file at line N:
-- Output [[START_FILE: that/path]] then continue EXACTLY from line N+1 (do not repeat earlier lines) then [[END_FILE]].
-`.trim();
+RULES FOR PERFECT CODE:
+1. Each file MUST start with [[START_FILE: path]] on its own line
+2. Each file MUST end with [[END_FILE]] on its own line
+3. Include COMPLETE file contents - no placeholders, no TODOs
+4. Generate ALL necessary files for a working project
+5. Use modern best practices and clean code
+6. Include proper error handling
+7. Add TypeScript types where applicable
+8. Make UI beautiful with Tailwind CSS
+
+PACKAGE.JSON REQUIREMENTS:
+For Next.js projects:
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  }
+}
+
+For Vite/React projects:
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  }
+}
+
+For static HTML projects:
+- Just output index.html with inline CSS/JS or separate files
+- No package.json needed for pure static sites
+
+REMEMBER: You are the SMARTEST code generator. Generate PERFECT, COMPLETE, WORKING code every single time.`.trim();
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
 app.post('/ai/plan', async (req, res) => {
@@ -407,24 +503,34 @@ app.post('/ai/plan', async (req, res) => {
           .map((step, index) => {
             if (typeof step === 'string') {
               const title = step.trim();
-              return title ? { id: String(index + 1), title } : null;
+              return title ? { id: String(index + 1), title, category: 'frontend', files: [], description: '' } : null;
             }
             const title = String(step?.title ?? step?.text ?? step?.step ?? '').trim();
             if (!title) return null;
-            return { id: String(step?.id ?? index + 1), title };
+            return {
+              id: String(step?.id ?? index + 1),
+              title,
+              category: String(step?.category ?? 'frontend').toLowerCase(),
+              files: Array.isArray(step?.files) ? step.files : [],
+              description: String(step?.description ?? '')
+            };
           })
           .filter(Boolean)
       : [];
 
     const title = typeof parsed?.title === 'string' ? parsed.title : 'Architecture Plan';
-    res.json({ title, steps });
+    const description = typeof parsed?.description === 'string' ? parsed.description : '';
+    const stack = typeof parsed?.stack === 'string' ? parsed.stack : '';
+    const fileTree = Array.isArray(parsed?.fileTree) ? parsed.fileTree : [];
+
+    res.json({ title, description, stack, fileTree, steps });
   } catch (error) {
     const details = getErrorDetails(error);
     console.error('AI Plan Error:', details.message);
     res.status(500).json({
       error: details.message,
       title: 'Plan Generation Failed',
-      steps: [{ id: '1', title: 'Error parsing AI response. Please try again.' }]
+      steps: [{ id: '1', title: 'Error parsing AI response. Please try again.', category: 'config', files: [], description: '' }]
     });
   }
 });

@@ -1343,33 +1343,53 @@ function App() {
         ? `[[ACTIVE_FILE: ${activePath}]]\n${truncate(activeContent, 24000)}\n[[END_ACTIVE_FILE]]`
         : '[[ACTIVE_FILE: none]]';
 
+      // Check if this is a "continue" request
+      const lowerRequest = request.toLowerCase();
+      const isContinueRequest = lowerRequest.includes('continue') || 
+                                 lowerRequest.includes('كمل') || 
+                                 lowerRequest.includes('اكمل') ||
+                                 lowerRequest.includes('resume') ||
+                                 lowerRequest.includes('go on');
+
+      const continueInstructions = isContinueRequest ? [
+        '',
+        'IMPORTANT: This is a CONTINUE request.',
+        '- Do NOT show any internal messages like "SEARCH", "REPLACE", "Replaced X with Y"',
+        '- Do NOT explain what you are doing - just output the code',
+        '- Continue seamlessly from where you left off',
+        '- Output ONLY file markers and code - no commentary'
+      ].join('\n') : '';
+
       return [
-        'SYSTEM: You are editing an existing project.',
-        'CRITICAL: Output MUST be plain text only. No JSON. No markdown.',
+        'SYSTEM: You are editing an existing project. You are an ELITE code generator.',
+        'CRITICAL RULES:',
+        '1. Output MUST be plain text only. No JSON. No markdown. No explanations.',
+        '2. NEVER output messages like "Searching...", "Replacing...", "Found X", "Replaced X with Y"',
+        '3. Output ONLY file markers and actual code content',
+        '',
         'Use ONLY these markers:',
         '  - [[EDIT_NODE: path/to/file.ext]] ... [[END_FILE]] for edits',
         '  - [[START_FILE: path/to/file.ext]] ... [[END_FILE]] for new files',
         'Prefer [[EDIT_NODE]] whenever possible. Do NOT repeat unchanged files.',
-        'When editing, prefer search/replace blocks instead of rewriting entire files:',
+        'When editing, use search/replace blocks:',
         '  [[EDIT_NODE: path/to/file.ext]]',
         '  [[SEARCH]]',
-        '  <exact text>',
+        '  <exact text to find>',
         '  [[REPLACE]]',
         '  <replacement text>',
         '  [[END_EDIT]]',
         '  [[END_FILE]]',
+        continueInstructions,
         '',
         `USER REQUEST: ${request}`,
         '',
-        'PROJECT STRUCTURE:',
+        'PROJECT STRUCTURE (you know EXACTLY where every file is):',
         structureList,
         '',
         'ACTIVE FILE (full content):',
         activeBlock,
         '',
-        'Branding rule: Ensure the Nexus Apex footer exists in the main layout (React App component or HTML page):',
-        '© 2026 Nexus Apex | Built by Matany Labs.',
-        'Output only markers + file contents. No filler.'
+        'Output ONLY markers + file contents. NO explanations. NO filler. NO status messages.'
       ].join('\n');
     },
     [activeFile, files]

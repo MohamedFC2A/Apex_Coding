@@ -9,6 +9,9 @@ export interface PlanChecklistItem {
   id: string;
   title: string;
   completed: boolean;
+  category?: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment';
+  files?: string[];
+  description?: string;
 }
 
 const pulse = keyframes`
@@ -167,14 +170,8 @@ const SectionTitle = styled.div`
   color: rgba(255, 255, 255, 0.6);
 `;
 
-const SectionEmpty = styled.div`
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  border: 1px dashed rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  padding: 10px;
-  text-align: center;
-`;
+// SectionEmpty removed - not currently used but kept for reference
+// Can be used for empty state display if needed
 
 const ItemCard = styled(motion.div)<{ $status: 'pending' | 'active' | 'done' }>`
   display: grid;
@@ -217,46 +214,23 @@ const StatusStack = styled.div`
   gap: 4px;
 `;
 
-const FRONTEND_HINTS = [
-  'frontend',
-  'ui',
-  'client',
-  'component',
-  'layout',
-  'style',
-  'design',
-  'page',
-  'view',
-  'ux',
-  'css',
-  'react',
-  'vite',
-  'svelte',
-  'vue'
-];
+const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  config: { bg: 'rgba(251, 191, 36, 0.12)', border: 'rgba(251, 191, 36, 0.4)', text: 'rgba(251, 191, 36, 0.95)' },
+  frontend: { bg: 'rgba(34, 211, 238, 0.12)', border: 'rgba(34, 211, 238, 0.4)', text: 'rgba(34, 211, 238, 0.95)' },
+  backend: { bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.4)', text: 'rgba(168, 85, 247, 0.95)' },
+  integration: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.4)', text: 'rgba(34, 197, 94, 0.95)' },
+  testing: { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.4)', text: 'rgba(239, 68, 68, 0.95)' },
+  deployment: { bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.4)', text: 'rgba(59, 130, 246, 0.95)' }
+};
 
-const BACKEND_HINTS = [
-  'backend',
-  'api',
-  'server',
-  'database',
-  'db',
-  'auth',
-  'route',
-  'controller',
-  'model',
-  'endpoint',
-  'express',
-  'flask',
-  'fastapi',
-  'node',
-  'python'
-];
-
-const categorizeStep = (title: string) => {
-  const lower = title.toLowerCase();
-  if (BACKEND_HINTS.some((hint) => lower.includes(hint))) return 'backend';
-  if (FRONTEND_HINTS.some((hint) => lower.includes(hint))) return 'frontend';
+const getCategoryFromItem = (item: PlanChecklistItem): string => {
+  if (item.category) return item.category;
+  const lower = item.title.toLowerCase();
+  if (['config', 'setup', 'package', 'tsconfig', 'tailwind', 'dependencies'].some(h => lower.includes(h))) return 'config';
+  if (['backend', 'api', 'server', 'database', 'convex', 'auth', 'route'].some(h => lower.includes(h))) return 'backend';
+  if (['test', 'spec', 'jest', 'cypress'].some(h => lower.includes(h))) return 'testing';
+  if (['deploy', 'build', 'vercel', 'netlify'].some(h => lower.includes(h))) return 'deployment';
+  if (['connect', 'integrate', 'hook'].some(h => lower.includes(h))) return 'integration';
   return 'frontend';
 };
 
@@ -278,22 +252,34 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
   const pct = total > 0 ? completed / total : 0;
 
   const grouped = useMemo(() => {
+    const config: PlanChecklistItem[] = [];
     const frontend: PlanChecklistItem[] = [];
     const backend: PlanChecklistItem[] = [];
+    const integration: PlanChecklistItem[] = [];
+    const testing: PlanChecklistItem[] = [];
+    const deployment: PlanChecklistItem[] = [];
 
     for (const item of items) {
-      const group = categorizeStep(item.title);
-      if (group === 'backend') backend.push(item);
-      else frontend.push(item);
+      const category = getCategoryFromItem(item);
+      switch (category) {
+        case 'config': config.push(item); break;
+        case 'backend': backend.push(item); break;
+        case 'integration': integration.push(item); break;
+        case 'testing': testing.push(item); break;
+        case 'deployment': deployment.push(item); break;
+        default: frontend.push(item);
+      }
     }
 
-    return { frontend, backend };
+    return { config, frontend, backend, integration, testing, deployment };
   }, [items]);
 
   const renderItem = (item: PlanChecklistItem) => {
     const isActive = currentStepId === item.id && !item.completed;
     const status = item.completed ? 'done' : isActive ? 'active' : 'pending';
     const statusLabel = status === 'pending' ? 'Pending' : status === 'active' ? 'Working' : 'Done';
+    const category = getCategoryFromItem(item);
+    const categoryColors = CATEGORY_COLORS[category] || CATEGORY_COLORS.frontend;
 
     return (
       <ItemCard
@@ -310,7 +296,39 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
           <Circle size={20} color="rgba(255, 255, 255, 0.4)" />
         )}
         <StatusStack>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              background: categoryColors.bg,
+              border: `1px solid ${categoryColors.border}`,
+              color: categoryColors.text,
+              padding: '2px 6px',
+              borderRadius: 4
+            }}>
+              {category}
+            </span>
+          </div>
           <ItemTitle>{item.title}</ItemTitle>
+          {item.description && (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+              {item.description}
+            </div>
+          )}
+          {item.files && item.files.length > 0 && (
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {item.files.slice(0, 5).map((file, idx) => (
+                <span key={idx} style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}>
+                  📄 {file.split('/').pop()}
+                </span>
+              ))}
+              {item.files.length > 5 && (
+                <span style={{ opacity: 0.6 }}>+{item.files.length - 5} more</span>
+              )}
+            </div>
+          )}
           {status === 'active' && <ItemStatus $status={status}>Working...</ItemStatus>}
         </StatusStack>
         <ItemStatus $status={status}>{statusLabel}</ItemStatus>
@@ -335,18 +353,48 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
         <Empty>Click “Plan” to generate a step-by-step mission.</Empty>
       ) : (
         <ListContainer className="scrollbar-thin scrollbar-glass plan-container">
-          <Section>
-            <SectionTitle>Frontend Architecture</SectionTitle>
-            {grouped.frontend.length === 0
-              ? <SectionEmpty>No frontend tasks yet.</SectionEmpty>
-              : grouped.frontend.map(renderItem)}
-          </Section>
-          <Section>
-            <SectionTitle>Backend Logic</SectionTitle>
-            {grouped.backend.length === 0
-              ? <SectionEmpty>No backend tasks yet.</SectionEmpty>
-              : grouped.backend.map(renderItem)}
-          </Section>
+          {grouped.config.length > 0 && (
+            <Section>
+              <SectionTitle>⚙️ Configuration</SectionTitle>
+              {grouped.config.map(renderItem)}
+            </Section>
+          )}
+          {grouped.frontend.length > 0 && (
+            <Section>
+              <SectionTitle>🎨 Frontend</SectionTitle>
+              {grouped.frontend.map(renderItem)}
+            </Section>
+          )}
+          {grouped.backend.length > 0 && (
+            <Section>
+              <SectionTitle>🔧 Backend</SectionTitle>
+              {grouped.backend.map(renderItem)}
+            </Section>
+          )}
+          {grouped.integration.length > 0 && (
+            <Section>
+              <SectionTitle>🔗 Integration</SectionTitle>
+              {grouped.integration.map(renderItem)}
+            </Section>
+          )}
+          {grouped.testing.length > 0 && (
+            <Section>
+              <SectionTitle>🧪 Testing</SectionTitle>
+              {grouped.testing.map(renderItem)}
+            </Section>
+          )}
+          {grouped.deployment.length > 0 && (
+            <Section>
+              <SectionTitle>🚀 Deployment</SectionTitle>
+              {grouped.deployment.map(renderItem)}
+            </Section>
+          )}
+          {items.length > 0 && grouped.config.length === 0 && grouped.frontend.length === 0 && grouped.backend.length === 0 && (
+            <Section>
+              <SectionTitle>📋 Tasks</SectionTitle>
+              {items.map(renderItem)}
+            </Section>
+          )}
         </ListContainer>
       )}
     </>

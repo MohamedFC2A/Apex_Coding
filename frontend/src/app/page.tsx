@@ -5,12 +5,10 @@ import { FeatureCards } from '@/components/marketing/FeatureCards';
 import { ValueProp } from '@/components/marketing/ValueProp';
 import { LeadCapture } from '@/components/marketing/LeadCapture';
 import { DemoSection } from '@/components/marketing/DemoSection';
-import { FloatingPlan } from '@/components/FloatingPlan';
 
 export default function HomePage() {
   return (
     <>
-      <FloatingPlan />
       <header className="relative min-h-[calc(100vh-56px)] overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute inset-0 bg-[radial-gradient(1200px_700px_at_20%_15%,rgba(34,211,238,0.18),transparent_55%),radial-gradient(1100px_740px_at_85%_80%,rgba(168,85,247,0.18),transparent_55%),radial-gradient(900px_520px_at_60%_35%,rgba(255,255,255,0.04),transparent_60%)]" />

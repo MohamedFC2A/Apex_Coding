@@ -28,6 +28,13 @@ const cleanAndParseJSON = (raw: string) => {
   return JSON.parse(text);
 };
 
+export async function GET() {
+  return json(405, { 
+    error: 'Method not allowed',
+    message: 'This endpoint only supports POST requests. Please send a POST request with a JSON body containing { prompt: string, thinkingMode?: boolean }'
+  });
+}
+
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,

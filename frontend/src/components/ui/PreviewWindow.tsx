@@ -11,65 +11,87 @@ const Window = styled.div`
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(18px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(24px);
   box-shadow:
-    0 22px 60px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    0 28px 80px rgba(0, 0, 0, 0.60),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
   overflow: hidden;
+  transition: all 300ms ease;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow:
+      0 32px 90px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
 `;
 
 const Titlebar = styled.div`
-  height: 44px;
+  height: 48px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  gap: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(13, 17, 23, 0.35);
+  padding: 0 16px;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(13, 17, 23, 0.40);
+  backdrop-filter: blur(20px);
 `;
 
 const Dots = styled.div`
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 `;
 
 const Dot = styled.span<{ $color: string }>`
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
   background: ${(p) => p.$color};
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset, 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 200ms ease;
+
+  &:hover {
+    transform: scale(1.1);
+  }
 `;
 
 const Title = styled.div`
   flex: 1;
-  color: rgba(255, 255, 255, 0.70);
-  font-size: 12px;
-  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
 `;
 
 const OpenLink = styled.a`
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
+  gap: 8px;
+  padding: 8px 12px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.82);
   font-size: 12px;
+  font-weight: 600;
   text-decoration: none;
-  transition: background 160ms ease, border-color 160ms ease;
+  transition: all 200ms ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(34, 211, 238, 0.24);
-    color: rgba(255, 255, 255, 0.92);
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(34, 211, 238, 0.30);
+    color: rgba(255, 255, 255, 0.95);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  &:active {
+    transform: translateY(0);
   }
 `;
 
@@ -91,11 +113,14 @@ const Overlay = styled(motion.div)`
   inset: 0;
   display: grid;
   place-items: center;
-  background: radial-gradient(800px 400px at 30% 20%, rgba(34, 211, 238, 0.10), transparent 60%),
-    radial-gradient(800px 400px at 70% 80%, rgba(168, 85, 247, 0.10), transparent 60%),
-    rgba(13, 17, 23, 0.72);
-  color: rgba(255, 255, 255, 0.82);
+  background: 
+    radial-gradient(900px 450px at 25% 15%, rgba(34, 211, 238, 0.12), transparent 60%),
+    radial-gradient(900px 450px at 75% 85%, rgba(168, 85, 247, 0.12), transparent 60%),
+    rgba(13, 17, 23, 0.80);
+  color: rgba(255, 255, 255, 0.88);
   font-size: 14px;
+  font-weight: 500;
+  backdrop-filter: blur(8px);
 `;
 
 interface PreviewWindowProps {

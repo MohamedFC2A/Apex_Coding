@@ -31,6 +31,21 @@ const treeContainsFileNamed = (tree: FileSystem, filename: string): boolean => {
   return false;
 };
 
+const treeHasPath = (tree: FileSystem, path: string): boolean => {
+  const parts = path.split('/').filter(Boolean);
+  let node: FileSystem | undefined = tree;
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    const entry: FileSystemEntry | undefined = node ? node[part] : undefined;
+    if (!entry) return false;
+    const isLast = index === parts.length - 1;
+    if (isLast) return Boolean(entry.file || entry.directory);
+    if (!entry.directory) return false;
+    node = entry.directory;
+  }
+  return false;
+};
+
 const STATIC_SERVER_FILE = '.apex/static-server.cjs';
 const STATIC_SERVER_CODE = `const http = require('http');
 const fs = require('fs');
@@ -143,11 +158,8 @@ const getPackageDir = (path: string) => {
 };
 
 const resolveStartCommand = (fileMap: Map<string, string>) => {
-  // Improved static detection - any index.html anywhere with no package.json means serve statically
-  const hasAnyIndexHtml = Array.from(fileMap.keys()).some((p) => p.toLowerCase().endsWith('index.html'));
-  const hasAnyPackageJson = Array.from(fileMap.keys()).some((p) => p.toLowerCase().endsWith('package.json'));
-
-  if (hasAnyIndexHtml && !hasAnyPackageJson) {
+  // FIXED: Improved static detection - check for HTML files first
+  if (fileMap.has('index.html') && !Array.from(fileMap.keys()).some((p) => p.endsWith('package.json'))) {
     return { command: 'node', args: [STATIC_SERVER_FILE], cwd: '.' };
   }
 
@@ -291,20 +303,22 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const bootAndRun = useCallback(
     async (forceRestart: boolean) => {
       const tree = normalizeFileSystem(files);
-      if (!isPreviewOpen || isTreeEmpty(tree)) return;
+      if (!isPreviewOpen || isTreeEmpty(tree)) {
+        updateStatus('idle', 'Waiting for project files...');
+        return;
+      }
 
-      // Better static detection - any project with index.html anywhere and no package.json is static
-      const hasIndexHtml = treeContainsFileNamed(tree, 'index.html');
+      // FIXED: Better static detection - any project with index.html and no package.json is static
+      const hasIndexHtml = treeHasPath(tree, 'index.html');
       const hasPackageJson = treeContainsFileNamed(tree, 'package.json');
-      const hasViteConfig =
-        treeContainsFileNamed(tree, 'vite.config.ts') || treeContainsFileNamed(tree, 'vite.config.js');
+      const hasViteConfig = treeHasPath(tree, 'vite.config.ts') || treeHasPath(tree, 'vite.config.js');
       
       const looksStatic = hasIndexHtml && !hasPackageJson && !hasViteConfig;
 
       // FIXED: Only wait for package.json if it's NOT a static project AND doesn't have index.html
       if (!looksStatic && !hasPackageJson && !hasIndexHtml) {
-        updateStatus('idle', 'Waiting for code files...');
-        appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for project files (package.json or index.html).\\n`);
+        updateStatus('idle', 'Waiting for project files (package.json or index.html)...');
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for project files (package.json or index.html).\n`);
         return;
       }
 
@@ -324,12 +338,12 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
       
       if (injectedRootPackage) {
-        appendSystemConsoleContent(`${stamp()} [webcontainer] Injected root /package.json (missing).\\n`);
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Injected root /package.json (missing).\n`);
       }
       
       if (invalidPackageJsonPaths.length > 0) {
         appendSystemConsoleContent(
-          `${stamp()} [webcontainer] Skipped invalid package.json: ${invalidPackageJsonPaths.join(', ')}\\n`
+          `${stamp()} [webcontainer] Skipped invalid package.json: ${invalidPackageJsonPaths.join(', ')}\n`
         );
       }
       
@@ -342,7 +356,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (!looksStatic && readyPackages.length > 0) {
         await installPackages(readyPackages);
       } else if (looksStatic) {
-        appendSystemConsoleContent(`${stamp()} [webcontainer] Static HTML project detected; skipping npm install.\\n`);
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Static HTML project detected; skipping npm install.\n`);
       }
 
       if (serverStartedRef.current && !forceRestart) {

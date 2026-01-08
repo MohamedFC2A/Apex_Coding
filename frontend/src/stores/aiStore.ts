@@ -174,7 +174,9 @@ const BACKEND_FILES = new Set([
   '.env.example'
 ]);
 
-const createInitialFiles = (): FileSystemState => [];
+const createInitialFiles = (): FileSystemState => {
+  return {};
+};
 
 const normalizeFileSystem = (files: FileSystemState): FileSystem => (Array.isArray(files) ? {} : files);
 
@@ -352,6 +354,10 @@ const appendToFileSystemEntry = (tree: FileSystem, rawPath: string, chunk: strin
 
 const buildTreeFromProjectFiles = (files: ProjectFile[]) => {
   let tree: FileSystem = {};
+
+  if (!files || files.length === 0) {
+    return tree;
+  }
 
   for (const file of files) {
     const rawPath = file.path || file.name;

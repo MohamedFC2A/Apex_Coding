@@ -13,32 +13,33 @@ const shimmer = keyframes`
 
 const ButtonRoot = styled(motion.button)<{ $state: MainActionState }>`
   position: relative;
-  height: 46px;
-  padding: 0 18px;
+  height: 50px;
+  padding: 0 20px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
   font-weight: 900;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
   user-select: none;
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(20px);
   box-shadow:
-    0 18px 40px rgba(0, 0, 0, 0.45),
+    0 20px 50px rgba(0, 0, 0, 0.50),
     0 0 0 1px rgba(0, 0, 0, 0.2) inset,
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
   overflow: hidden;
+  font-size: 13px;
 
   &:disabled {
-    opacity: 0.6;
+    opacity: 0.55;
     cursor: not-allowed;
-    filter: grayscale(0.2);
+    filter: grayscale(0.25);
   }
 
   &::before {
@@ -47,22 +48,22 @@ const ButtonRoot = styled(motion.button)<{ $state: MainActionState }>`
     inset: -1px;
     background: ${(p) => {
       if (p.$state === 'planning') {
-        return `radial-gradient(140px 60px at 18% 40%, rgba(168, 85, 247, 0.30), transparent 70%),
-          radial-gradient(140px 60px at 82% 60%, rgba(34, 211, 238, 0.22), transparent 70%)`;
+        return `radial-gradient(160px 70px at 16% 38%, rgba(168, 85, 247, 0.35), transparent 70%),
+          radial-gradient(160px 70px at 84% 62%, rgba(34, 211, 238, 0.26), transparent 70%)`;
       }
       if (p.$state === 'coding') {
-        return `radial-gradient(140px 60px at 18% 40%, rgba(34, 211, 238, 0.30), transparent 70%),
-          radial-gradient(140px 60px at 82% 60%, rgba(250, 204, 21, 0.18), transparent 70%)`;
+        return `radial-gradient(160px 70px at 16% 38%, rgba(34, 211, 238, 0.35), transparent 70%),
+          radial-gradient(160px 70px at 84% 62%, rgba(250, 204, 21, 0.22), transparent 70%)`;
       }
       if (p.$state === 'done') {
-        return `radial-gradient(140px 60px at 18% 40%, rgba(34, 197, 94, 0.26), transparent 70%),
-          radial-gradient(140px 60px at 82% 60%, rgba(168, 85, 247, 0.18), transparent 70%)`;
+        return `radial-gradient(160px 70px at 16% 38%, rgba(34, 197, 94, 0.30), transparent 70%),
+          radial-gradient(160px 70px at 84% 62%, rgba(168, 85, 247, 0.22), transparent 70%)`;
       }
-      return `radial-gradient(140px 60px at 18% 40%, rgba(34, 211, 238, 0.26), transparent 70%),
-        radial-gradient(140px 60px at 82% 60%, rgba(168, 85, 247, 0.22), transparent 70%)`;
+      return `radial-gradient(160px 70px at 16% 38%, rgba(34, 211, 238, 0.30), transparent 70%),
+        radial-gradient(160px 70px at 84% 62%, rgba(168, 85, 247, 0.26), transparent 70%)`;
     }};
-    opacity: 0.95;
-    filter: blur(12px);
+    opacity: 0.98;
+    filter: blur(14px);
     pointer-events: none;
   }
 `;
@@ -104,14 +105,14 @@ const SwapSlot = styled.span`
 `;
 
 const IconSlot = styled(SwapSlot)`
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
 
   & svg {
-    width: 20px;
-    height: 20px;
-    min-width: 20px;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
   }
 `;
 
@@ -127,10 +128,10 @@ const SwapLayer = styled.span<{ $visible: boolean }>`
 `;
 
 const getStateWidth = (state: MainActionState) => {
-  if (state === 'planning') return 220;
-  if (state === 'coding') return 180;
-  if (state === 'done') return 160;
-  return 170;
+  if (state === 'planning') return 240;
+  if (state === 'coding') return 200;
+  if (state === 'done') return 180;
+  return 190;
 };
 
 export interface MainActionButtonProps {
@@ -162,9 +163,9 @@ export const MainActionButton: React.FC<MainActionButtonProps> = ({ state, disab
       $state={state}
       layout
       animate={{ width: getStateWidth(state) }}
-      whileHover={disabled || isBusy ? undefined : { scale: 1.02 }}
-      whileTap={disabled || isBusy ? undefined : { scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+      whileHover={disabled || isBusy ? undefined : { scale: 1.03, y: -2 }}
+      whileTap={disabled || isBusy ? undefined : { scale: 0.97, y: 0 }}
+      transition={{ type: 'spring', stiffness: 450, damping: 28 }}
     >
       <Shine $active={!disabled && !isBusy} />
       <Label>

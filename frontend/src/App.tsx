@@ -30,10 +30,14 @@ const Root = styled.div`
   height: 100vh;
   overflow: hidden;
   position: relative;
-  background: radial-gradient(900px 500px at 20% 10%, rgba(34, 211, 238, 0.12), transparent 55%),
-    radial-gradient(900px 500px at 80% 85%, rgba(168, 85, 247, 0.12), transparent 55%),
-    #0d1117;
-  color: rgba(255, 255, 255, 0.92);
+  background: 
+    radial-gradient(ellipse 1200px 600px at 15% 5%, rgba(34, 211, 238, 0.08), transparent 60%),
+    radial-gradient(ellipse 1000px 500px at 85% 90%, rgba(168, 85, 247, 0.08), transparent 60%),
+    linear-gradient(180deg, #0d1117 0%, #0a0d12 100%);
+  color: rgba(255, 255, 255, 0.94);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 `;
 
 const Container = styled.div`
@@ -41,56 +45,110 @@ const Container = styled.div`
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  padding-bottom: calc(14px + 34px);
+  gap: 16px;
+  padding: 20px;
+  padding-bottom: calc(20px + 40px);
   min-height: 0;
+  max-width: 100%;
+
+  @media (max-width: 1024px) {
+    padding: 16px;
+    padding-bottom: calc(16px + 40px);
+    gap: 14px;
+  }
 
   @media (max-width: 768px) {
     padding: 12px;
-    padding-bottom: calc(12px + 38px);
-    gap: 10px;
+    padding-bottom: calc(12px + 44px);
+    gap: 12px;
   }
 `;
 
 const HeaderArea = styled.div`
   flex-shrink: 0;
-  height: 64px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+
+  @media (max-width: 768px) {
+    height: 64px;
+    padding: 0 16px;
+    gap: 12px;
+  }
 `;
 
 const HeaderLeft = styled.div`
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
+  flex: 1;
+
+  @media (max-width: 768px) {
+    gap: 10px;
+  }
 `;
 
 const HeaderRight = styled.div`
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+
+  @media (max-width: 768px) {
+    gap: 8px;
+  }
 `;
 
 const HeaderIconButton = styled.button`
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.88);
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(168, 85, 247, 0.15));
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.16);
-    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.20);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 1);
+
+    &::before {
+      opacity: 1;
+    }
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  @media (max-width: 768px) {
+    width: 40px;
+    height: 40px;
   }
 `;
 
@@ -100,58 +158,66 @@ const OverlayScrim = styled.button<{ $open: boolean }>`
   border: 0;
   padding: 0;
   margin: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(12px);
   opacity: ${(p) => (p.$open ? 1 : 0)};
   pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
-  transition: opacity 160ms ease;
+  transition: opacity 220ms ease;
   z-index: 55;
 `;
 
 const OverlayPanel = styled.div<{ $open: boolean }>`
   position: fixed;
-  top: 70px;
-  right: 18px;
-  width: min(420px, calc(100vw - 36px));
-  max-height: calc(100vh - 140px);
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(10, 10, 10, 0.55);
-  backdrop-filter: blur(22px);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  top: 80px;
+  right: 20px;
+  width: min(440px, calc(100vw - 40px));
+  max-height: calc(100vh - 160px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 10, 10, 0.70);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   overflow: hidden;
-  transform: ${(p) => (p.$open ? 'translateY(0)' : 'translateY(-10px)')};
+  transform: ${(p) => (p.$open ? 'translateY(0)' : 'translateY(-12px)')};
   opacity: ${(p) => (p.$open ? 1 : 0)};
   pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity 220ms ease, transform 220ms ease;
   z-index: 56;
+
+  @media (max-width: 768px) {
+    top: 70px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    border-radius: 18px;
+  }
 `;
 
 const OverlayHeader = styled.div`
-  height: 44px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  letter-spacing: 0.12em;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   font-size: 12px;
   font-weight: 900;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.88);
 `;
 
 const OverlayBody = styled.div`
-  height: calc(100% - 44px);
+  height: calc(100% - 48px);
   overflow: hidden;
 `;
 
 const FloatingPlanWrap = styled.div<{ $open: boolean }>`
   position: fixed;
-  right: 18px;
-  bottom: 62px;
-  width: min(360px, calc(100vw - 36px));
-  max-height: 48vh;
+  right: 20px;
+  bottom: 70px;
+  width: min(380px, calc(100vw - 40px));
+  max-height: 50vh;
   z-index: 54;
 
   ${(p) =>
@@ -160,25 +226,30 @@ const FloatingPlanWrap = styled.div<{ $open: boolean }>`
       width: auto;
       max-height: none;
     `}
+
+  @media (max-width: 768px) {
+    right: 12px;
+    bottom: 70px;
+  }
 `;
 
 const FloatingPlanPanel = styled.div`
   position: relative;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(24px);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   overflow: hidden;
 
   &::before {
     content: '';
     position: absolute;
-    inset: -60px;
-    background: radial-gradient(220px 120px at 20% 20%, rgba(34, 211, 238, 0.16), transparent 60%),
-      radial-gradient(240px 140px at 80% 60%, rgba(168, 85, 247, 0.14), transparent 60%);
-    filter: blur(18px);
-    opacity: 0.8;
+    inset: -80px;
+    background: radial-gradient(280px 160px at 20% 20%, rgba(34, 211, 238, 0.18), transparent 60%),
+      radial-gradient(300px 180px at 80% 60%, rgba(168, 85, 247, 0.16), transparent 60%);
+    filter: blur(24px);
+    opacity: 0.9;
     pointer-events: none;
   }
 `;
@@ -187,49 +258,59 @@ const FloatingPlanHeader = styled.button`
   position: relative;
   z-index: 1;
   width: 100%;
-  height: 42px;
-  padding: 0 12px;
+  height: 46px;
+  padding: 0 14px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   justify-content: space-between;
   border: 0;
   cursor: pointer;
-  background: rgba(0, 0, 0, 0.10);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.84);
-  letter-spacing: 0.10em;
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.88);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   font-size: 12px;
   font-weight: 900;
+  transition: background 200ms ease;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.20);
+  }
 `;
 
 const FloatingPlanBody = styled.div`
   position: relative;
   z-index: 1;
-  height: calc(48vh - 42px);
-  max-height: calc(48vh - 42px);
+  height: calc(50vh - 46px);
+  max-height: calc(50vh - 46px);
   overflow: hidden;
 `;
 
 const FloatingPlanToggle = styled.button`
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(22px);
-  color: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(28px);
+  color: rgba(255, 255, 255, 0.88);
   cursor: pointer;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: all 200ms ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: rgba(255, 255, 255, 0.18);
-    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.22);
+    transform: translateY(-2px);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  &:active {
+    transform: translateY(0);
   }
 `;
 
@@ -242,44 +323,56 @@ const BrandStack = styled.div`
 
 const BrandTitle = styled.div`
   font-weight: 900;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(168, 85, 247, 0.95));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 `;
 
 const BrandSubtitle = styled.div`
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.50);
 `;
 
 const StatusPill = styled.div<{ $active?: boolean }>`
-  padding: 7px 10px;
+  padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.92)' : 'rgba(255, 255, 255, 0.62)')};
+  background: rgba(255, 255, 255, 0.06);
+  color: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.95)' : 'rgba(255, 255, 255, 0.65)')};
   font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
+  transition: all 200ms ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.20);
+  }
 `;
 
 const MobileMenuButton = styled.button`
   display: none;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: all 200ms ease;
 
   &:hover {
-    border-color: rgba(168, 85, 247, 0.22);
-    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(168, 85, 247, 0.30);
+    background: rgba(255, 255, 255, 0.10);
+    transform: translateY(-1px);
   }
 
   @media (max-width: 768px) {
@@ -292,12 +385,13 @@ const MobileTabs = styled.div`
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  padding: 6px;
+  padding: 8px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(18px);
-  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  gap: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 
   @media (max-width: 768px) {
     display: flex;
@@ -306,20 +400,26 @@ const MobileTabs = styled.div`
 
 const MobileTabButton = styled.button<{ $active?: boolean }>`
   flex: 1;
-  height: 38px;
-  border-radius: 14px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.22)' : 'rgba(255, 255, 255, 0.08)')};
-  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.10)' : 'rgba(255, 255, 255, 0.03)')};
-  color: ${(p) => (p.$active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.66)')};
-  font-weight: 900;
-  letter-spacing: 0.10em;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.30)' : 'rgba(255, 255, 255, 0.10)')};
+  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.15)' : 'rgba(255, 255, 255, 0.03)')};
+  color: ${(p) => (p.$active ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.65)')};
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   font-size: 11px;
   cursor: pointer;
+  transition: all 200ms ease;
 
   &:hover {
-    border-color: rgba(168, 85, 247, 0.22);
-    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(168, 85, 247, 0.30);
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
   }
 `;
 
@@ -327,8 +427,14 @@ const InputArea = styled.div`
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
+  padding-top: 8px;
+
+  @media (max-width: 768px) {
+    gap: 10px;
+    padding-top: 4px;
+  }
 `;
 
 const MainWorkspace = styled.div<{ $previewOpen: boolean }>`
@@ -336,9 +442,15 @@ const MainWorkspace = styled.div<{ $previewOpen: boolean }>`
   min-height: 0;
   display: grid;
   grid-template-columns: ${(p) =>
-    p.$previewOpen ? '260px minmax(0, 1fr) minmax(0, 1fr)' : '260px minmax(0, 1fr)'};
+    p.$previewOpen ? '280px minmax(0, 1fr) minmax(0, 1fr)' : '280px minmax(0, 1fr)'};
   grid-template-rows: 1fr;
-  gap: 14px;
+  gap: 16px;
+
+  @media (max-width: 1024px) {
+    grid-template-columns: ${(p) =>
+      p.$previewOpen ? '240px minmax(0, 1fr) minmax(0, 1fr)' : '240px minmax(0, 1fr)'};
+    gap: 14px;
+  }
 
   @media (max-width: 768px) {
     grid-template-columns: 1fr;
@@ -352,19 +464,22 @@ const IDEFooter = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  height: 32px;
+  height: 36px;
   display: grid;
   place-items: center;
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(14px);
-  color: rgba(255, 255, 255, 0.55);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 12, 16, 0.95);
+  backdrop-filter: blur(20px);
+  color: rgba(255, 255, 255, 0.50);
   font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
   z-index: 40;
   pointer-events: none;
 
   @media (max-width: 768px) {
-    height: 34px;
+    height: 40px;
+    font-size: 10px;
   }
 `;
 
@@ -372,8 +487,12 @@ const DesktopSidebar = styled.div`
   min-height: 0;
   min-width: 0;
   height: 100%;
-  width: 260px;
+  width: 280px;
   flex-shrink: 0;
+
+  @media (max-width: 1024px) {
+    width: 240px;
+  }
 
   @media (max-width: 768px) {
     display: none;
@@ -383,11 +502,12 @@ const DesktopSidebar = styled.div`
 const DrawerScrim = styled.div<{ $open: boolean }>`
   position: fixed;
   inset: 0;
-  background: rgba(3, 6, 10, 0.6);
+  background: rgba(3, 6, 10, 0.75);
   opacity: ${(p) => (p.$open ? 1 : 0)};
   pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
-  transition: opacity 180ms ease;
+  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 55;
+  backdrop-filter: blur(8px);
 
   @media (min-width: 769px) {
     display: none;
@@ -399,16 +519,16 @@ const DrawerPanel = styled.div<{ $open: boolean }>`
   top: 0;
   left: 0;
   bottom: 0;
-  width: min(340px, 88vw);
-  background: rgba(10, 12, 18, 0.92);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 18px 0 40px rgba(0, 0, 0, 0.6);
+  width: min(380px, 92vw);
+  background: rgba(10, 12, 18, 0.98);
+  border-right: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 24px 0 60px rgba(0, 0, 0, 0.75);
   transform: translateX(${(p) => (p.$open ? '0' : '-100%')});
-  transition: transform 220ms ease;
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 56;
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  padding: 16px;
 
   @media (min-width: 769px) {
     display: none;
@@ -419,32 +539,34 @@ const DrawerHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 4px 10px;
+  padding: 4px 4px 14px;
 `;
 
 const DrawerTitle = styled.div`
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.75);
 `;
 
 const DrawerClose = styled.button`
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.7);
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.75);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: all 200ms ease;
 
   &:hover {
-    border-color: rgba(168, 85, 247, 0.22);
-    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(168, 85, 247, 0.30);
+    background: rgba(255, 255, 255, 0.10);
+    transform: translateY(-1px);
   }
 `;
 
@@ -462,26 +584,27 @@ const PanelSlot = styled.div<{ $mobileActive?: boolean; $desktopHidden?: boolean
     inset: 0;
     opacity: ${(p) => (p.$mobileActive ? 1 : 0)};
     pointer-events: ${(p) => (p.$mobileActive ? 'auto' : 'none')};
-    transition: opacity 160ms ease;
+    transition: opacity 200ms ease;
   }
 `;
 
 const ErrorToast = styled.div`
   position: absolute;
-  top: 14px;
+  top: 20px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(820px, calc(100vw - 28px));
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(239, 68, 68, 0.32);
-  background: rgba(239, 68, 68, 0.10);
-  backdrop-filter: blur(18px);
+  width: min(900px, calc(100vw - 40px));
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  backdrop-filter: blur(24px);
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  color: rgba(255, 255, 255, 0.90);
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.95);
   z-index: 60;
+  box-shadow: 0 12px 40px rgba(239, 68, 68, 0.25);
 `;
 
 function App() {

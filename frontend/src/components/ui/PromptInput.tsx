@@ -17,45 +17,47 @@ const CREATIVE_HINTS = [
 
 const Shell = styled.div<{ $mode: 'create' | 'edit' }>`
   width: 100%;
-  max-width: 1000px;
+  max-width: 1100px;
   margin: 0 auto;
   flex-shrink: 0;
   position: relative;
-  border-radius: 22px;
-  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(168, 85, 247, 0.35)' : 'rgba(255, 255, 255, 0.14)')};
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(18px);
+  border-radius: 24px;
+  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(168, 85, 247, 0.40)' : 'rgba(255, 255, 255, 0.16)')};
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px);
   box-shadow:
-    0 22px 60px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    0 28px 80px rgba(0, 0, 0, 0.60),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
   overflow: hidden;
-  min-height: 92px;
+  min-height: 100px;
 
   display: flex;
   align-items: stretch;
-  gap: 12px;
-  padding: 12px;
+  gap: 14px;
+  padding: 14px;
 
   @media (max-width: 768px) {
     position: fixed;
-    left: 14px;
-    right: 14px;
-    bottom: calc(14px + 34px);
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + 44px);
     max-width: none;
     z-index: 80;
     flex-direction: column;
+    padding: 12px;
+    border-radius: 20px;
   }
 `;
 
 const Glow = styled.div<{ $mode: 'create' | 'edit' }>`
   position: absolute;
-  inset: -10px;
-  border-radius: 18px;
+  inset: -12px;
+  border-radius: 20px;
   background:
-    radial-gradient(260px 140px at 15% 25%, rgba(34, 211, 238, 0.26), transparent 60%),
-    radial-gradient(260px 140px at 85% 75%, rgba(168, 85, 247, ${(p) => (p.$mode === 'edit' ? 0.34 : 0.22)}), transparent 60%);
-  filter: blur(18px);
-  opacity: 0.9;
+    radial-gradient(300px 160px at 12% 22%, rgba(34, 211, 238, 0.28), transparent 60%),
+    radial-gradient(300px 160px at 88% 78%, rgba(168, 85, 247, ${(p) => (p.$mode === 'edit' ? 0.38 : 0.26)}), transparent 60%);
+  filter: blur(22px);
+  opacity: 0.95;
   pointer-events: none;
 `;
 
@@ -72,11 +74,11 @@ const HintOverlay = styled.div`
   top: 0;
   right: 0;
   bottom: 0;
-  padding: 4px 2px;
+  padding: 6px 4px;
   pointer-events: none;
   display: flex;
   align-items: flex-start;
-  color: rgba(255, 255, 255, 0.44);
+  color: rgba(255, 255, 255, 0.48);
 `;
 
 const HintText = styled.span<{ $steps: number; $durationMs: number; $targetWidthCh: number }>`
@@ -86,7 +88,7 @@ const HintText = styled.span<{ $steps: number; $durationMs: number; $targetWidth
   overflow: hidden;
   width: 0ch;
   max-width: 100%;
-  line-height: 1.4;
+  line-height: 1.5;
   font-size: 15px;
   animation: nexus-typing ${(p) => p.$durationMs}ms steps(${(p) => Math.max(12, p.$steps)}, end) infinite;
 `;
@@ -95,32 +97,38 @@ const Cursor = styled.span`
   display: inline-block;
   width: 10px;
   margin-left: 2px;
-  opacity: 0.65;
+  opacity: 0.70;
   animation: nexus-blink 900ms steps(1, end) infinite;
+  color: rgba(34, 211, 238, 0.8);
 `;
 
 const Input = styled.textarea<{ $mode: 'create' | 'edit' }>`
   width: 100%;
   flex: 1;
   min-width: 0;
-  min-height: 68px;
-  max-height: 220px;
+  min-height: 72px;
+  max-height: 240px;
   resize: none;
-  padding: 4px 2px;
+  padding: 6px 4px;
   border-radius: 0;
   border: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.94);
   font-size: 15px;
-  line-height: 1.4;
+  line-height: 1.5;
   outline: none;
+  font-family: inherit;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.40);
+    color: rgba(255, 255, 255, 0.42);
   }
 
   &:focus {
-    color: rgba(255, 255, 255, 0.96);
+    color: rgba(255, 255, 255, 0.98);
+  }
+
+  &::selection {
+    background: rgba(34, 211, 238, 0.30);
   }
 
   @keyframes nexus-typing {
@@ -161,16 +169,16 @@ const Controls = styled.div`
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
   flex-shrink: 0;
-  padding-left: 12px;
-  border-left: 1px solid rgba(255, 255, 255, 0.10);
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
 
   @media (max-width: 768px) {
     border-left: 0;
     padding-left: 0;
-    padding-top: 10px;
-    border-top: 1px solid rgba(255, 255, 255, 0.10);
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
     justify-content: space-between;
     flex-wrap: wrap;
   }

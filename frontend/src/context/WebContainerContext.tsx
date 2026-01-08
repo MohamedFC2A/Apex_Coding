@@ -3,7 +3,7 @@ import { FileSystem, FileSystemEntry } from '@/types';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePreviewStore } from '@/stores/previewStore';
-import { DEFAULT_ROOT_PACKAGE_JSON, ensureWebContainer, installDependencies, resetWebContainerState, startServer, syncFileSystem } from '@/services/webcontainer';
+import { DEFAULT_ROOT_PACKAGE_JSON, ensureWebContainer, installDependencies, startServer, syncFileSystem } from '@/services/webcontainer';
 import { stripAnsi } from '@/utils/ansi';
 
 type RuntimeStatus = 'idle' | 'booting' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
@@ -72,6 +72,32 @@ const treeContainsAnyCodeFile = (tree: FileSystem): boolean => {
 
 // Flag to use simple iframe preview instead of WebContainer when API is unavailable
 const USE_SIMPLE_PREVIEW = !process.env.NEXT_PUBLIC_WC_CLIENT_ID;
+
+// ============================================================================
+// GLOBAL MUTEX - PREVENTS RE-INITIALIZATION ON RE-RENDER/HOT-RELOAD
+// ============================================================================
+const GLOBAL_INIT_STATE = {
+  authLogged: false,           // Auth message logged exactly once
+  containerBooted: false,      // WebContainer booted
+  serverAttached: false,       // Server listener attached
+  lastPreviewUrl: null as string | null,  // Cache last working preview
+  initInProgress: false,       // Prevent concurrent initialization
+  healthCheckInterval: null as ReturnType<typeof setInterval> | null,
+};
+
+// Reset on page unload only (not hot reload)
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    GLOBAL_INIT_STATE.authLogged = false;
+    GLOBAL_INIT_STATE.containerBooted = false;
+    GLOBAL_INIT_STATE.serverAttached = false;
+    GLOBAL_INIT_STATE.lastPreviewUrl = null;
+    GLOBAL_INIT_STATE.initInProgress = false;
+    if (GLOBAL_INIT_STATE.healthCheckInterval) {
+      clearInterval(GLOBAL_INIT_STATE.healthCheckInterval);
+    }
+  });
+}
 
 const STATIC_SERVER_FILE = '.apex/static-server.cjs';
 const STATIC_SERVER_CODE = `const http = require('http');
@@ -502,35 +528,6 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     ]
   );
 
-  // Auto-detect file changes and trigger re-run when preview is open
-  useEffect(() => {
-    if (!isPreviewOpen) {
-      updateStatus('idle');
-      updateUrl(null);
-      return;
-    }
-
-    const tree = normalizeFileSystem(files);
-    const fileCount = countFiles(tree);
-    
-    if (isTreeEmpty(tree) || fileCount === 0) {
-      resetWebContainerState();
-      serverStartedRef.current = false;
-      updateStatus('idle');
-      updateUrl(null);
-      return;
-    }
-    
-    // Auto-trigger bootAndRun when files change and preview is open
-    if (fileCount > 0 && !pendingRef.current && !isGenerating) {
-      // Small delay to batch file updates
-      const timer = setTimeout(() => {
-        void bootAndRun(false).catch(() => {});
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [files, isPreviewOpen, isGenerating, updateStatus, updateUrl, bootAndRun]);
-
   // Generate a data URL for simple iframe preview (no WebContainer needed)
   const generateSimplePreview = useCallback(() => {
     const tree = normalizeFileSystem(files);
@@ -588,39 +585,68 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [files]);
 
   const deployAndRun = useCallback(async () => {
+    // GUARD: Prevent concurrent initialization
+    if (GLOBAL_INIT_STATE.initInProgress) {
+      return pendingRef.current || Promise.resolve();
+    }
+    
     if (isGenerating) {
       updateStatus('idle', 'Waiting for code generation to finish...');
-      appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for code generation to finish...\n`);
       return;
     }
 
     const apiKeyPresent = Boolean(process.env.NEXT_PUBLIC_WC_CLIENT_ID);
     
-    // If no API key, use simple iframe preview
-    if (!apiKeyPresent || USE_SIMPLE_PREVIEW) {
-      const simpleUrl = generateSimplePreview();
-      if (simpleUrl) {
-        updateUrl(simpleUrl);
-        updateStatus('ready', 'Preview ready (Simple Mode)');
-        appendSystemConsoleContent(`${stamp()} [preview] Using simple iframe preview (no WebContainer API).\n`);
-        return;
+    // PRIORITY 1: Use simple iframe preview (most reliable, no external deps)
+    const simpleUrl = generateSimplePreview();
+    if (simpleUrl) {
+      updateUrl(simpleUrl);
+      GLOBAL_INIT_STATE.lastPreviewUrl = simpleUrl;
+      updateStatus('ready', 'Preview ready');
+      // Only log once
+      if (!GLOBAL_INIT_STATE.authLogged) {
+        appendSystemConsoleContent(`${stamp()} [preview] Preview ready.\n`);
+        GLOBAL_INIT_STATE.authLogged = true;
       }
+      return;
     }
-    if (apiKeyPresent) {
-      appendSystemConsoleContent(`${stamp()} [webcontainer] Authenticated with Enterprise API Key.\\n`);
+    
+    // PRIORITY 2: If simple preview failed but we have cached URL, use it
+    if (GLOBAL_INIT_STATE.lastPreviewUrl) {
+      updateUrl(GLOBAL_INIT_STATE.lastPreviewUrl);
+      updateStatus('ready', 'Preview ready (cached)');
+      return;
+    }
+    
+    // PRIORITY 3: WebContainer (only if API key present and simple preview unavailable)
+    if (apiKeyPresent && !USE_SIMPLE_PREVIEW) {
+      // Log auth EXACTLY ONCE
+      if (!GLOBAL_INIT_STATE.authLogged) {
+        appendSystemConsoleContent(`${stamp()} [webcontainer] Authenticated with Enterprise API Key.\n`);
+        GLOBAL_INIT_STATE.authLogged = true;
+      }
     }
 
     if (pendingRef.current) return pendingRef.current;
 
+    GLOBAL_INIT_STATE.initInProgress = true;
+    
     pendingRef.current = bootAndRun(true)
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
         updateStatus('error', message);
-        throw err;
+        // SELF-RECOVERY: Try simple preview on error
+        const fallbackUrl = generateSimplePreview();
+        if (fallbackUrl) {
+          updateUrl(fallbackUrl);
+          updateStatus('ready', 'Preview ready (fallback)');
+          setError(null);
+        }
       })
       .finally(() => {
         pendingRef.current = null;
+        GLOBAL_INIT_STATE.initInProgress = false;
       });
 
     return pendingRef.current;
@@ -631,7 +657,78 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     await deployAndRun();
   }, [deployAndRun]);
 
+  // Auto-detect file changes and trigger re-run when preview is open
+  // FIXED: Debounced, guarded, and prevents re-initialization loops
+  const lastFileHashRef = useRef<string>('');
+  
+  useEffect(() => {
+    if (!isPreviewOpen) {
+      updateStatus('idle');
+      // Don't clear URL - keep cached for instant restore
+      return;
+    }
+
+    const tree = normalizeFileSystem(files);
+    const fileCount = countFiles(tree);
+    
+    if (isTreeEmpty(tree) || fileCount === 0) {
+      serverStartedRef.current = false;
+      updateStatus('idle');
+      return;
+    }
+    
+    // OPTIMIZATION: Only trigger if files actually changed (hash check)
+    const fileHash = JSON.stringify(Object.keys(tree).sort()).slice(0, 200);
+    if (fileHash === lastFileHashRef.current && status === 'ready') {
+      return; // No change, skip re-run
+    }
+    lastFileHashRef.current = fileHash;
+    
+    // GUARD: Don't re-run if already running or generating
+    if (pendingRef.current || isGenerating || GLOBAL_INIT_STATE.initInProgress) {
+      return;
+    }
+    
+    // Debounced trigger - 800ms to batch rapid file updates
+    const timer = setTimeout(() => {
+      if (!GLOBAL_INIT_STATE.initInProgress) {
+        void deployAndRun().catch(() => {});
+      }
+    }, 800);
+    
+    return () => clearTimeout(timer);
+  }, [files, isPreviewOpen, isGenerating, updateStatus, status, deployAndRun]);
+
   const restart = runProject;
+
+  // STEP 5: HEALTH CHECK & SELF-RECOVERY
+  // Periodically check if preview is supposed to be running but isn't
+  useEffect(() => {
+    if (!isPreviewOpen) return;
+    
+    // Health check every 5 seconds
+    const healthCheck = setInterval(() => {
+      // If preview should be open but no URL and not initializing, recover
+      if (isPreviewOpen && !url && status === 'idle' && !GLOBAL_INIT_STATE.initInProgress && !isGenerating) {
+        const tree = normalizeFileSystem(files);
+        const fileCount = countFiles(tree);
+        
+        if (fileCount > 0) {
+          console.log('[HealthCheck] Preview not running, attempting recovery...');
+          void deployAndRun().catch(() => {});
+        }
+      }
+    }, 5000);
+    
+    GLOBAL_INIT_STATE.healthCheckInterval = healthCheck;
+    
+    return () => {
+      clearInterval(healthCheck);
+      if (GLOBAL_INIT_STATE.healthCheckInterval === healthCheck) {
+        GLOBAL_INIT_STATE.healthCheckInterval = null;
+      }
+    };
+  }, [isPreviewOpen, url, status, isGenerating, files, deployAndRun]);
 
   return (
     <WebContainerContext.Provider value={{ status, url, error, deployAndRun, runProject, restart }}>

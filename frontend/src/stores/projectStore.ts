@@ -113,3 +113,8 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
     }
   )
 );
+
+// Expose store for global autosave access
+if (typeof window !== 'undefined') {
+  (window as any).__NEXUS_PROJECT_STORE__ = useProjectStore;
+}

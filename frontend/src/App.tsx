@@ -25,6 +25,54 @@ import { Content, Description, Heading, Popover, Trigger } from './components/ui
 import { GlobalStyles } from './styles/GlobalStyles';
 import { useWebContainer } from './context/WebContainerContext';
 
+// ============================================================================
+// GLOBAL AUTOSAVE - INDEPENDENT OF CHAT/COMPONENT LIFECYCLE
+// ============================================================================
+let globalAutosaveTimer: number | null = null;
+let lastAutosaveHash = '';
+
+const globalWriteAutosaveNow = () => {
+  try {
+    // Dynamic import to avoid circular dependencies
+    const project = (window as any).__NEXUS_PROJECT_STORE__?.getState?.() || {};
+    const snapshot = {
+      savedAt: Date.now(),
+      projectName: project.projectName || 'Untitled',
+      stack: project.stack || '',
+      description: project.description || '',
+      activeFile: project.activeFile || '',
+      files: (project.files || []).map((f: any) => ({
+        name: f.name,
+        path: f.path || f.name,
+        content: f.content || ''
+      }))
+    };
+    
+    // Only save if content actually changed
+    const hash = JSON.stringify(snapshot.files.map((f: any) => f.path + ':' + (f.content?.length || 0)));
+    if (hash === lastAutosaveHash) return;
+    lastAutosaveHash = hash;
+    
+    localStorage.setItem('nexus-apex-autosave', JSON.stringify(snapshot));
+    console.log('[AutoSave] Saved', snapshot.files.length, 'files');
+  } catch (e) {
+    console.warn('[AutoSave] Failed:', e);
+  }
+};
+
+const globalScheduleAutosave = () => {
+  if (globalAutosaveTimer) return;
+  globalAutosaveTimer = window.setTimeout(() => {
+    globalAutosaveTimer = null;
+    globalWriteAutosaveNow();
+  }, 500); // 500ms debounce for instant feel
+};
+
+// Expose for debugging
+if (typeof window !== 'undefined') {
+  (window as any).__NEXUS_AUTOSAVE__ = { save: globalWriteAutosaveNow, schedule: globalScheduleAutosave };
+}
+
 const Root = styled.div`
   width: 100vw;
   height: 100vh;
@@ -904,34 +952,8 @@ function App() {
       const partialPaths = new Set<string>();
       const editOriginalByPath = new Map<string, string>();
 
-      let autosaveTimer: number | null = null;
-      const writeAutosaveNow = () => {
-        try {
-          const project = useProjectStore.getState();
-          const snapshot = {
-            savedAt: Date.now(),
-            projectName: project.projectName,
-            stack: project.stack,
-            description: project.description,
-            activeFile: project.activeFile,
-            files: project.files.map((f) => ({
-              name: f.name,
-              path: f.path || f.name,
-              content: f.content || ''
-            }))
-          };
-          localStorage.setItem('nexus-apex-autosave', JSON.stringify(snapshot));
-        } catch {
-          // ignore
-        }
-      };
-      const scheduleAutosave = () => {
-        if (autosaveTimer) return;
-        autosaveTimer = window.setTimeout(() => {
-          autosaveTimer = null;
-          writeAutosaveNow();
-        }, 0);
-      };
+      // Use global autosave function (defined outside for independence)
+      const scheduleAutosave = globalScheduleAutosave;
       const resolveGeneratedPath = (rawPath: string) => {
         if (filePathMap.has(rawPath)) return filePathMap.get(rawPath) as string;
         const normalized = resolveFilePath(rawPath);

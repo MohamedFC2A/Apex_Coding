@@ -70,6 +70,9 @@ const treeContainsAnyCodeFile = (tree: FileSystem): boolean => {
   return check(tree);
 };
 
+// Flag to use simple iframe preview instead of WebContainer when API is unavailable
+const USE_SIMPLE_PREVIEW = !process.env.NEXT_PUBLIC_WC_CLIENT_ID;
+
 const STATIC_SERVER_FILE = '.apex/static-server.cjs';
 const STATIC_SERVER_CODE = `const http = require('http');
 const fs = require('fs');
@@ -528,14 +531,81 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [files, isPreviewOpen, isGenerating, updateStatus, updateUrl, bootAndRun]);
 
+  // Generate a data URL for simple iframe preview (no WebContainer needed)
+  const generateSimplePreview = useCallback(() => {
+    const tree = normalizeFileSystem(files);
+    if (isTreeEmpty(tree)) return null;
+    
+    // Find index.html
+    const findFile = (node: FileSystem, name: string): string | null => {
+      for (const [key, entry] of Object.entries(node) as [string, FileSystemEntry][]) {
+        if (key.toLowerCase() === name.toLowerCase() && entry.file) {
+          return entry.file.contents || '';
+        }
+        if (entry.directory) {
+          const found = findFile(entry.directory, name);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    const indexHtml = findFile(tree, 'index.html');
+    if (!indexHtml) return null;
+    
+    // Find CSS and JS files
+    const stylesCSS = findFile(tree, 'styles.css') || findFile(tree, 'style.css') || '';
+    const scriptJS = findFile(tree, 'script.js') || findFile(tree, 'main.js') || findFile(tree, 'app.js') || '';
+    
+    // Inject CSS and JS into HTML
+    let finalHtml = indexHtml;
+    
+    // Replace CSS link with inline styles
+    if (stylesCSS) {
+      finalHtml = finalHtml.replace(
+        /<link[^>]*href=["'](?:.*\/)?styles?\.css["'][^>]*>/gi,
+        `<style>${stylesCSS}</style>`
+      );
+      // Also add styles if no link tag found
+      if (!finalHtml.includes('<style>')) {
+        finalHtml = finalHtml.replace('</head>', `<style>${stylesCSS}</style></head>`);
+      }
+    }
+    
+    // Replace JS script with inline script
+    if (scriptJS) {
+      finalHtml = finalHtml.replace(
+        /<script[^>]*src=["'](?:.*\/)?(?:script|main|app)\.js["'][^>]*><\/script>/gi,
+        `<script>${scriptJS}</script>`
+      );
+      // Also add script if no script tag found
+      if (!finalHtml.includes('<script>') && scriptJS.trim()) {
+        finalHtml = finalHtml.replace('</body>', `<script>${scriptJS}</script></body>`);
+      }
+    }
+    
+    return `data:text/html;charset=utf-8,${encodeURIComponent(finalHtml)}`;
+  }, [files]);
+
   const deployAndRun = useCallback(async () => {
     if (isGenerating) {
       updateStatus('idle', 'Waiting for code generation to finish...');
-      appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for code generation to finish...\\n`);
+      appendSystemConsoleContent(`${stamp()} [webcontainer] Waiting for code generation to finish...\n`);
       return;
     }
 
     const apiKeyPresent = Boolean(process.env.NEXT_PUBLIC_WC_CLIENT_ID);
+    
+    // If no API key, use simple iframe preview
+    if (!apiKeyPresent || USE_SIMPLE_PREVIEW) {
+      const simpleUrl = generateSimplePreview();
+      if (simpleUrl) {
+        updateUrl(simpleUrl);
+        updateStatus('ready', 'Preview ready (Simple Mode)');
+        appendSystemConsoleContent(`${stamp()} [preview] Using simple iframe preview (no WebContainer API).\n`);
+        return;
+      }
+    }
     if (apiKeyPresent) {
       appendSystemConsoleContent(`${stamp()} [webcontainer] Authenticated with Enterprise API Key.\\n`);
     }
@@ -554,7 +624,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
 
     return pendingRef.current;
-  }, [appendSystemConsoleContent, bootAndRun, isGenerating, updateStatus]);
+  }, [appendSystemConsoleContent, bootAndRun, generateSimplePreview, isGenerating, updateStatus, updateUrl]);
 
   const runProject = useCallback(async () => {
     serverStartedRef.current = false;

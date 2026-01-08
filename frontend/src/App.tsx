@@ -1097,6 +1097,9 @@ function App() {
         return out;
       };
 
+      // Track files by their base name to detect duplicates
+      const filesByBaseName = new Map<string, string>();
+      
       const handleFileEvent = (event: {
         type: 'start' | 'chunk' | 'end';
         path: string;
@@ -1106,8 +1109,27 @@ function App() {
         line?: number;
         append?: boolean;
       }) => {
-        const resolvedPath = resolveGeneratedPath(event.path || '');
+        let resolvedPath = resolveGeneratedPath(event.path || '');
         if (!resolvedPath) return;
+        
+        // DUPLICATE PREVENTION: Check if a file with the same base name exists in a different location
+        const baseName = resolvedPath.split('/').pop() || resolvedPath;
+        const existingPath = filesByBaseName.get(baseName.toLowerCase());
+        
+        if (event.type === 'start' && event.mode === 'create') {
+          // If this exact base name exists elsewhere, redirect to the existing path
+          if (existingPath && existingPath !== resolvedPath) {
+            // Common duplicates: styles.css, script.js, main.js, app.js
+            const commonDuplicates = ['styles.css', 'style.css', 'script.js', 'main.js', 'app.js', 'index.css'];
+            if (commonDuplicates.includes(baseName.toLowerCase())) {
+              logSystem(`[STATUS] Prevented duplicate: ${resolvedPath} -> using existing ${existingPath}`);
+              resolvedPath = existingPath; // Redirect to existing file
+            }
+          } else {
+            // Track this file
+            filesByBaseName.set(baseName.toLowerCase(), resolvedPath);
+          }
+        }
 
         if (event.type === 'start') {
           const label = event.mode === 'edit' ? 'Editing' : 'Writing';

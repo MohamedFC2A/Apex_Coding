@@ -387,20 +387,32 @@ export const aiService = {
       const buildResumePrompt = (cutPath: string, cutLine: number) => {
         const completedList = Array.from(completedFiles).slice(-80).join(', ');
         const tail = streamTail.slice(-streamTailMax);
+        
+        // Get just the filename from the path for strict matching
+        const cutFileName = cutPath.split('/').pop() || cutPath;
+        
         return [
           prompt,
           '',
-          'SYSTEM: You were cut off mid-stream. Resume using ONLY the File-Marker protocol.',
-          'CRITICAL AUTO-CONTINUE RULES:',
-          '- NEVER output status messages like "Searching...", "Replacing...", "Found X", "Replaced X with Y"',
-          '- NEVER explain what you are doing - just output the code',
-          '- Output ONLY [[START_FILE:...]] or [[EDIT_NODE:...]] markers and actual code',
-          '- NO commentary, NO explanations, NO status updates',
+          '=== CRITICAL AUTO-CONTINUE INSTRUCTION ===',
           '',
-          `The last file ${cutPath} was cut off at line ${cutLine}. Continue the stream exactly from line ${cutLine + 1} (do not repeat earlier lines).`,
-          completedList ? `DO NOT repeat these already completed files: ${completedList}` : '',
-          tail ? `Last received tail (for context, may be truncated):\n${tail}` : '',
-          'Output ONLY markers + code. Absolutely NO filler or status messages.'
+          `YOU WERE CUT OFF WHILE WRITING: ${cutPath}`,
+          `CONTINUE THIS EXACT FILE FROM LINE ${cutLine + 1}`,
+          '',
+          'ABSOLUTE RULES:',
+          `1. Output [[START_FILE: ${cutPath}]] and continue from line ${cutLine + 1}`,
+          `2. DO NOT create a NEW file - continue the SAME file: ${cutPath}`,
+          `3. DO NOT create ${cutFileName} in a different folder`,
+          '4. DO NOT restart the file from the beginning',
+          '5. DO NOT output any text except [[START_FILE:...]], code, and [[END_FILE]]',
+          '6. NO "Continuing...", NO "Here is", NO explanations',
+          '',
+          completedList ? `ALREADY COMPLETED (do NOT repeat): ${completedList}` : '',
+          '',
+          'LAST CODE RECEIVED (continue from here):',
+          tail ? tail : '(no tail available)',
+          '',
+          `NOW OUTPUT: [[START_FILE: ${cutPath}]] then continue the code from line ${cutLine + 1}`
         ]
           .filter(Boolean)
           .join('\n');

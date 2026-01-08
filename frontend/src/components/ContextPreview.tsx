@@ -94,7 +94,7 @@ const EmptyHint = styled.div`
 `;
 
 export const ContextPreview: React.FC = () => {
-  const { prompt, chatHistory, plan, planSteps, lastPlannedPrompt } = useAIStore();
+  const { prompt, chatHistory, planSteps, lastPlannedPrompt } = useAIStore();
   const { files, projectName, stack } = useProjectStore();
 
   const contextSummary = useMemo(() => {
@@ -168,7 +168,7 @@ export const ContextPreview: React.FC = () => {
           {planSteps.length > 0 ? (
             <>
               <div>Progress: {contextSummary.stepCount} / {contextSummary.totalSteps}</div>
-              {planSteps.map((step, idx) => (
+              {planSteps.map((step) => (
                 <div key={step.id} style={{ opacity: step.completed ? 1 : 0.5 }}>
                   {step.completed ? '✓' : '○'} {step.title}
                 </div>

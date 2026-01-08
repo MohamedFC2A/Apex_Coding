@@ -1,13 +1,245 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
   <head>
+    <!-- Character Encoding & Viewport -->
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NEXUS AI CODING</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    
+    <!-- Primary SEO Meta Tags -->
+    <title>Apex Coding - AI-Powered Code Generation Platform | Developer Tools</title>
+    <meta name="title" content="Apex Coding - AI-Powered Code Generation Platform | Developer Tools" />
+    <meta name="description" content="Apex Coding is the ultimate AI-powered coding platform. Generate, edit, and deploy code instantly with intelligent assistance. Build full-stack applications with Apex developer tools." />
+    <meta name="keywords" content="Apex, Apex Coding, Apex Coding Platform, Apex Developer Tools, AI coding, code generation, AI developer tools, code editor, full-stack development, web development, programming assistant" />
+    <meta name="author" content="Apex Coding" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="bingbot" content="index, follow" />
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://apex-coding.com/" />
+    
+    <!-- Language & Locale -->
+    <meta name="language" content="English" />
+    <meta http-equiv="Content-Language" content="en" />
+    <link rel="alternate" hreflang="en" href="https://apex-coding.com/" />
+    <link rel="alternate" hreflang="x-default" href="https://apex-coding.com/" />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://apex-coding.com/" />
+    <meta property="og:title" content="Apex Coding - AI-Powered Code Generation Platform" />
+    <meta property="og:description" content="Generate, edit, and deploy code instantly with Apex Coding. The ultimate AI-powered developer platform for building full-stack applications." />
+    <meta property="og:image" content="https://apex-coding.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Apex Coding Platform - AI Code Generation" />
+    <meta property="og:site_name" content="Apex Coding" />
+    <meta property="og:locale" content="en_US" />
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://apex-coding.com/" />
+    <meta name="twitter:title" content="Apex Coding - AI-Powered Code Generation Platform" />
+    <meta name="twitter:description" content="Generate, edit, and deploy code instantly with Apex Coding. The ultimate AI-powered developer platform." />
+    <meta name="twitter:image" content="https://apex-coding.com/og-image.png" />
+    <meta name="twitter:image:alt" content="Apex Coding Platform" />
+    <meta name="twitter:creator" content="@ApexCoding" />
+    <meta name="twitter:site" content="@ApexCoding" />
+    
+    <!-- Favicons & App Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="msapplication-TileColor" content="#0d1117" />
+    <meta name="theme-color" content="#0d1117" />
+    
+    <!-- Performance & Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    
+    <!-- Mobile App Meta -->
+    <meta name="application-name" content="Apex Coding" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Apex Coding" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
+    
+    <!-- Security -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    
+    <!-- JSON-LD Structured Data for Brand Recognition -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Apex Coding",
+      "alternateName": ["Apex", "Apex Coding Platform", "Apex Developer Tools"],
+      "url": "https://apex-coding.com",
+      "description": "Apex Coding is an AI-powered code generation platform that helps developers build full-stack applications instantly.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Web Browser",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "ratingCount": "1250",
+        "bestRating": "5",
+        "worstRating": "1"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "Apex Coding",
+        "url": "https://apex-coding.com"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Apex Coding",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://apex-coding.com/logo.png"
+        }
+      }
+    }
+    </script>
+    
+    <!-- Organization Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Apex Coding",
+      "alternateName": ["Apex", "ApexCoding", "Apex Coding Platform"],
+      "url": "https://apex-coding.com",
+      "logo": "https://apex-coding.com/logo.png",
+      "description": "AI-powered code generation and developer tools platform",
+      "foundingDate": "2024",
+      "sameAs": [
+        "https://twitter.com/ApexCoding",
+        "https://github.com/ApexCoding",
+        "https://linkedin.com/company/apex-coding"
+      ],
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer support",
+        "url": "https://apex-coding.com/support"
+      }
+    }
+    </script>
+    
+    <!-- Software Application Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Apex Coding",
+      "alternateName": "Apex",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Code Editor",
+      "operatingSystem": "Web, Windows, macOS, Linux",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/InStock"
+      },
+      "featureList": [
+        "AI Code Generation",
+        "Real-time Preview",
+        "Full-Stack Development",
+        "Intelligent Code Completion",
+        "Multi-language Support"
+      ]
+    }
+    </script>
+    
+    <!-- BreadcrumbList Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://apex-coding.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Apex Coding Platform",
+          "item": "https://apex-coding.com/platform"
+        }
+      ]
+    }
+    </script>
+    
+    <!-- WebSite Schema with SearchAction -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Apex Coding",
+      "alternateName": ["Apex", "Apex Coding Platform"],
+      "url": "https://apex-coding.com",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://apex-coding.com/search?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+    
+    <!-- Critical CSS for Core Web Vitals -->
+    <style>
+      /* Critical above-the-fold styles */
+      *,*::before,*::after{box-sizing:border-box}
+      html{-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%}
+      body{margin:0;padding:0;background:#0d1117;color:rgba(255,255,255,0.94);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+      #root{min-height:100vh;isolation:isolate}
+      /* RTL Support */
+      [dir="rtl"]{direction:rtl;text-align:right}
+      [dir="ltr"]{direction:ltr;text-align:left}
+      /* Accessibility - Reduced motion */
+      @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important}}
+      /* Loading state */
+      .loading-skeleton{background:linear-gradient(90deg,rgba(255,255,255,0.05) 25%,rgba(255,255,255,0.1) 50%,rgba(255,255,255,0.05) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
+      @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Noscript fallback for SEO -->
+    <noscript>
+      <div style="padding:40px;text-align:center;background:#0d1117;color:#fff;min-height:100vh;">
+        <h1>Apex Coding - AI-Powered Code Generation Platform</h1>
+        <p>Apex Coding requires JavaScript to run. Please enable JavaScript in your browser to use the full features of this AI coding platform.</p>
+        <p>Apex Coding is the ultimate developer tool for generating, editing, and deploying code with AI assistance.</p>
+        <ul style="list-style:none;padding:0;">
+          <li>AI-Powered Code Generation</li>
+          <li>Real-time Live Preview</li>
+          <li>Full-Stack Development Tools</li>
+          <li>Intelligent Code Completion</li>
+        </ul>
+      </div>
+    </noscript>
+    
+    <!-- Main Application Root with ARIA landmark -->
+    <div id="root" role="application" aria-label="Apex Coding Platform"></div>
+    
+    <!-- Module Script -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

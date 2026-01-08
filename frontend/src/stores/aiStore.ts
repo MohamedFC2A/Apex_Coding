@@ -774,7 +774,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       reset: () => set(buildInitialState())
     }),
     {
-      name: 'nexus-ai-store',
+      name: 'apex-ai-store',
       storage: createJSONStorage(() => localStorage)
     }
   )

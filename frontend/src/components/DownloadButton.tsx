@@ -12,7 +12,7 @@ export const DownloadButton: React.FC = () => {
 
     setIsDownloading(true);
     try {
-      await downloadService.downloadAsZip(files, projectName || 'nexus-project');
+      await downloadService.downloadAsZip(files, projectName || 'apex-project');
     } catch (error) {
       console.error('Download failed:', error);
     } finally {

@@ -93,7 +93,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(
       }
     }),
     {
-      name: 'nexus-subscription',
+      name: 'apex-subscription',
       version: 1
     }
   )

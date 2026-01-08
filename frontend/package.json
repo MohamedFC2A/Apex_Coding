@@ -1,11 +1,12 @@
 {
-  "name": "nexus-ai-coding-frontend",
+  "name": "apex-coding-frontend",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "start": "vite preview --port 3000",
     "test": "vitest"
   },
   "dependencies": {

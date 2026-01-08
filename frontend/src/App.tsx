@@ -34,7 +34,7 @@ let lastAutosaveHash = '';
 const globalWriteAutosaveNow = () => {
   try {
     // Dynamic import to avoid circular dependencies
-    const project = (window as any).__NEXUS_PROJECT_STORE__?.getState?.() || {};
+    const project = (window as any).__APEX_PROJECT_STORE__?.getState?.() || {};
     const snapshot = {
       savedAt: Date.now(),
       projectName: project.projectName || 'Untitled',
@@ -53,7 +53,7 @@ const globalWriteAutosaveNow = () => {
     if (hash === lastAutosaveHash) return;
     lastAutosaveHash = hash;
     
-    localStorage.setItem('nexus-apex-autosave', JSON.stringify(snapshot));
+    localStorage.setItem('apex-coding-autosave', JSON.stringify(snapshot));
     console.log('[AutoSave] Saved', snapshot.files.length, 'files');
   } catch (e) {
     console.warn('[AutoSave] Failed:', e);
@@ -70,7 +70,7 @@ const globalScheduleAutosave = () => {
 
 // Expose for debugging
 if (typeof window !== 'undefined') {
-  (window as any).__NEXUS_AUTOSAVE__ = { save: globalWriteAutosaveNow, schedule: globalScheduleAutosave };
+  (window as any).__APEX_AUTOSAVE__ = { save: globalWriteAutosaveNow, schedule: globalScheduleAutosave };
 }
 
 const Root = styled.div`
@@ -980,11 +980,11 @@ function App() {
       };
 
       const BRANDING_FOOTER = `<footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
-  © 2026 Nexus Apex | Built by Matany Labs.
+  © 2026 Apex Coding | AI-Powered Developer Platform
 </footer>`;
 
       const injectBrandingFooter = (html: string) => {
-        const signature = '© 2026 Nexus Apex | Built by Matany Labs.';
+        const signature = '© 2026 Apex Coding | AI-Powered Developer Platform';
         if (html.includes(signature)) return html;
 
         const footerBlock = `\n${BRANDING_FOOTER}\n`;
@@ -1588,7 +1588,7 @@ function App() {
         <HeaderArea>
           <HeaderLeft>
             <BrandStack>
-              <BrandTitle>NEXUS APEX</BrandTitle>
+              <BrandTitle>APEX CODING</BrandTitle>
               <BrandSubtitle>{projectName?.trim() || 'Untitled Project'}</BrandSubtitle>
             </BrandStack>
             <StatusPill $active={isGenerating}>{isGenerating ? thinkingStatus || 'Working…' : 'Ready'}</StatusPill>
@@ -1897,7 +1897,7 @@ function App() {
         </FloatingPlanWrap>
       )}
 
-      <IDEFooter>© 2026 Nexus Apex | Built by Matany Labs.</IDEFooter>
+      <IDEFooter>© 2026 Apex Coding | AI-Powered Developer Platform</IDEFooter>
       <BrainConsole
         visible={isConsoleVisible}
         open={brainOpen}

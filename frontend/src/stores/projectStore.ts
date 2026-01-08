@@ -100,7 +100,7 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
       reset: () => set(initialState)
     }),
     {
-      name: 'nexus-project-store',
+      name: 'apex-project-store',
       partialize: (state) => ({
         projectId: state.projectId,
         projectName: state.projectName,
@@ -116,5 +116,5 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
 
 // Expose store for global autosave access
 if (typeof window !== 'undefined') {
-  (window as any).__NEXUS_PROJECT_STORE__ = useProjectStore;
+  (window as any).__APEX_PROJECT_STORE__ = useProjectStore;
 }

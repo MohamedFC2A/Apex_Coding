@@ -159,7 +159,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
   const handleDownload = async () => {
     if (files.length === 0) return;
     try {
-      await downloadService.downloadAsZip(files, projectName || 'nexus-project');
+      await downloadService.downloadAsZip(files, projectName || 'apex-project');
       addLog({
         timestamp: Date.now(),
         type: 'success',

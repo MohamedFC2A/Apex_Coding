@@ -19,7 +19,7 @@ type Translations = Record<TranslationKey, string>;
 const translations: Record<Language, Translations> = {
   en: {
     // Hero Section
-    'hero.title': 'Code at the Speed of Thought with Nexus Apex.',
+    'hero.title': 'Code at the Speed of Thought with Apex Coding.',
     'hero.subtitle': 'The first Graph-Based AI IDE that understands your project structure, not just your files.',
     'hero.cta.start': 'Start Coding Free',
     'hero.cta.demo': 'Watch Demo',
@@ -36,7 +36,7 @@ const translations: Record<Language, Translations> = {
     
     // Feature Cards
     'feature.graph.title': 'Graph-Based Understanding',
-    'feature.graph.body': 'Nexus Apex maps your repo into a navigable graph so the AI reasons about structure, dependencies, and intent.',
+    'feature.graph.body': 'Apex Coding maps your repo into a navigable graph so the AI reasons about structure, dependencies, and intent.',
     'feature.persistence.title': 'Keystroke Persistence',
     'feature.persistence.body': 'Every edit is captured in real time — refresh without fear. Convex-backed project state keeps you moving.',
     'feature.feedback.title': 'Instant Feedback',
@@ -52,7 +52,7 @@ const translations: Record<Language, Translations> = {
     
     // Lead Capture
     'lead.title': 'Get early access',
-    'lead.subtitle': 'Join the waitlist for Nexus Apex updates and launch access.',
+    'lead.subtitle': 'Join the waitlist for Apex Coding updates and launch access.',
     'lead.email.label': 'Email',
     'lead.email.placeholder': 'you@company.com',
     'lead.cta': 'Join waitlist',
@@ -63,7 +63,7 @@ const translations: Record<Language, Translations> = {
     'demo.subtitle': 'Add your demo video embed here.',
     
     // Brand
-    'brand.name': 'Nexus Apex',
+    'brand.name': 'Apex Coding',
     'brand.tagline': 'Code at the Speed of Thought'
   },
   ar: {
@@ -122,7 +122,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('nexus-language') as Language | null;
+    const saved = localStorage.getItem('apex-coding-language') as Language | null;
     if (saved && (saved === 'en' || saved === 'ar')) {
       setLanguageState(saved);
     }
@@ -131,7 +131,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
-    localStorage.setItem('nexus-language', lang);
+    localStorage.setItem('apex-coding-language', lang);
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   };

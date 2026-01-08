@@ -734,7 +734,7 @@ function App() {
 
     autoDebugRef.current = { signature: '', attempts: 0 };
 
-    setIsPreviewOpen(true);
+    // Don't auto-open preview during generation - let user click Run after completion
     setIsGenerating(true);
     setError(null);
     setPreviewUrl(null);

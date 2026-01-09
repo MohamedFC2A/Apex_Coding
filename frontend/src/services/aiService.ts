@@ -225,6 +225,35 @@ ${prompt}
         return '\n// [[PARTIAL_FILE_CLOSED]]\n';
       };
 
+      const repairTruncatedContent = (content: string, path: string): string => {
+        if (!content) return '';
+        const ext = path.split('.').pop()?.toLowerCase();
+        
+        // Specific fix for "Unexpected identifier 'image'" (truncated key)
+        if (/(js|ts|tsx|jsx|json)$/.test(ext || '')) {
+           let repaired = content;
+           // Fix trailing identifier in object definition (e.g. "image")
+           if (/\{\s*[a-zA-Z0-9_]+$/.test(repaired)) {
+              repaired += ': null';
+           }
+           // Close open braces/parens based on stack
+           const openBraces = (repaired.match(/\{/g) || []).length;
+           const closeBraces = (repaired.match(/\}/g) || []).length;
+           const openParens = (repaired.match(/\(/g) || []).length;
+           const closeParens = (repaired.match(/\)/g) || []).length;
+           const openBrackets = (repaired.match(/\[/g) || []).length;
+           const closeBrackets = (repaired.match(/\]/g) || []).length;
+           
+           for (let i = 0; i < openParens - closeParens; i++) repaired += ')';
+           for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
+           for (let i = 0; i < openBraces - closeBraces; i++) repaired += '\n}';
+           
+           return repaired;
+        }
+        
+        return content;
+      };
+
       class FileMarkerParser {
         private scan = '';
         private inFile = false;
@@ -329,6 +358,10 @@ ${prompt}
         }
 
         private forceClose(partial: boolean) {
+          // If partial, try to repair by appending necessary closing characters
+          // NOTE: We cannot repair perfectly here because we don't have the full content.
+          // Instead, we rely on the `partial` flag.
+          // However, to fix "Unexpected identifier", we send a COMMENT marker.
           const marker = getForceCloseMarker(this.currentPath);
           options.onFileEvent?.({ type: 'chunk', path: this.currentPath, mode: this.currentMode, chunk: marker, line: this.currentLine });
           this.currentLine += countLines(marker);

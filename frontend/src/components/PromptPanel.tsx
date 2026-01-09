@@ -27,7 +27,8 @@ export const PromptPanel: React.FC = () => {
     setModelMode,
     saveCurrentSession,
     setError,
-    error
+    error,
+    handleFileEvent
   } = useAIStore();
   const { setFiles, setFileStructure, setStack, setDescription, setProjectId, setProjectName } = useProjectStore();
   const { setIsExecuting, setExecutionResult, setPreviewUrl, setPreviewContent, addLog } = usePreviewStore();
@@ -284,7 +285,10 @@ export const PromptPanel: React.FC = () => {
           }
         },
         // thinkingMode
-        isThinkingMode
+        {
+          thinkingMode: isThinkingMode,
+          onFileEvent: handleFileEvent
+        }
       );
     } catch (error: any) {
       setError(error.message || 'Failed to generate code');

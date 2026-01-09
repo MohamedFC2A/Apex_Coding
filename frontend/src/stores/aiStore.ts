@@ -3,9 +3,10 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { FileSystem, GenerationStatus, ProjectFile } from '@/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { aiService } from '@/services/aiService';
+import { repairTruncatedContent } from '@/utils/codeRepair';
 
 type ModelMode = 'fast' | 'thinking';
-export type FileStreamStatus = 'ready' | 'queued' | 'writing';
+export type FileStreamStatus = 'ready' | 'queued' | 'writing' | 'partial' | 'compromised';
 export type InteractionMode = 'create' | 'edit';
 
 type FileSystemState = FileSystem | [];
@@ -111,11 +112,13 @@ interface AIStoreActions {
   upsertFileNode: (path: string, content?: string) => void;
   upsertDirectoryNode: (path: string) => void;
   appendToFileNode: (path: string, chunk: string) => void;
+  handleFileEvent: (event: { type: 'start' | 'chunk' | 'end'; path: string; mode?: 'create' | 'edit'; chunk?: string; partial?: boolean; line?: number; append?: boolean }) => void;
   setFilesFromProjectFiles: (files: ProjectFile[]) => void;
   saveCurrentSession: () => void;
   restoreSession: (sessionId: string) => void;
   startNewChat: () => void;
   reset: () => void;
+  verifyIntegrity: () => { isSecure: boolean; brokenFiles: string[] };
 }
 
 export type AIState = AIStoreState & AIStoreActions;
@@ -600,7 +603,18 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
       clearFileStatuses: () => set({ fileStatuses: {}, writingFilePath: null }),
 
-      setSections: (sections) => set({ sections }),
+  verifyIntegrity: () => {
+    const { fileStatuses } = get();
+    const broken = Object.entries(fileStatuses).filter(
+      ([_, status]) => status === 'partial' || status === 'compromised'
+    );
+    return {
+      isSecure: broken.length === 0,
+      brokenFiles: broken.map(([path]) => path)
+    };
+  },
+
+  setSections: (sections) => set({ sections }),
 
       setModelMode: (mode) => set({ modelMode: mode }),
 
@@ -648,6 +662,57 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         set((state) => ({
           files: appendToFileSystemEntry(normalizeFileSystem(state.files), path, chunk)
         })),
+
+      handleFileEvent: (event) => {
+        const { type, path, chunk, partial, mode } = event;
+        const state = get();
+        
+        if (type === 'start') {
+          set({ writingFilePath: path });
+          get().setFileStatus(path, 'writing');
+          if (mode === 'create') {
+             // Initialize file if not exists or overwrite?
+             // Usually start means overwrite unless append is true
+             if (!event.append) {
+                get().upsertFileNode(path, '');
+             }
+          }
+        } else if (type === 'chunk' && chunk) {
+          get().appendToFileNode(path, chunk);
+        } else if (type === 'end') {
+          set({ writingFilePath: null });
+          
+          if (partial) {
+             // Handle partial file - REPAIR IT
+             get().setFileStatus(path, 'partial');
+             
+             // Get current content
+             const files = normalizeFileSystem(get().files);
+             // Helper to find file content
+             const findContent = (tree: FileSystem, p: string): string => {
+                const parts = p.split('/');
+                let node: any = tree;
+                for (const part of parts) {
+                   if (node[part]?.directory) node = node[part].directory;
+                   else if (node[part]?.file) return node[part].file.contents;
+                   else return '';
+                }
+                return '';
+             };
+             
+             const currentContent = findContent(files, path);
+             const repaired = repairTruncatedContent(currentContent, path);
+             
+             if (repaired !== currentContent) {
+                get().upsertFileNode(path, repaired);
+                // Mark as compromised but repaired
+                get().setFileStatus(path, 'compromised'); 
+             }
+          } else {
+             get().setFileStatus(path, 'ready');
+          }
+        }
+      },
 
       setFilesFromProjectFiles: (projectFiles) =>
         set({ files: buildTreeFromProjectFiles(projectFiles) }),

@@ -9,6 +9,7 @@ import { useProjectStore } from './stores/projectStore';
 import { usePreviewStore } from './stores/previewStore';
 import { aiService } from './services/aiService';
 import { getLanguageFromExtension } from './utils/stackDetector';
+import { repairTruncatedContent } from './utils/codeRepair';
 
 import { CodeEditor } from './components/CodeEditor';
 import { Sidebar } from './components/Sidebar';
@@ -24,6 +25,7 @@ import { PlanChecklist } from './components/ui/PlanChecklist';
 import { Content, Description, Heading, Popover, Trigger } from './components/ui/InstructionPopover';
 import { GlobalStyles } from './styles/GlobalStyles';
 import { useWebContainer } from './context/WebContainerContext';
+import { MobileNav } from './components/ui/MobileNav';
 
 // ============================================================================
 // GLOBAL AUTOSAVE - INDEPENDENT OF CHAT/COMPONENT LIFECYCLE
@@ -107,7 +109,7 @@ const Container = styled.div`
 
   @media (max-width: 768px) {
     padding: 12px;
-    padding-bottom: calc(12px + 44px);
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
     gap: 12px;
   }
 `;
@@ -428,50 +430,7 @@ const MobileMenuButton = styled.button`
   }
 `;
 
-const MobileTabs = styled.div`
-  display: none;
-  width: 100%;
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 8px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  gap: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-
-  @media (max-width: 768px) {
-    display: flex;
-  }
-`;
-
-const MobileTabButton = styled.button<{ $active?: boolean }>`
-  flex: 1;
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.30)' : 'rgba(255, 255, 255, 0.10)')};
-  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.15)' : 'rgba(255, 255, 255, 0.03)')};
-  color: ${(p) => (p.$active ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.65)')};
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 200ms ease;
-
-  &:hover {
-    border-color: rgba(168, 85, 247, 0.30);
-    background: rgba(255, 255, 255, 0.08);
-    transform: translateY(-1px);
-  }
-
-  &:active {
-    transform: translateY(0);
-  }
-`;
-
-const InputArea = styled.div`
+const InputArea = styled.div<{ $mobileHidden?: boolean }>`
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -480,12 +439,15 @@ const InputArea = styled.div`
   padding-top: 8px;
 
   @media (max-width: 768px) {
+    display: ${(p) => (p.$mobileHidden ? 'none' : 'flex')};
     gap: 10px;
-    padding-top: 4px;
+    padding-top: 20px;
+    height: 100%;
+    justify-content: center;
   }
 `;
 
-const MainWorkspace = styled.div<{ $previewOpen: boolean }>`
+const MainWorkspace = styled.div<{ $previewOpen: boolean; $mobileHidden?: boolean }>`
   flex: 1;
   min-height: 0;
   display: grid;
@@ -501,6 +463,7 @@ const MainWorkspace = styled.div<{ $previewOpen: boolean }>`
   }
 
   @media (max-width: 768px) {
+    display: ${(p) => (p.$mobileHidden ? 'none' : 'grid')};
     grid-template-columns: 1fr;
     gap: 0;
     position: relative;
@@ -526,8 +489,7 @@ const IDEFooter = styled.div`
   pointer-events: none;
 
   @media (max-width: 768px) {
-    height: 40px;
-    font-size: 10px;
+    display: none;
   }
 `;
 
@@ -718,7 +680,7 @@ function App() {
   const [thinkingStatus, setThinkingStatus] = useState('');
   const [brainOpen, setBrainOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
+  const [mobileTab, setMobileTab] = useState<'editor' | 'preview' | 'ai'>('editor');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1174,9 +1136,24 @@ function App() {
           if (event.append) {
             const current = existing?.content || '';
             const cleaned = stripPartialMarkerAtEnd(current);
-            updateFile(resolvedPath, cleaned);
-            upsertFileNode(resolvedPath, cleaned);
-            upsertFile({ name, path: resolvedPath, content: cleaned, language: getLanguageFromExtension(resolvedPath) });
+            let finalText = cleaned;
+            
+            // If partial, try to repair
+            if (event.partial) {
+               finalText = repairTruncatedContent(cleaned, resolvedPath);
+               if (finalText !== cleaned) {
+                  logSystem(`[REPAIR] Fixed truncated file: ${resolvedPath}`);
+                  setFileStatus(resolvedPath, 'compromised');
+               } else {
+                  setFileStatus(resolvedPath, 'partial');
+               }
+            } else {
+               setFileStatus(resolvedPath, 'ready');
+            }
+
+            updateFile(resolvedPath, finalText);
+            upsertFileNode(resolvedPath, finalText);
+            upsertFile({ name, path: resolvedPath, content: finalText, language: getLanguageFromExtension(resolvedPath) });
           } else {
             flushFileBuffers();
             fileChunkBuffersRef.current.delete(resolvedPath);
@@ -1642,7 +1619,7 @@ function App() {
           </HeaderRight>
         </HeaderArea>
 
-        <InputArea>
+        <InputArea $mobileHidden={mobileTab !== 'ai'}>
           <PromptInput
             ref={promptRef}
             onSubmit={handleMainActionClick}
@@ -1695,16 +1672,7 @@ function App() {
           />
         </InputArea>
 
-        <MobileTabs role="tablist" aria-label="Workspace tabs">
-          <MobileTabButton type="button" $active={mobileTab === 'editor'} onClick={() => setMobileTab('editor')}>
-            Editor
-          </MobileTabButton>
-          <MobileTabButton type="button" $active={mobileTab === 'preview'} onClick={() => setMobileTab('preview')}>
-            Preview
-          </MobileTabButton>
-        </MobileTabs>
-
-        <MainWorkspace $previewOpen={isPreviewOpen}>
+        <MainWorkspace $previewOpen={isPreviewOpen} $mobileHidden={mobileTab === 'ai'}>
           <DesktopSidebar>
             <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
           </DesktopSidebar>
@@ -1715,6 +1683,12 @@ function App() {
             <PreviewWindow />
           </PanelSlot>
         </MainWorkspace>
+
+        <MobileNav 
+          activeTab={mobileTab} 
+          onTabChange={setMobileTab} 
+          isGenerating={isGenerating} 
+        />
       </Container>
 
       <DrawerScrim $open={sidebarOpen} onClick={() => setSidebarOpen(false)} />

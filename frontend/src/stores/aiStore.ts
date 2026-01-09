@@ -465,6 +465,11 @@ const buildInitialState = (): AIStoreState => ({
   prompt: '',
   plan: '',
   planSteps: [],
+  planConfig: {
+    type: 'web',
+    priority: 'performance',
+    stack: []
+  },
   architectMode: true,
   lastPlannedPrompt: '',
   chatHistory: [],

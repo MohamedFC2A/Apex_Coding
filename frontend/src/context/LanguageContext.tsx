@@ -62,6 +62,11 @@ const translations: Record<Language, Translations> = {
     'demo.title': 'Demo',
     'demo.subtitle': 'Add your demo video embed here.',
     
+    // UI Helpers
+    'ui.search.placeholder': '✨ Click the search bar or press Enter to start coding',
+    'ui.viewPricing': 'View Pricing',
+    'ui.techStack': '+ Next.js, Tailwind, Framer Motion',
+
     // Brand
     'brand.name': 'Apex Coding',
     'brand.tagline': 'Code at the Speed of Thought'
@@ -111,6 +116,11 @@ const translations: Record<Language, Translations> = {
     'demo.title': 'العرض التوضيحي',
     'demo.subtitle': 'أضف فيديو العرض التوضيحي الخاص بك هنا.',
     
+    // UI Helpers
+    'ui.search.placeholder': '✨ انقر على شريط البحث أو اضغط Enter لبدء البرمجة',
+    'ui.viewPricing': 'عرض الأسعار',
+    'ui.techStack': '+ Next.js, Tailwind, Framer Motion',
+
     // Brand
     'brand.name': 'نيكسس أبكس',
     'brand.tagline': 'طور بسرعة التفكير'

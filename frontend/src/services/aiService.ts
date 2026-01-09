@@ -66,6 +66,8 @@ export const aiService = {
 
       if (!response.ok) {
         const text = await response.text().catch(() => '');
+        if (response.status === 404) throw new Error('Backend not found (404). Check API URL.');
+        if (response.status === 504) throw new Error('Gateway Timeout (504). AI is taking too long.');
         throw new Error(text || `Plan failed (${response.status})`);
       }
 
@@ -478,7 +480,9 @@ export const aiService = {
         if (!response.ok) {
           let message = `Streaming failed (${response.status})`;
           const errorText = await response.text().catch(() => '');
-          if (errorText) message = errorText;
+          if (response.status === 404) message = 'Backend not found (404). Check API URL.';
+          else if (response.status === 504) message = 'Gateway Timeout (504). AI is taking too long.';
+          else if (errorText) message = errorText;
           throw new Error(message);
         }
 

@@ -125,7 +125,7 @@ export function Hero() {
         </p>
         <TypingSearch onClick={handleStart} />
         <p className="mt-3 text-xs text-white/50 max-w-2xl">
-          ✨ Click the search bar or press Enter to start coding
+          {t('ui.search.placeholder')}
         </p>
       </motion.div>
 
@@ -140,7 +140,7 @@ export function Hero() {
           href="/pricing"
           className="inline-flex items-center justify-center rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-md transition hover:bg-white/15"
         >
-          View Pricing
+          {t('ui.viewPricing')}
         </a>
         <a
           href="#demo"
@@ -165,7 +165,7 @@ export function Hero() {
           <span className="rounded-full bg-gradient-to-r from-fuchsia-500/20 to-cyan-400/20 px-3 py-1 ring-1 ring-white/10">
             Convex
           </span>
-          <span className="text-white/55">+ Next.js, Tailwind, Framer Motion</span>
+          <span className="text-white/55">{t('ui.techStack')}</span>
         </div>
       </motion.div>
     </div>

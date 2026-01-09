@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getViteEnv, getWebContainerClientId } from '@/utils/env';
+import { getViteEnv } from '@/utils/env';
 
 describe('aiService (API mode)', () => {
   beforeEach(() => {
@@ -124,9 +124,5 @@ describe('env utils', () => {
     expect(getViteEnv('VITE_WC_CLIENT_ID', { VITE_WC_CLIENT_ID: '  abc  ' })).toBe('abc');
     expect(getViteEnv('VITE_WC_CLIENT_ID', {})).toBeUndefined();
     expect(getViteEnv('VITE_WC_CLIENT_ID', { VITE_WC_CLIENT_ID: 123 as any })).toBeUndefined();
-  });
-
-  it('getWebContainerClientId reads VITE_WC_CLIENT_ID', () => {
-    expect(getWebContainerClientId({ VITE_WC_CLIENT_ID: 'wc_api_test' })).toBe('wc_api_test');
   });
 });

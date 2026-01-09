@@ -5,6 +5,3 @@ export const getViteEnv = (key: string, envOverride?: Record<string, unknown>): 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 };
-
-export const getWebContainerClientId = (envOverride?: Record<string, unknown>): string | undefined =>
-  getViteEnv('VITE_WC_CLIENT_ID', envOverride);

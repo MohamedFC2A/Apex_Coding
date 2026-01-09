@@ -5,7 +5,6 @@ import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { aiService } from '@/services/aiService';
-import { executionService } from '@/services/executionService';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 import { ProjectFile } from '@/types';
 import { Sparkles, Loader2, Clock, ChevronDown, ChevronRight, Settings, Zap, Brain, AlertCircle, X } from 'lucide-react';
@@ -38,7 +37,7 @@ export const PromptPanel: React.FC = () => {
     lastSuccessfulLine
   } = useAIStore();
   const { setFiles, setFileStructure, setStack, setDescription, setProjectId, setProjectName } = useProjectStore();
-  const { setIsExecuting, setExecutionResult, setPreviewUrl, setPreviewContent, addLog } = usePreviewStore();
+  const { addLog } = usePreviewStore();
 
   const isThinkingMode = modelMode === 'thinking';
 
@@ -57,88 +56,6 @@ export const PromptPanel: React.FC = () => {
 
     return () => clearInterval(interval);
   }, [isGenerating, lastTokenAt, thinkingStatus]);
-
-  const autoRunCode = async (files: ProjectFile[]) => {
-    if (files.length === 0) return;
-
-    setIsExecuting(true);
-    addLog({
-      timestamp: Date.now(),
-      type: 'info',
-      message: '[AUTO-RUN] Starting execution...'
-    });
-
-    try {
-      const entryFile =
-        files.find((file) => {
-          const name = (file.path || file.name || '').split('/').pop() || '';
-          return /^(main|index|app)\./i.test(name);
-        }) || files[0];
-
-      const entryLanguage =
-        entryFile.language ||
-        getLanguageFromExtension(entryFile.path || entryFile.name || '');
-
-      if (entryLanguage === 'html') {
-        setPreviewContent(entryFile.content || '');
-        setPreviewUrl(null);
-        setExecutionResult({ success: true, output: '' });
-        addLog({
-          timestamp: Date.now(),
-          type: 'success',
-          message: '[AUTO-RUN] HTML preview updated.'
-        });
-        return;
-      }
-
-      const result = await executionService.executeCode({
-        sourceCode: entryFile.content || '',
-        language: entryLanguage
-      });
-
-      setExecutionResult(result);
-      setPreviewUrl(null);
-      setPreviewContent(null);
-
-      if (result.success) {
-        if (result.output) {
-          addLog({
-            timestamp: Date.now(),
-            type: 'info',
-            message: result.output
-          });
-        }
-
-        addLog({
-          timestamp: Date.now(),
-          type: 'success',
-          message: '[AUTO-RUN] Code executed successfully!'
-        });
-
-        if (result.error) {
-          addLog({
-            timestamp: Date.now(),
-            type: 'error',
-            message: result.error
-          });
-        }
-      } else {
-        addLog({
-          timestamp: Date.now(),
-          type: 'error',
-          message: `[AUTO-RUN] ${result.error || 'Execution failed'}`
-        });
-      }
-    } catch (error: any) {
-      addLog({
-        timestamp: Date.now(),
-        type: 'error',
-        message: `[AUTO-RUN] ${error.message || 'Execution failed'}`
-      });
-    } finally {
-      setIsExecuting(false);
-    }
-  };
 
   const handleGenerate = async () => {
     if (!localPrompt.trim() || (isGenerating && executionPhase !== 'interrupted')) return;
@@ -266,10 +183,6 @@ export const PromptPanel: React.FC = () => {
               type: 'info',
               message: `Generated ${data.project_files.length} files for ${data.metadata?.framework || data.metadata?.language || 'Unknown'} project`
             });
-
-            setTimeout(async () => {
-              await autoRunCode(convertedFiles);
-            }, 500);
           }
 
           setIsGenerating(false);

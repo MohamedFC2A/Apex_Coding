@@ -9,7 +9,6 @@ import { X, Play, Download } from 'lucide-react';
 import { downloadService } from '@/services/downloadService';
 import { usePreviewStore } from '@/stores/previewStore';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
-import { useWebContainer } from '@/context/WebContainerContext';
 import type * as monaco from 'monaco-editor';
 
 interface CodeEditorProps {
@@ -32,7 +31,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
   );
   
   const { addLog } = usePreviewStore();
-  const { runProject } = useWebContainer();
   const [openTabs, setOpenTabs] = React.useState<string[]>([]);
   const [editorTheme, setEditorTheme] = React.useState<'vs-dark' | 'nord' | 'dracula'>('vs-dark');
 
@@ -160,18 +158,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     addLog({
       timestamp: Date.now(),
       type: 'info',
-      message: 'Booting WebContainer preview...'
+      message: 'Opening preview...'
     });
-
-    try {
-      await runProject();
-    } catch (error: any) {
-      addLog({
-        timestamp: Date.now(),
-        type: 'error',
-        message: error?.message || 'Failed to start WebContainer'
-      });
-    }
   };
 
   const handleDownload = async () => {

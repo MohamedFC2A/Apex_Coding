@@ -24,7 +24,6 @@ import { BrainConsole } from './components/ui/BrainConsole';
 import { PlanChecklist } from './components/ui/PlanChecklist';
 import { Content, Description, Heading, Popover, Trigger } from './components/ui/InstructionPopover';
 import { GlobalStyles } from './styles/GlobalStyles';
-import { useWebContainer } from './context/WebContainerContext';
 import { MobileNav } from './components/ui/MobileNav';
 
 // ============================================================================
@@ -658,7 +657,6 @@ function App() {
     executionPhase,
     setExecutionPhase
   } = useAIStore();
-  const { deployAndRun } = useWebContainer();
 
   useEffect(() => {
     recoverSession();
@@ -1305,10 +1303,8 @@ Output ONLY the code for these files.
         if (partialPaths.size > 0) {
           logSystem(`[webcontainer] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume...`);
         } else {
-          logSystem('[webcontainer] Code Complete. Writing to Container...');
-          setTimeout(() => {
-            void deployAndRun();
-          }, 0);
+          logSystem('[webcontainer] Code Complete. Preview updating...');
+          setIsPreviewOpen(true);
         }
       }
     } catch (e: any) {
@@ -1327,7 +1323,6 @@ Output ONLY the code for these files.
     appendThinkingContent,
     clearThinkingContent,
     clearFileStatuses,
-    deployAndRun,
     flushFileBuffers,
     flushReasoningBuffer,
     generatePlan,
@@ -1497,7 +1492,7 @@ Output ONLY the code for these files.
 
     logSystem(`[STATUS] Auto-debugging: ${signature}`);
     const requestText = [
-      'AUTO-DEBUG: The WebContainer preview failed to run. Fix the code so it starts successfully.',
+      'AUTO-DEBUG: The StackBlitz preview failed to run. Fix the code so it starts successfully.',
       signature ? `Error: ${signature}` : '',
       tail ? `Recent logs:\n${tail}` : ''
     ]
@@ -1600,16 +1595,9 @@ Output ONLY the code for these files.
             </div>
             <HeaderIconButton
               type="button"
-              onClick={async () => {
+              onClick={() => {
                 const shouldOpen = !isPreviewOpen;
                 setIsPreviewOpen(shouldOpen);
-                if (shouldOpen && files.length > 0) {
-                  try {
-                    await deployAndRun();
-                  } catch (err) {
-                    console.error('Failed to start preview:', err);
-                  }
-                }
               }}
               aria-label={isPreviewOpen ? 'Close preview' : 'Open preview'}
               title={isPreviewOpen ? 'Close preview' : 'Open preview'}

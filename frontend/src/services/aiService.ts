@@ -177,6 +177,11 @@ STRICT PLANNING RULES:
         activeFile: projectState.activeFile
       };
 
+      let completedFiles = new Set<string>();
+      if (resumeContext?.completedFiles) {
+        completedFiles = new Set<string>(resumeContext.completedFiles);
+      }
+
       const enhancedPrompt = `
 [SYSTEM PERSONA]
 You are the Apex Coding V2.1 EXECUTION ENGINE.
@@ -272,10 +277,9 @@ ${prompt}
       const endToken = '[[END_FILE]]';
       const streamTailMax = 2200;
 
-      const completedFiles = new Set<string>();
       const partialFiles = new Set<string>();
-      let lastSuccessfulFile = '';
-      let lastSuccessfulLine = 0;
+      let lastSuccessfulFile = resumeContext?.lastSuccessfulFile || '';
+      let lastSuccessfulLine = resumeContext?.lastSuccessfulLine || 0;
 
       const countLines = (text: string) => {
         let lines = 0;

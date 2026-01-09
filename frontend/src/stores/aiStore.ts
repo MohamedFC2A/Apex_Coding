@@ -63,6 +63,12 @@ interface AIStoreState {
   lastActiveTimestamp: number;
   executionPhase: ExecutionPhase;
   executionBudget: number;
+  
+  // Execution Cursor (Persistence)
+  lastSuccessfulFile: string | null;
+  lastSuccessfulLine: number;
+  completedFiles: string[];
+  
   modelMode: ModelMode;
   interactionMode: InteractionMode;
   writingFilePath: string | null;
@@ -125,6 +131,8 @@ interface AIStoreActions {
   reset: () => void;
   verifyIntegrity: () => { isSecure: boolean; brokenFiles: string[] };
   setExecutionPhase: (phase: ExecutionPhase) => void;
+  setExecutionCursor: (file: string | null, line: number) => void;
+  addCompletedFile: (path: string) => void;
   touchSession: () => void;
   recoverSession: () => void;
 }
@@ -721,6 +729,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
              }
           } else {
              get().setFileStatus(path, 'ready');
+             get().addCompletedFile(path);
+             get().setExecutionCursor(path, event.line || 0);
           }
         }
       },
@@ -876,6 +886,12 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       reset: () => set(buildInitialState()),
 
       setExecutionPhase: (phase) => set({ executionPhase: phase }),
+      
+      setExecutionCursor: (file, line) => set({ lastSuccessfulFile: file, lastSuccessfulLine: line }),
+      
+      addCompletedFile: (path) => set((state) => ({ 
+        completedFiles: state.completedFiles.includes(path) ? state.completedFiles : [...state.completedFiles, path] 
+      })),
       
       touchSession: () => set({ lastActiveTimestamp: Date.now() }),
       

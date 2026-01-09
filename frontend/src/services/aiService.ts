@@ -36,12 +36,28 @@ export const aiService = {
         const controller = new AbortController();
         const timeoutMs = thinkingMode ? 300_000 : 120_000;
         const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+        
+        const planningRules = `
+[SYSTEM PERSONA]
+You are Apex Coding V2.1 EXECUTION ENGINE.
+Your goal is 100% Execution Completeness.
+
+STRICT PLANNING RULES:
+1. Plan 3-5 atomic executable tasks.
+2. Execute exactly ONE task at a time.
+3. NO skipping tasks.
+4. Each task must be a single logical step.
+5. Ensure the plan covers the entire user request.
+`.trim();
+
+        const enhancedPlanPrompt = `${planningRules}\n\n[USER REQUEST]\n${prompt}`;
+
         try {
           return await fetch(PLAN_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: controller.signal,
-            body: JSON.stringify({ prompt, thinkingMode })
+            body: JSON.stringify({ prompt: enhancedPlanPrompt, thinkingMode })
           });
         } finally {
           globalThis.clearTimeout(timer as any);
@@ -120,6 +136,11 @@ export const aiService = {
             line?: number;
             append?: boolean;
           }) => void;
+          resumeContext?: {
+            completedFiles: string[];
+            lastSuccessfulFile: string | null;
+            lastSuccessfulLine: number;
+          };
         } = false
   ): Promise<void> {
     const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
@@ -138,6 +159,7 @@ export const aiService = {
       const includeReasoning = Boolean(options.includeReasoning);
       const typingMsRaw = Number(options.typingMs ?? 26);
       const typingMs = Number.isFinite(typingMsRaw) ? typingMsRaw : 26;
+      const resumeContext = options.resumeContext;
 
       // Inject Deep Context
       const projectState = useProjectStore.getState();
@@ -156,6 +178,46 @@ export const aiService = {
       };
 
       const enhancedPrompt = `
+[SYSTEM PERSONA]
+You are the Apex Coding V2.1 EXECUTION ENGINE.
+Your success is measured ONLY by Execution completeness (%).
+
+NEGATIVE CONSTRAINTS (NEVER DO THIS):
+- NEVER output partial files (e.g., "// ... rest of code").
+- NEVER use SEARCH/REPLACE blocks or diff markers.
+- NEVER output HTML without valid, functional JS.
+- NEVER skip any planned task.
+- NEVER declare completion without verification.
+
+EXECUTION RULES:
+1. **ATOMIC EXECUTION**:
+   - Execute exactly ONE task at a time.
+   - After execution, WAIT for verification.
+   - If verification fails: Repair -> Re-execute.
+
+2. **WEB PROJECT REQUIREMENTS**:
+   - ALL JS must be functional (No placeholders).
+   - ALL Imports must be valid.
+   - Ensure \`index.html\` links to \`main.tsx\` or \`index.js\`.
+
+3. **FULL FILE OUTPUT**:
+   - ALWAYS output the FULL content of the file.
+   - If a file is too large, split it into modules.
+
+4. **VALID HTML/CSS/JS**:
+   - HTML: Semantic tags, accessibility friendly.
+   - CSS: Responsive, mobile-first.
+   - JS: Error-free, console-log debugging enabled.
+
+5. **AUTOMATIC RESUME**:
+   - If cut off, I will send "CONTINUE [FILE] [LINE]".
+   - You MUST continue EXACTLY from that byte.
+
+6. **NON-BLOCKING UI**:
+   - Use \`requestAnimationFrame\` for animations.
+   - Debounce heavy input handlers.
+   - Never lock user input unless VERIFIED_COMPLETE.
+
 [PROJECT CONTEXT]
 Project Name: ${projectState.projectName}
 Stack: ${projectState.stack || 'Not detected'}
@@ -168,6 +230,9 @@ ${context.currentPlan.map((s: any, i: number) => `${i + 1}. [${s.completed ? 'x'
 [FILE STRUCTURE]
 ${context.files.slice(0, 100).join('\n')}${context.files.length > 100 ? '\n...(truncated)' : ''}
 
+[COMPLETED FILES]
+${Array.from(completedFiles).join('\n')}
+
 [USER REQUEST]
 ${prompt}
 `.trim();
@@ -175,7 +240,8 @@ ${prompt}
       onMeta({ provider: 'vercel-backend', baseURL: getApiBaseUrl(), thinkingMode, architectMode });
       onStatus('streaming', 'Generating…');
 
-      const streamPrompt = architectMode || thinkingMode ? enhancedPrompt : prompt;
+      // ALWAYS use enhancedPrompt to enforce strict rules and context
+      const streamPrompt = enhancedPrompt;
 
       const parseSseEvent = (rawEvent: string) => {
         const lines = rawEvent.split(/\r?\n/);
@@ -223,35 +289,6 @@ ${prompt}
         if (lower.endsWith('.css')) return '\n/* [[PARTIAL_FILE_CLOSED]] */\n';
         if (lower.endsWith('.md')) return '\n<!-- [[PARTIAL_FILE_CLOSED]] -->\n';
         return '\n// [[PARTIAL_FILE_CLOSED]]\n';
-      };
-
-      const repairTruncatedContent = (content: string, path: string): string => {
-        if (!content) return '';
-        const ext = path.split('.').pop()?.toLowerCase();
-        
-        // Specific fix for "Unexpected identifier 'image'" (truncated key)
-        if (/(js|ts|tsx|jsx|json)$/.test(ext || '')) {
-           let repaired = content;
-           // Fix trailing identifier in object definition (e.g. "image")
-           if (/\{\s*[a-zA-Z0-9_]+$/.test(repaired)) {
-              repaired += ': null';
-           }
-           // Close open braces/parens based on stack
-           const openBraces = (repaired.match(/\{/g) || []).length;
-           const closeBraces = (repaired.match(/\}/g) || []).length;
-           const openParens = (repaired.match(/\(/g) || []).length;
-           const closeParens = (repaired.match(/\)/g) || []).length;
-           const openBrackets = (repaired.match(/\[/g) || []).length;
-           const closeBrackets = (repaired.match(/\]/g) || []).length;
-           
-           for (let i = 0; i < openParens - closeParens; i++) repaired += ')';
-           for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
-           for (let i = 0; i < openBraces - closeBraces; i++) repaired += '\n}';
-           
-           return repaired;
-        }
-        
-        return content;
       };
 
       class FileMarkerParser {

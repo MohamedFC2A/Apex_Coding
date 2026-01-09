@@ -17,6 +17,7 @@ export const PromptPanel: React.FC = () => {
   const [validationStatus, setValidationStatus] = useState<{ valid: boolean; notes?: string } | null>(null);
   const [actualMode, setActualMode] = useState<string>(''); // Track actual mode being used
   const {
+    prompt,
     isGenerating,
     sections,
     lastTokenAt,
@@ -29,7 +30,12 @@ export const PromptPanel: React.FC = () => {
     setError,
     error,
     handleFileEvent,
-    executionPhase
+    executionPhase,
+    setPrompt,
+    fileStatuses,
+    completedFiles,
+    lastSuccessfulFile,
+    lastSuccessfulLine
   } = useAIStore();
   const { setFiles, setFileStructure, setStack, setDescription, setProjectId, setProjectName } = useProjectStore();
   const { setIsExecuting, setExecutionResult, setPreviewUrl, setPreviewContent, addLog } = usePreviewStore();
@@ -135,8 +141,9 @@ export const PromptPanel: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    if (!localPrompt.trim() || isGenerating) return;
+    if (!localPrompt.trim() || (isGenerating && executionPhase !== 'interrupted')) return;
 
+    setPrompt(localPrompt); // Persist prompt
     saveCurrentSession();
     setIsGenerating(true);
     setError(null);
@@ -147,9 +154,38 @@ export const PromptPanel: React.FC = () => {
 
     try {
       let reasoningContent = ''; // Track accumulated reasoning
+      
+      const isResuming = executionPhase === 'interrupted';
+      let effectivePrompt = localPrompt;
+      let resumeContext = undefined;
+
+      if (isResuming) {
+        resumeContext = {
+          completedFiles,
+          lastSuccessfulFile,
+          lastSuccessfulLine
+        };
+
+        // Check for partial file to force continue
+        const partialFile = Object.entries(fileStatuses).find(([_, s]) => s === 'partial')?.[0];
+        if (partialFile) {
+          effectivePrompt = `CONTINUE ${partialFile} FROM LINE ${lastSuccessfulLine + 1}. \n\nOriginal Request: ${localPrompt}`;
+          addLog({
+            timestamp: Date.now(),
+            type: 'info',
+            message: `Resuming partial file: ${partialFile}`
+          });
+        } else {
+          addLog({
+            timestamp: Date.now(),
+            type: 'info',
+            message: `Resuming execution... (${completedFiles.length} files already done)`
+          });
+        }
+      }
 
       await aiService.generateCodeStream(
-        localPrompt,
+        effectivePrompt,
         // onToken
         (token) => {
           appendStreamText(token);
@@ -288,7 +324,8 @@ export const PromptPanel: React.FC = () => {
         // thinkingMode
         {
           thinkingMode: isThinkingMode,
-          onFileEvent: handleFileEvent
+          onFileEvent: handleFileEvent,
+          resumeContext
         }
       );
     } catch (error: any) {

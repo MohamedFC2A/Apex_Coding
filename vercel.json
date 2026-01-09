@@ -10,6 +10,18 @@
   },
   "rewrites": [
     {
+      "source": "/api/ai/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/api/download/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/api/v1/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index.js"
     }

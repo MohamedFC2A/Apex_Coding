@@ -1,6 +1,8 @@
 import { ProjectFile } from '@/types';
 import { apiUrl, getApiBaseUrl } from '@/services/apiBase';
 import { useSubscriptionStore } from '@/stores/subscriptionStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { useAIStore } from '@/stores/aiStore';
 
 interface AIResponse {
   plan: string;
@@ -142,10 +144,10 @@ export const aiService = {
       const aiState = useAIStore.getState();
       
       const context = {
-        files: projectState.files.map(f => f.path || f.name),
+        files: projectState.files.map((f: ProjectFile) => f.path || f.name),
         stack: projectState.stack,
         projectDescription: projectState.description,
-        currentPlan: aiState.planSteps.map(s => ({
+        currentPlan: aiState.planSteps.map((s: any) => ({
           title: s.title,
           completed: s.completed,
           category: s.category
@@ -161,7 +163,7 @@ Description: ${projectState.description || 'None'}
 Active File: ${projectState.activeFile || 'None'}
 
 [PLAN STATUS]
-${context.currentPlan.map((s, i) => `${i + 1}. [${s.completed ? 'x' : ' '}] ${s.title} (${s.category || 'general'})`).join('\n')}
+${context.currentPlan.map((s: any, i: number) => `${i + 1}. [${s.completed ? 'x' : ' '}] ${s.title} (${s.category || 'general'})`).join('\n')}
 
 [FILE STRUCTURE]
 ${context.files.slice(0, 100).join('\n')}${context.files.length > 100 ? '\n...(truncated)' : ''}

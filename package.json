@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm --workspace frontend run dev\" \"node api/server.js\"",
-    "build": "npm run build:frontend && node -e \"const fs=require('fs');const path=require('path');const src=path.join('frontend','.next');const dst=path.join('.next');fs.rmSync(dst,{recursive:true,force:true});fs.cpSync(src,dst,{recursive:true});\" && npm run build:api",
+    "build": "node scripts/vercel-build.js",
     "build:frontend": "npm --workspace frontend run build",
     "build:api": "node --check api/index.js"
   },

@@ -5,36 +5,26 @@ require('dotenv').config();
 
 const app = express();
 
-// Open CORS completely (no cookies required for this app)
-app.use(
-  cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-  })
-);
+// DEBUG: Log every request immediately
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] Incoming: ${req.method} ${req.url}`);
+  console.log('Headers:', JSON.stringify(req.headers));
+  next();
+});
+
+// Open CORS completely
+app.use(cors({
+  origin: '*', 
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true
+}));
+
+// Handle preflight for all routes
 app.options('*', cors());
 
-// Ensure basic CORS headers for all requests (including when proxies bypass some middleware).
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return;
-  }
-  next();
-});
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// When using Vercel rewrites to route /api/* to /api/index.js, the runtime may rewrite the path.
-// We will just log the path and let the routes handle both /api/ and / versions.
-app.use((req, _res, next) => {
-  console.log(`[request] ${req.method} ${req.url}`);
-  next();
-});
 
 app.get('/', (_req, res) => {
   res.status(200).send('Apex Coding Backend is Running!');
@@ -451,21 +441,12 @@ BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.
 REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files.`.trim();
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
-app.all(['/ai/plan', '/api/ai/plan'], async (req, res) => {
-  // Ensure CORS headers are set for all requests to this endpoint
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+// Using regex to reliably match both /ai/plan and /api/ai/plan regardless of Vercel rewrites
+const planRouteRegex = /\/api\/ai\/plan|\/ai\/plan/;
 
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
+app.options(planRouteRegex, cors());
 
-  if (req.method !== 'POST') {
-    console.log(`[plan] Method Not Allowed: ${req.method} (URL: ${req.url})`);
-    return res.status(405).json({ error: 'Method Not Allowed. Use POST.', method: req.method });
-  }
-
+app.post(planRouteRegex, async (req, res) => {
   try {
     const { prompt } = req.body || {};
     console.log('[plan] Generating plan for prompt:', typeof prompt === 'string' ? prompt.slice(0, 500) : prompt);
@@ -535,24 +516,13 @@ app.all(['/ai/plan', '/api/ai/plan'], async (req, res) => {
   }
 });
 
-// /ai/generate (mapped from /api/ai/generate)
 // /generate (mapped from /api/generate)
 // Live streaming (no job queue): pipes model output directly to the client.
-app.all(['/ai/generate', '/generate', '/api/ai/generate', '/api/generate'], async (req, res) => {
-  // Ensure CORS headers are set
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+const generateRouteRegex = /\/api\/ai\/generate|\/ai\/generate|\/api\/generate|\/generate/;
 
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
+app.options(generateRouteRegex, cors());
 
-  if (req.method !== 'POST') {
-    console.log(`[generate] Method Not Allowed: ${req.method} (URL: ${req.url})`);
-    return res.status(405).json({ error: 'Method Not Allowed. Use POST.', method: req.method });
-  }
-
+app.post(generateRouteRegex, async (req, res) => {
   // Force headers to prevent buffering and keep the connection open.
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -649,221 +619,10 @@ app.all(['/ai/generate', '/generate', '/api/ai/generate', '/api/generate'], asyn
   }
 });
 
-const handleGenerateStream = async (req, res) => {
-  // 1. Force headers to prevent Vercel from buffering or closing the connection
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // CRITICAL for Vercel
-  if (typeof res.flushHeaders === 'function') res.flushHeaders();
-
-  const writeSse = (event, data) => {
-    res.write(`event: ${event}\n`);
-    const text = String(data ?? '');
-    const lines = text.split('\n');
-    for (const line of lines) {
-      res.write(`data: ${line}\n`);
-    }
-    res.write('\n');
-  };
-
-  const writeStatus = (phase, message) => writeSse('status', `${phase}:${message || ''}`);
-
-  // 2. IMMEDIATE Keep-Alive Payload
-  res.write(': keep-alive\n\n');
-
-  let keepAliveTimer = null;
-  let abortTimer = null;
-  let tokenFlushTimer = null;
-  let thoughtFlushTimer = null;
-
-  try {
-    const { prompt, thinkingMode, includeReasoning } = req.body || {};
-    if (!prompt) {
-      res.status(400);
-      writeStatus('error', 'Prompt is required');
-      res.end();
-      return;
-    }
-
-    const model = thinkingMode
-      ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
-      : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
-
-    writeSse('meta', `provider=deepseek;model=${model};thinkingMode=${Boolean(thinkingMode)}`);
-    writeStatus(thinkingMode ? 'thinking' : 'streaming', thinkingMode ? 'Thinking…' : 'Generating…');
-
-    // Keep-alive while the upstream model is still "thinking" (before first token).
-    let hasStartedStreaming = false;
-    keepAliveTimer = setInterval(() => {
-      if (hasStartedStreaming) return;
-      try {
-        res.write(': keep-alive\n\n');
-      } catch {
-        // ignore
-      }
-    }, 10000);
-
-    const abortController = new AbortController();
-    abortTimer = setTimeout(() => {
-      try {
-        abortController.abort();
-      } catch {
-        // ignore
-      }
-    }, 55000);
-
-    const request = {
-      model,
-      messages: [
-        { role: 'system', content: CODE_STREAM_SYSTEM_PROMPT },
-        { role: 'user', content: prompt }
-      ],
-      stream: true,
-      signal: abortController.signal
-    };
-
-    const stream = deepSeekStreamChatCompletion(request, { signal: abortController.signal });
-
-    const isReasoner = model === 'deepseek-reasoner';
-    const wantReasoning = Boolean(includeReasoning) && isReasoner;
-
-    // Buffer small deltas to reduce fragmented delivery / aborted requests.
-    let tokenBuffer = '';
-    let thoughtBuffer = '';
-    const flushTokenBuffer = () => {
-      if (!tokenBuffer) return;
-      writeSse('token', tokenBuffer);
-      tokenBuffer = '';
-    };
-    const flushThoughtBuffer = () => {
-      if (!thoughtBuffer) return;
-      if (wantReasoning) writeSse('thought', thoughtBuffer);
-      thoughtBuffer = '';
-    };
-    const scheduleTokenFlush = () => {
-      if (tokenFlushTimer) return;
-      tokenFlushTimer = setTimeout(() => {
-        tokenFlushTimer = null;
-        try {
-          flushTokenBuffer();
-        } catch {
-          // ignore
-        }
-      }, 20);
-    };
-    const scheduleThoughtFlush = () => {
-      if (thoughtFlushTimer) return;
-      thoughtFlushTimer = setTimeout(() => {
-        thoughtFlushTimer = null;
-        try {
-          flushThoughtBuffer();
-        } catch {
-          // ignore
-        }
-      }, 30);
-    };
-
-    for await (const chunk of stream) {
-      const delta = chunk?.choices?.[0]?.delta || {};
-      const reasoningChunk = delta?.reasoning_content;
-      const contentChunk = delta?.content;
-
-      if (typeof reasoningChunk === 'string' && reasoningChunk.length > 0) {
-        thoughtBuffer += reasoningChunk;
-        if (thoughtBuffer.length > 2200) flushThoughtBuffer();
-        else scheduleThoughtFlush();
-      }
-
-      if (typeof contentChunk === 'string' && contentChunk.length > 0) {
-        if (!hasStartedStreaming) {
-          hasStartedStreaming = true;
-          clearInterval(keepAliveTimer);
-          writeStatus('streaming', 'Generating…');
-        }
-
-        tokenBuffer += contentChunk;
-        if (tokenBuffer.length > 4096) flushTokenBuffer();
-        else scheduleTokenFlush();
-      }
-    }
-
-    if (tokenFlushTimer) clearTimeout(tokenFlushTimer);
-    if (thoughtFlushTimer) clearTimeout(thoughtFlushTimer);
-    flushThoughtBuffer();
-    flushTokenBuffer();
-
-    if (keepAliveTimer) clearInterval(keepAliveTimer);
-    if (abortTimer) clearTimeout(abortTimer);
-    writeStatus('done', 'Complete');
-    res.end();
-  } catch (error) {
-    const details = getErrorDetails(error);
-    console.error('Streaming error:', details.message);
-    try {
-      writeStatus('error', details.message);
-    } catch {
-      // ignore
-    }
-    res.end();
-  } finally {
-    if (keepAliveTimer) {
-      try {
-        clearInterval(keepAliveTimer);
-      } catch {
-        // ignore
-      }
-    }
-    if (abortTimer) {
-      try {
-        clearTimeout(abortTimer);
-      } catch {
-        // ignore
-      }
-    }
-    if (tokenFlushTimer) {
-      try {
-        clearTimeout(tokenFlushTimer);
-      } catch {
-        // ignore
-      }
-    }
-    if (thoughtFlushTimer) {
-      try {
-        clearTimeout(thoughtFlushTimer);
-      } catch {
-        // ignore
-      }
-    }
-  }
-};
-
-// /ai/chat (mapped from /api/ai/chat)
-app.all(['/ai/chat', '/api/ai/chat', '/ai/generate-stream', '/api/ai/generate-stream'], async (req, res) => {
-   // Reuse the generate logic or redirect
-   // For now, let's just forward to the same logic as /generate if possible, 
-   // but since the handler logic is inline above, we can't easily reuse it without extracting a function.
-   // Let's just return 404 for now if not used, OR better yet, extract the handler.
-   // Wait, the previous code had `handleGenerateStream` but it was not defined in the snippet I saw?
-   // Ah, I need to check if `handleGenerateStream` exists.
-   // Looking at previous `Read` output... I didn't see `handleGenerateStream` definition. 
-   // It was used in line 837: `app.post('/ai/generate-stream', handleGenerateStream);`
-   // But I don't see the definition.
-   // Wait, looking at the large read output...
-   // Line 550: `app.post(['/ai/generate', '/generate'], async (req, res) => { ...`
-   // This is the inline handler.
-   
-   // I will assume the user wants /ai/chat to work too.
-   // I will just return 404 for these legacy routes to clean up, unless they are used.
-   // The frontend uses `/ai/chat` in `src/app/plans/page.tsx`? No, that was just a route list.
-   // `frontend/src/services/aiService.ts` uses `/ai/plan`.
-   // Let's just leave them as 404 for now to avoid confusion, or map them if I find usage.
-   res.status(404).json({ error: 'Use /api/ai/generate' });
-});
-
 // Catch-all: explicit 404 (helps diagnose rewrites / 405 confusion on Vercel).
 app.all('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  console.log(`[fallback] 404 Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({ error: 'Route not found', method: req.method, url: req.url });
 });
 
 // Vercel requires exporting the app instance (no app.listen)

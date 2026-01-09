@@ -2,19 +2,29 @@
   "version": 2,
   "buildCommand": "npm run build",
   "framework": "nextjs",
-  "rewrites": [
+  "builds": [
     {
-      "source": "/ai/(.*)",
-      "destination": "/api/index.js"
+      "src": "frontend/package.json",
+      "use": "@vercel/next"
     },
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index.js"
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/frontend/$1"
     }
   ],
   "headers": [
     {
-      "source": "/(api|ai)/(.*)",
+      "source": "/api/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Credentials", "value": "true" },
         { "key": "Access-Control-Allow-Origin", "value": "*" },

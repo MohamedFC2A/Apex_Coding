@@ -241,6 +241,22 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     };
   }, [activeFile, currentFile, isGenerating, storeContent]);
 
+  // Auto-scroll to bottom during generation
+  useEffect(() => {
+    if (isGenerating && editorRef.current) {
+      const editor = editorRef.current;
+      const model = editor.getModel();
+      if (model) {
+        const lastLine = model.getLineCount();
+        const lastColumn = model.getLineMaxColumn(lastLine);
+        editor.revealPosition(
+          { lineNumber: lastLine, column: lastColumn },
+          0 // Smooth scrolling
+        );
+      }
+    }
+  }, [typedValue, isGenerating]);
+
   const editorValue = useMemo(() => {
     if (isStreamingView) return streamText;
     if (!currentFile) return undefined;

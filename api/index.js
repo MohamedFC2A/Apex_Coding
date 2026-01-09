@@ -343,6 +343,7 @@ CRITICAL OUTPUT RULES:
 6. Do NOT create .md/.txt documentation files unless absolutely necessary.
 7. Do NOT propose switching to a different stack unless the user explicitly requests it.
 8. ALWAYS generate real code (JavaScript/TypeScript) for functionality, not just comments.
+9. MANDATORY: Every web project MUST include a JavaScript file (e.g., script.js, main.js, or main.tsx) to ensure interactivity. HTML/CSS alone is NOT sufficient.
 
 REPO CONSTRAINTS (do not contradict these):
 - Frontend is Vite + React + TypeScript (not Next). Use import.meta.env with VITE_ variables.
@@ -390,7 +391,7 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    For static HTML sites:
    - index.html (main HTML with all structure)
    - styles.css (ALL CSS in ONE file)
-   - script.js (ALL JavaScript in ONE file)
+   - script.js (ALL JavaScript in ONE file - MANDATORY)
    - NO nested folders for simple sites
    
    For React + Vite:

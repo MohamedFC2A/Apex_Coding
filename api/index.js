@@ -518,7 +518,8 @@ app.post(planRouteRegex, async (req, res) => {
 
 // /generate (mapped from /api/generate)
 // Live streaming (no job queue): pipes model output directly to the client.
-const generateRouteRegex = /\/api\/ai\/generate|\/ai\/generate|\/api\/generate|\/generate/;
+// Matches: /api/ai/generate, /ai/generate, /api/generate, /generate, AND /ai/chat (legacy)
+const generateRouteRegex = /\/api\/ai\/generate|\/ai\/generate|\/api\/generate|\/generate|\/api\/ai\/chat|\/ai\/chat/;
 
 app.options(generateRouteRegex, cors());
 

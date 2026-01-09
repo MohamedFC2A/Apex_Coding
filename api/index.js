@@ -32,11 +32,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // When using Vercel rewrites to route /api/* to /api/index.js, the runtime may rewrite the path.
 // Prefer the original URL headers when present.
 app.use((req, _res, next) => {
+  // First, try to get the original URL from Vercel headers
   const candidate =
     req.headers['x-vercel-original-url'] ||
     req.headers['x-original-url'] ||
     req.headers['x-rewrite-url'] ||
-    req.headers['x-forwarded-uri'];
+    req.headers['x-forwarded-uri'] ||
+    req.originalUrl ||
+    req.url;
 
   if (typeof candidate === 'string' && candidate.startsWith('/')) {
     req.url = candidate;
@@ -464,6 +467,13 @@ BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.
 REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files.`.trim();
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
+app.options(['/ai/plan', '/api/ai/plan'], (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.status(204).end();
+});
+
 app.post(['/ai/plan', '/api/ai/plan'], async (req, res) => {
   try {
     const { prompt } = req.body || {};
@@ -827,7 +837,14 @@ const handleGenerateStream = async (req, res) => {
 app.post('/ai/generate-stream', handleGenerateStream);
 
 // /ai/chat (mapped from /api/ai/chat)
-app.post('/ai/chat', handleGenerateStream);
+app.options(['/ai/chat', '/api/ai/chat'], (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.status(204).end();
+});
+
+app.post(['/ai/chat', '/api/ai/chat'], handleGenerateStream);
 
 // Catch-all: explicit 404 (helps diagnose rewrites / 405 confusion on Vercel).
 app.all('*', (req, res) => {

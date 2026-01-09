@@ -4,12 +4,16 @@
   "installCommand": "npm install",
   "framework": null,
   "functions": {
-    "api/*.js": {
+    "api/index.js": {
       "maxDuration": 60
     }
   },
-  // No rewrites needed - Next.js API routes are automatically deployed as Serverless Functions
-// "rewrites": [],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getViteEnv, getWebContainerClientId } from '@/utils/env';
 
 describe('aiService (API mode)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    (globalThis as any).localStorage = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn()
+    };
   });
 
   it('generatePlan calls backend endpoint', async () => {
@@ -18,11 +24,14 @@ describe('aiService (API mode)', () => {
 
     const res = await aiService.generatePlan('test prompt', false);
 
-    expect(fetchMock).toHaveBeenCalledWith('https://apex-coding-backend.vercel.app/api/ai/plan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'test prompt', thinkingMode: false })
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/ai/plan',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'test prompt', thinkingMode: false })
+      })
+    );
     expect(res.steps).toEqual([{ id: '1', title: 'Test step' }]);
   });
 
@@ -106,5 +115,18 @@ describe('aiService (API mode)', () => {
     expect(statuses.some((s) => s.phase === 'done')).toBe(true);
     expect(completed).toBe(1);
     expect(errorMessage).toBe('');
+  });
+});
+
+describe('env utils', () => {
+  it('getViteEnv trims and returns undefined for empty values', () => {
+    expect(getViteEnv('VITE_WC_CLIENT_ID', { VITE_WC_CLIENT_ID: '   ' })).toBeUndefined();
+    expect(getViteEnv('VITE_WC_CLIENT_ID', { VITE_WC_CLIENT_ID: '  abc  ' })).toBe('abc');
+    expect(getViteEnv('VITE_WC_CLIENT_ID', {})).toBeUndefined();
+    expect(getViteEnv('VITE_WC_CLIENT_ID', { VITE_WC_CLIENT_ID: 123 as any })).toBeUndefined();
+  });
+
+  it('getWebContainerClientId reads VITE_WC_CLIENT_ID', () => {
+    expect(getWebContainerClientId({ VITE_WC_CLIENT_ID: 'wc_api_test' })).toBe('wc_api_test');
   });
 });

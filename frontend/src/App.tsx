@@ -21,7 +21,6 @@ import { MainActionButton, MainActionState } from './components/ui/MainActionBut
 import { PreviewWindow } from './components/ui/PreviewWindow';
 import { BrainConsole } from './components/ui/BrainConsole';
 import { PlanChecklist } from './components/ui/PlanChecklist';
-import { PlanConfiguration } from './components/ui/PlanConfiguration';
 import { Content, Description, Heading, Popover, Trigger } from './components/ui/InstructionPopover';
 import { GlobalStyles } from './styles/GlobalStyles';
 import { useWebContainer } from './context/WebContainerContext';
@@ -666,7 +665,6 @@ function App() {
     isPlanning,
     lastTokenAt,
     planSteps,
-    planConfig,
     thinkingContent,
     systemConsoleContent,
     isPreviewOpen,
@@ -681,7 +679,6 @@ function App() {
     clearSystemConsoleContent,
     appendSystemConsoleContent,
     setPlanSteps,
-    setPlanConfig,
     generatePlan,
     clearFileStatuses,
     setFileStatus,
@@ -1646,9 +1643,6 @@ function App() {
         </HeaderArea>
 
         <InputArea>
-          {architectMode && (
-            <PlanConfiguration config={planConfig} onChange={setPlanConfig} />
-          )}
           <PromptInput
             ref={promptRef}
             onSubmit={handleMainActionClick}

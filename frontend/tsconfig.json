@@ -31,16 +31,11 @@
     "allowJs": true,
     "esModuleInterop": true,
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+    "plugins": []
   },
   "include": [
     "src/**/*",
-    "../shared",
-    ".next/types/**/*.ts"
+    "../shared"
   ],
   "references": [
     {
@@ -48,7 +43,6 @@
     }
   ],
   "exclude": [
-    "node_modules",
-    "src/app"
+    "node_modules"
   ]
 }

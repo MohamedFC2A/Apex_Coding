@@ -5,6 +5,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { DEFAULT_ROOT_PACKAGE_JSON, ensureWebContainer, installDependencies, startServer, syncFileSystem } from '@/services/webcontainer';
 import { stripAnsi } from '@/utils/ansi';
+import { getWebContainerClientId } from '@/utils/env';
 
 type RuntimeStatus = 'idle' | 'booting' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
 
@@ -71,7 +72,7 @@ const treeContainsAnyCodeFile = (tree: FileSystem): boolean => {
 };
 
 // Flag to use simple iframe preview instead of WebContainer when API is unavailable
-const USE_SIMPLE_PREVIEW = !process.env.NEXT_PUBLIC_WC_CLIENT_ID;
+const USE_SIMPLE_PREVIEW = !getWebContainerClientId();
 
 // ============================================================================
 // GLOBAL MUTEX - PREVENTS RE-INITIALIZATION ON RE-RENDER/HOT-RELOAD
@@ -766,7 +767,7 @@ export const WebContainerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return;
     }
 
-    const apiKeyPresent = Boolean(process.env.NEXT_PUBLIC_WC_CLIENT_ID);
+    const apiKeyPresent = Boolean(getWebContainerClientId());
     
     // PRIORITY 1: Use simple iframe preview (most reliable, no external deps)
     const simpleUrl = generateSimplePreview();

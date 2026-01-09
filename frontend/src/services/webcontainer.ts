@@ -1,5 +1,6 @@
 import { FileSystem } from '@/types';
 import { configureAPIKey, FileSystemTree, WebContainer, WebContainerProcess } from '@webcontainer/api';
+import { getWebContainerClientId } from '@/utils/env';
 
 type FileMap = Map<string, string>;
 
@@ -134,7 +135,7 @@ const streamProcessOutput = async (process: WebContainerProcess, onOutput?: (chu
 
 export const ensureWebContainer = async () => {
   if (!state.bootPromise) {
-    const apiKey = process.env.NEXT_PUBLIC_WC_CLIENT_ID as string | undefined;
+    const apiKey = getWebContainerClientId();
     if (apiKey && !state.apiKeyConfigured) {
       configureAPIKey(apiKey);
       state.apiKeyConfigured = true;

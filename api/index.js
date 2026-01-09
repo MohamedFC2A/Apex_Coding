@@ -3,28 +3,54 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+const { requestIdMiddleware } = require('./middleware/requestId');
+const { createRateLimiter } = require('./middleware/rateLimit');
+const { parseAllowedOrigins } = require('./utils/security');
+
 const app = express();
 
-// DEBUG: Log every request immediately
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] Incoming: ${req.method} ${req.url}`);
-  console.log('Headers:', JSON.stringify(req.headers));
+app.use(requestIdMiddleware());
+
+app.use((req, _res, next) => {
+  const origin = String(req.headers.origin || '').trim();
+  const ua = String(req.headers['user-agent'] || '').trim();
+  console.log(
+    `[${new Date().toISOString()}] [${req.requestId}] ${req.method} ${req.url}${origin ? ` origin=${origin}` : ''}${ua ? ` ua=${ua.slice(0, 120)}` : ''}`
+  );
   next();
 });
 
-// Open CORS completely
-app.use(cors({
-  origin: '*', 
+const allowedOrigins = parseAllowedOrigins(process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || process.env.FRONTEND_ORIGINS);
+const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+const effectiveOrigins = allowedOrigins.length > 0 ? allowedOrigins : defaultDevOrigins;
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (effectiveOrigins.includes('*')) return callback(null, true);
+    if (effectiveOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS_NOT_ALLOWED'), false);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id'],
+  credentials: false
+};
+
+app.use(cors(corsOptions));
 
 // Handle preflight for all routes
-app.options('*', cors());
+app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+app.use((err, req, res, next) => {
+  if (err && err.message === 'CORS_NOT_ALLOWED') {
+    res.status(403).json({ error: 'CORS not allowed', requestId: req.requestId });
+    return;
+  }
+  next(err);
+});
 
 app.get('/', (_req, res) => {
   res.status(200).send('Apex Coding Backend is Running!');
@@ -192,6 +218,18 @@ async function* deepSeekStreamChatCompletion(payload, options = {}) {
   }
 };
 
+const getLLMProvider = () => {
+  const name = String(process.env.LLM_PROVIDER || 'deepseek').trim().toLowerCase();
+  if (name === 'deepseek') {
+    return {
+      name,
+      createChatCompletion: deepSeekCreateChatCompletion,
+      streamChatCompletion: deepSeekStreamChatCompletion
+    };
+  }
+  throw new Error(`Unsupported LLM provider: ${name}`);
+};
+
 const cleanAndParseJSON = (text) => {
   const raw = String(text || '').trim();
   if (!raw) throw new Error('Empty AI response');
@@ -279,64 +317,36 @@ const addFilesToZip = (zip, files) => {
 };
 
 // Prompts
-const PLAN_SYSTEM_PROMPT = `You are a Principal Software Architect & Full-Stack Strategist.
-Your goal is to design a World-Class, Enterprise-Grade solution for the user.
+const PLAN_SYSTEM_PROMPT = `You are an Elite Software Architect + Product Designer.
 
-Your Output must be a PERFECT JSON structure that covers:
-1. Architecture & Patterns (Clean Arch, Hexagonal, MVC, etc.)
-2. Backend Structure (API, DB Schema, Services)
-3. Frontend Structure (UI, State, Routing)
-4. Integration & Security
-5. Deployment & Testing
+You must produce an execution-grade implementation plan for the EXISTING repository.
 
-CRITICAL RULES:
-1. Output ONLY raw JSON (no markdown, no code fences)
-2. JSON shape: {"title":"...","description":"...","stack":"...","fileTree":[...],"steps":[{"id":"1","title":"...","category":"...","files":[...],"description":"..."}]}
-3. Analyze the request deeply - understand EXACTLY what the user wants.
-4. Create a COMPLETE file tree showing ALL files that will be created (Backend + Frontend).
-5. Steps must be comprehensive (Backend Setup -> DB Schema -> API -> Frontend Setup -> UI -> Integration).
+CRITICAL OUTPUT RULES:
+1. Output ONLY raw JSON (no markdown, no code fences, no extra text).
+2. JSON shape exactly:
+   {"title":"...","description":"...","stack":"...","fileTree":[...],"steps":[{"id":"1","title":"...","category":"...","files":[...],"description":"..."}]}
+3. Steps MUST be executable, specific, and ordered. Total steps: 10 to 18.
+4. Categories allowed: config, frontend, backend, integration, testing, deployment.
+5. Prefer editing existing files over creating new files.
+6. Do NOT create .md/.txt documentation files unless absolutely necessary.
+7. Do NOT propose switching to a different stack unless the user explicitly requests it.
 
-STACK DETECTION:
-- For web apps: Next.js + TypeScript + Tailwind + Node.js/Express (if needed) or Server Actions.
-- For DB: PostgreSQL (via Prisma/Drizzle) or Convex/Supabase.
-- Always choose the BEST stack for the project.
+REPO CONSTRAINTS (do not contradict these):
+- Frontend is Vite + React + TypeScript (not Next). Use import.meta.env with VITE_ variables.
+- Styling uses styled-components and Tailwind already; reuse existing patterns.
+- State uses Zustand already; reuse existing stores.
+- Backend is Node.js + Express (Vercel-style app in api/index.js).
 
-STEP CATEGORIES:
-- "config": Setup, configuration, dependencies (tsconfig, package.json, docker-compose)
-- "backend": API routes, controllers, services, DB schema, models
-- "frontend": UI components, pages, layouts, styles, hooks
-- "integration": Connecting frontend to backend, API clients, authentication
-- "testing": Unit tests, integration tests
-- "deployment": CI/CD, build scripts, Dockerfile
+PLAN QUALITY REQUIREMENTS:
+- fileTree must list ALL files that will be created or modified (full paths).
+- Each step description MUST include three labeled sections:
+  Changes: concise bullet-like sentences describing exact edits.
+  Acceptance: what must be true to consider the step done.
+  Rollback: how to revert this step safely.
+- Include a concise UI spec inside relevant frontend steps (colors/spacing/states: empty/loading/error).
+- Security: never log secrets; avoid leaking Authorization/Cookie; keep CORS explicit.
 
-EXAMPLE OUTPUT:
-{
-  "title": "Enterprise E-commerce Platform",
-  "description": "A scalable, microservices-ready e-commerce platform with RBAC, Analytics, and Real-time Inventory.",
-  "stack": "Next.js 14, TypeScript, Tailwind, Node.js, Express, PostgreSQL, Prisma, Redis",
-  "fileTree": [
-    "package.json",
-    "tsconfig.json",
-    "docker-compose.yml",
-    "backend/package.json",
-    "backend/src/server.ts",
-    "backend/src/config/db.ts",
-    "backend/src/models/User.ts",
-    "backend/src/routes/authRoutes.ts",
-    "frontend/package.json",
-    "frontend/src/app/layout.tsx",
-    "frontend/src/components/Dashboard.tsx"
-  ],
-  "steps": [
-    {"id":"1","title":"Project Monorepo Setup & Configuration","category":"config","files":["package.json","tsconfig.json","docker-compose.yml"],"description":"Initialize the monorepo structure with shared types and Docker configuration."},
-    {"id":"2","title":"Backend Core & Database Schema Design","category":"backend","files":["backend/src/server.ts","backend/src/config/db.ts","backend/prisma/schema.prisma"],"description":"Setup Express server, connect to PostgreSQL, and define User/Product schemas."},
-    {"id":"3","title":"Authentication & RBAC Implementation","category":"backend","files":["backend/src/controllers/authController.ts","backend/src/middleware/auth.ts"],"description":"Implement JWT authentication and Role-Based Access Control middleware."},
-    {"id":"4","title":"Frontend Foundation & Layouts","category":"frontend","files":["frontend/src/app/layout.tsx","frontend/src/components/Sidebar.tsx"],"description":"Initialize Next.js app with responsive layout and theme providers."},
-    {"id":"5","title":"API Integration & State Management","category":"integration","files":["frontend/src/lib/api.ts","frontend/src/hooks/useAuth.ts"],"description":"Connect frontend to backend APIs using typed hooks and Axios instances."}
-  ]
-}
-
-Now analyze the user's request and create the PERFECT implementation plan.`.trim();
+Now analyze the user's request and output the plan JSON.`.trim();
 
 const CODE_JSON_SYSTEM_PROMPT = `
 You are an expert full-stack code generator.
@@ -369,12 +379,16 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - script.js (ALL JavaScript in ONE file)
    - NO nested folders for simple sites
    
-   For React/Next.js:
+   For React + Vite:
    - package.json
+   - src/main.tsx (entry point)
    - src/App.tsx (main component)
-   - src/index.tsx (entry point)
-   - src/styles/globals.css (ONE CSS file)
+   - src/styles/ (styles folder if present)
    - src/components/ (components folder)
+
+   ENV RULES (Vite):
+   - Use import.meta.env.VITE_* in frontend code.
+   - NEVER use process.env.NEXT_PUBLIC_* in Vite projects.
 
 3. NEVER REWRITE FROM SCRATCH:
    - If editing, use [[EDIT_NODE:]] with [[SEARCH]]/[[REPLACE]] blocks
@@ -443,46 +457,42 @@ REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files.`.t
 // Using regex to reliably match both /ai/plan and /api/ai/plan regardless of Vercel rewrites
 const planRouteRegex = /\/api\/ai\/plan|\/ai\/plan/;
 
-app.options(planRouteRegex, cors());
+app.options(planRouteRegex, cors(corsOptions));
 
-app.post(planRouteRegex, async (req, res) => {
+const planLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
+
+app.post(planRouteRegex, planLimiter, async (req, res) => {
   try {
-    const { prompt, config } = req.body || {};
-    console.log('[plan] Generating plan for prompt:', typeof prompt === 'string' ? prompt.slice(0, 500) : prompt);
-    if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
-
-    let userMessage = prompt;
-    if (config) {
-      userMessage = `Configuration Preferences:
-- Project Type: ${config.type || 'Web App'}
-- Primary Goal: ${config.priority || 'Performance'}
-- Preferred Stack: ${Array.isArray(config.stack) && config.stack.length > 0 ? config.stack.join(', ') : 'Best fit'}
-
-User Request:
-${prompt}`;
+    const { prompt } = req.body || {};
+    if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+      return res.status(400).json({ error: 'Prompt is required', requestId: req.requestId });
     }
+    if (prompt.length > 30_000) {
+      return res.status(400).json({ error: 'Prompt is too long', requestId: req.requestId });
+    }
+    console.log(`[plan] [${req.requestId}] prompt_length=${prompt.length}`);
 
     const request = {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.0,
       messages: [
         { role: 'system', content: PLAN_SYSTEM_PROMPT },
-        { role: 'user', content: userMessage }
+        { role: 'user', content: prompt }
       ]
     };
 
     let completion;
+    const provider = getLLMProvider();
     try {
-      completion = await deepSeekCreateChatCompletion({
+      completion = await provider.createChatCompletion({
         ...request,
         response_format: { type: 'json_object' }
       });
     } catch {
-      completion = await deepSeekCreateChatCompletion(request);
+      completion = await provider.createChatCompletion(request);
     }
 
     let content = completion?.choices?.[0]?.message?.content || '';
-    console.log('[plan] Raw AI output preview:', String(content).slice(0, 800));
 
     content = String(content).replace(/```json/gi, '').replace(/```/g, '').trim();
     if (content.length === 0) throw new Error('Empty AI response');
@@ -514,14 +524,15 @@ ${prompt}`;
     const stack = typeof parsed?.stack === 'string' ? parsed.stack : '';
     const fileTree = Array.isArray(parsed?.fileTree) ? parsed.fileTree : [];
 
-    res.json({ title, description, stack, fileTree, steps });
+    res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
   } catch (error) {
     const details = getErrorDetails(error);
-    console.error('AI Plan Error:', details.message);
+    console.error(`[plan] [${req.requestId}] error=${details.message}`);
     res.status(500).json({
       error: details.message,
       title: 'Plan Generation Failed',
-      steps: [{ id: '1', title: 'Error parsing AI response. Please try again.', category: 'config', files: [], description: '' }]
+      steps: [{ id: '1', title: 'Error parsing AI response. Please try again.', category: 'config', files: [], description: '' }],
+      requestId: req.requestId
     });
   }
 });
@@ -531,29 +542,33 @@ ${prompt}`;
 // Matches: /api/ai/generate, /ai/generate, /api/generate, /generate, AND /ai/chat (legacy)
 const generateRouteRegex = /\/api\/ai\/generate|\/ai\/generate|\/api\/generate|\/generate|\/api\/ai\/chat|\/ai\/chat/;
 
-app.options(generateRouteRegex, cors());
+app.options(generateRouteRegex, cors(corsOptions));
 
-app.post(generateRouteRegex, async (req, res) => {
-  // Force headers to prevent buffering and keep the connection open.
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+const generateLimiter = createRateLimiter({ windowMs: 60_000, max: 15 });
 
-  // Immediate heartbeat so the client sees the stream right away.
-  res.write(': keep-alive\n\n');
+app.post(generateRouteRegex, generateLimiter, async (req, res) => {
 
   let keepAliveTimer = null;
   let abortTimer = null;
 
   try {
     const { prompt, thinkingMode } = req.body || {};
-    if (!prompt) {
-      res.write('Missing prompt');
-      res.end();
+    if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+      res.status(400).send('Prompt is required');
       return;
     }
+    if (prompt.length > 80_000) {
+      res.status(400).send('Prompt is too long');
+      return;
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('x-request-id', req.requestId);
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+    res.write(': keep-alive\n\n');
 
     const model = thinkingMode
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
@@ -590,7 +605,8 @@ app.post(generateRouteRegex, async (req, res) => {
       signal: abortController.signal
     };
 
-    const stream = deepSeekStreamChatCompletion(request, { signal: abortController.signal });
+    const provider = getLLMProvider();
+    const stream = provider.streamChatCompletion(request, { signal: abortController.signal });
     for await (const chunk of stream) {
       const delta = chunk?.choices?.[0]?.delta || {};
       const contentChunk = delta?.content;
@@ -610,7 +626,7 @@ app.post(generateRouteRegex, async (req, res) => {
     res.end();
   } catch (error) {
     const details = getErrorDetails(error);
-    console.error('AI Generate Error:', details.message);
+    console.error(`[generate] [${req.requestId}] error=${details.message}`);
     res.end();
   } finally {
     if (keepAliveTimer) {

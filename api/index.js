@@ -475,7 +475,7 @@ const planLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 
 app.post(planRouteRegex, planLimiter, async (req, res) => {
   try {
-    const { prompt } = req.body || {};
+    const { prompt, thinkingMode } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       return res.status(400).json({ error: 'Prompt is required', requestId: req.requestId });
     }
@@ -514,6 +514,8 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
       return res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
     }
 
+    const TIMEOUT_MS = thinkingMode ? 45_000 : 20_000;
+
     const request = {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.0,
@@ -526,12 +528,18 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     let completion;
     const provider = getLLMProvider();
     try {
-      completion = await provider.createChatCompletion({
-        ...request,
-        response_format: { type: 'json_object' }
-      });
+      completion = await Promise.race([
+        provider.createChatCompletion({
+          ...request,
+          response_format: { type: 'json_object' }
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('PLAN_TIMEOUT')), TIMEOUT_MS))
+      ]);
     } catch {
-      completion = await provider.createChatCompletion(request);
+      completion = await Promise.race([
+        provider.createChatCompletion(request),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('PLAN_TIMEOUT')), TIMEOUT_MS))
+      ]);
     }
 
     let content = completion?.choices?.[0]?.message?.content || '';
@@ -568,6 +576,20 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
 
     res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
   } catch (error) {
+    if (String(error?.message || '').includes('PLAN_TIMEOUT')) {
+      console.warn(`[plan] [${req.requestId}] timeout - returning demo fallback`);
+      const title = 'Plan (Demo Fallback)';
+      const description = 'انتهت مهلة توليد الخطة. تم إرجاع خطة سريعة بديلة.';
+      const stack = 'react-vite';
+      const fileTree = ['index.html', 'src/main.tsx', 'src/App.tsx', 'src/styles.css'];
+      const steps = [
+        { id: '1', title: 'تهيئة index.html', category: 'config', files: ['index.html'], description: '' },
+        { id: '2', title: 'إنشاء main.tsx', category: 'frontend', files: ['src/main.tsx'], description: '' },
+        { id: '3', title: 'إنشاء App.tsx', category: 'frontend', files: ['src/App.tsx'], description: '' },
+        { id: '4', title: 'إضافة styles.css', category: 'frontend', files: ['src/styles.css'], description: '' }
+      ];
+      return res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
+    }
     const details = getErrorDetails(error);
     console.error(`[plan] [${req.requestId}] error=${details.message}`);
     res.status(500).json({

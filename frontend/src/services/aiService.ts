@@ -32,7 +32,7 @@ export const aiService = {
 
       const postOnce = async () => {
         const controller = new AbortController();
-        const timeoutMs = thinkingMode ? 60_000 : 30_000;
+        const timeoutMs = thinkingMode ? 45_000 : 20_000;
         const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
         try {
           return await fetch(PLAN_URL, {
@@ -47,7 +47,7 @@ export const aiService = {
       };
 
       let response: Response | null = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
           response = await postOnce();
           if (response.ok) break;
@@ -57,7 +57,7 @@ export const aiService = {
           }
           break;
         } catch (e: any) {
-          if (attempt >= 2) throw new Error('Plan generation timeout - please try again');
+          if (attempt >= 1) throw new Error('Plan generation timeout - please try again');
           await new Promise((r) => globalThis.setTimeout(r as any, 1000));
         }
       }

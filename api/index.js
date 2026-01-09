@@ -486,20 +486,30 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
 
     // Fallback plan when AI provider is not configured (demo mode)
     if (!process.env.DEEPSEEK_API_KEY) {
-      const title = 'Demo Plan';
-      const description = 'Demo mode: backend AI key not configured. Returning a basic plan.';
+      const title = 'Landing Page (React + Vite)';
+      const description = 'بناء صفحة هبوط عربية حديثة باستخدام React + Vite مع أقسام Hero و Features و CTA بتصميم متجاوب وبهيكلة واضحة.';
       const stack = 'react-vite';
       const fileTree = [
         'index.html',
         'src/main.tsx',
         'src/App.tsx',
+        'src/components/Hero.tsx',
+        'src/components/Features.tsx',
         'src/styles.css'
       ];
       const steps = [
-        { id: '1', title: 'Create index.html', category: 'frontend', files: ['index.html'], description: 'Basic HTML shell' },
-        { id: '2', title: 'Add Vite entry main.tsx', category: 'frontend', files: ['src/main.tsx'], description: 'Render App.tsx' },
-        { id: '3', title: 'Implement App.tsx UI', category: 'frontend', files: ['src/App.tsx'], description: 'Starter component with input and button' },
-        { id: '4', title: 'Add styles.css', category: 'frontend', files: ['src/styles.css'], description: 'Minimal styles' }
+        { id: '1', title: 'تهيئة index.html', category: 'config', files: ['index.html'], description: 'ملف HTML رئيسي يحمّل تطبيق React' },
+        { id: '2', title: 'إنشاء نقطة دخول main.tsx', category: 'frontend', files: ['src/main.tsx'], description: 'تركيب ReactDOM وربط App' },
+        { id: '3', title: 'تنظيم هيكل App.tsx', category: 'frontend', files: ['src/App.tsx'], description: 'صفحة هبوط تضم Hero و Features و Footer' },
+        { id: '4', title: 'إضافة مكوّن Hero', category: 'frontend', files: ['src/components/Hero.tsx'], description: 'قسم ترحيبي وعنوان قوي وزر CTA' },
+        { id: '5', title: 'إضافة مكوّن Features', category: 'frontend', files: ['src/components/Features.tsx'], description: 'عرض مزايا مختصرة ثلاثية' },
+        { id: '6', title: 'إعداد أنماط أساسية', category: 'frontend', files: ['src/styles.css'], description: 'ألوان، مسافات، شبكة، خط' },
+        { id: '7', title: 'تصميم متجاوب', category: 'frontend', files: ['src/styles.css'], description: 'وسائط 768px و480px لتعديل التخطيط' },
+        { id: '8', title: 'دمج الهوية السفلية', category: 'frontend', files: ['src/App.tsx'], description: 'تذييل بعلامة © 2026 Nexus Apex | Built by Matany Labs.' },
+        { id: '9', title: 'سلوك زر CTA', category: 'frontend', files: ['src/App.tsx'], description: 'معالجة نقر بسيطة (console أو تنقل لاحقًا)' },
+        { id: '10', title: 'اختبار المتصفح', category: 'testing', files: [], description: 'فتح الصفحة والتأكد من الاستجابة والسلوك' },
+        { id: '11', title: 'تحسين الأداء البسيط', category: 'frontend', files: ['src/styles.css'], description: 'تقليل الظلال والتحريك للحجم' },
+        { id: '12', title: 'نشر على Vercel', category: 'deployment', files: [], description: 'يتولّى Vercel البناء من dist تلقائيًا' }
       ];
       return res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
     }
@@ -611,20 +621,20 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       const indexHtml = [
         '[[START_FILE: index.html]]',
         '<!doctype html>',
-        '<html>',
+        '<html lang=\"ar\">',
         '<head>',
-        '  <meta charset="utf-8" />',
-        '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
-        '  <title>Apex Coding Demo</title>',
-        '  <link rel="stylesheet" href="/src/styles.css" />',
+        '  <meta charset=\"utf-8\" />',
+        '  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />',
+        '  <title>صفحة هبوط - Apex Coding</title>',
         '</head>',
         '<body>',
-        '  <div id="root"></div>',
-        '  <script type="module" src="/src/main.tsx"></script>',
+        '  <div id=\"root\"></div>',
+        '  <script type=\"module\" src=\"/src/main.tsx\"></script>',
         '</body>',
         '</html>',
         '[[END_FILE]]'
       ].join('\n');
+
       const mainTsx = [
         '[[START_FILE: src/main.tsx]]',
         "import React from 'react';",
@@ -636,35 +646,136 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
         ");",
         '[[END_FILE]]'
       ].join('\n');
+
+      const heroTsx = [
+        '[[START_FILE: src/components/Hero.tsx]]',
+        "import React from 'react';",
+        '',
+        'export default function Hero() {',
+        '  return (',
+        '    <section className=\"hero\">',
+        '      <div className=\"container\">',
+        '        <h1 className=\"hero__title\">منصة بناء صفحات الهبوط بسرعة وذكاء</h1>',
+        '        <p className=\"hero__subtitle\">حوّل أفكارك إلى صفحات هبوط احترافية خلال دقائق.</p>',
+        '        <a href=\"#cta\" className=\"btn btn--primary\">ابدأ الآن</a>',
+        '      </div>',
+        '    </section>',
+        '  );',
+        '}',
+        '[[END_FILE]]'
+      ].join('\n');
+
+      const featuresTsx = [
+        '[[START_FILE: src/components/Features.tsx]]',
+        "import React from 'react';",
+        '',
+        'export default function Features() {',
+        '  return (',
+        '    <section className=\"features\">',
+        '      <div className=\"container\">',
+        '        <div className=\"features__grid\">',
+        '          <div className=\"card\">',
+        '            <h3>سرعة</h3>',
+        '            <p>ابدأ مشروعك فورًا مع هيكلة واضحة.</p>',
+        '          </div>',
+        '          <div className=\"card\">',
+        '            <h3>تنظيم</h3>',
+        '            <p>مكونات نظيفة وقابلة لإعادة الاستخدام.</p>',
+        '          </div>',
+        '          <div className=\"card\">',
+        '            <h3>تجاوب</h3>',
+        '            <p>تصميم يعمل بسلاسة على جميع الأجهزة.</p>',
+        '          </div>',
+        '        </div>',
+        '      </div>',
+        '    </section>',
+        '  );',
+        '}',
+        '[[END_FILE]]'
+      ].join('\n');
+
       const appTsx = [
         '[[START_FILE: src/App.tsx]]',
-        "import React, { useState } from 'react';",
+        "import React from 'react';",
+        "import Hero from './components/Hero';",
+        "import Features from './components/Features';",
         '',
         'export default function App() {',
-        '  const [text, setText] = useState("");',
+        '  const onCta = () => {',
+        "    console.log('CTA clicked');",
+        '  };',
         '  return (',
-        '    <div style={{ padding: 24 }}>',
-        '      <h1>Apex Coding Demo</h1>',
-        '      <p>Backend in demo mode (no AI key). Try plan to see a sample.</p>',
-        '      <input',
-        '        value={text}',
-        '        onChange={(e) => setText(e.target.value)}',
-        '        placeholder="اكتب طلبك هنا"',
-        '        style={{ padding: 8, width: 320 }}',
-        '      />',
-        '      <button style={{ marginLeft: 8, padding: 8 }}>إرسال</button>',
+        '    <div className=\"page\">',
+        '      <header className=\"header\">',
+        '        <div className=\"container header__row\">',
+        '          <div className=\"brand\">Apex Coding</div>',
+        '          <nav className=\"nav\">',
+        '            <a href=\"#features\">المزايا</a>',
+        '            <a href=\"#cta\">ابدأ</a>',
+        '          </nav>',
+        '        </div>',
+        '      </header>',
+        '      <main>',
+        '        <Hero />',
+        '        <div id=\"features\"><Features /></div>',
+        '        <section id=\"cta\" className=\"cta\">',
+        '          <div className=\"container\">',
+        '            <h2>ابدأ الآن</h2>',
+        '            <p>جرّب المنصة وأنشئ صفحتك خلال دقائق.</p>',
+        '            <button className=\"btn btn--primary\" onClick={onCta}>ابدأ</button>',
+        '          </div>',
+        '        </section>',
+        '      </main>',
+        '      <footer className=\"footer\">',
+        '        <div className=\"container\">',
+        '          © 2026 Nexus Apex | Built by Matany Labs.',
+        '        </div>',
+        '      </footer>',
         '    </div>',
         '  );',
         '}',
         '[[END_FILE]]'
       ].join('\n');
+
       const stylesCss = [
         '[[START_FILE: src/styles.css]]',
-        'body { font-family: system-ui, sans-serif; }',
+        ':root {',
+        '  --bg: #0B0F14;',
+        '  --bg-2: #0F172A;',
+        '  --text: #ffffff;',
+        '  --muted: rgba(255,255,255,0.7);',
+        '  --primary: #4F46E5;',
+        '  --border: rgba(255,255,255,0.08);',
+        '}',
+        'html, body, #root { height: 100%; }',
+        'body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }',
+        '.container { max-width: 1100px; margin: 0 auto; padding: 0 20px; }',
+        '.header { background: var(--bg-2); border-bottom: 1px solid var(--border); }',
+        '.header__row { display: flex; justify-content: space-between; align-items: center; height: 64px; }',
+        '.brand { font-weight: 700; letter-spacing: 0.5px; }',
+        '.nav a { color: var(--muted); margin-left: 16px; text-decoration: none; }',
+        '.nav a:hover { color: var(--text); }',
+        '.hero { padding: 72px 0; text-align: center; }',
+        '.hero__title { font-size: 42px; margin: 0 0 12px; }',
+        '.hero__subtitle { color: var(--muted); margin: 0 auto 24px; max-width: 700px; }',
+        '.btn { display: inline-block; padding: 12px 20px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }',
+        '.btn--primary { background: var(--primary); border-color: var(--primary); }',
+        '.features { padding: 40px 0; }',
+        '.features__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }',
+        '.card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }',
+        '.cta { padding: 40px 0; text-align: center; }',
+        '.footer { border-top: 1px solid var(--border); padding: 28px 0; text-align: center; color: var(--muted); }',
+        '@media (max-width: 768px) {',
+        '  .hero__title { font-size: 34px; }',
+        '  .features__grid { grid-template-columns: 1fr; }',
+        '}',
+        '@media (max-width: 480px) {',
+        '  .hero__title { font-size: 28px; }',
+        '}',
         '[[END_FILE]]'
       ].join('\n');
 
-      res.write(indexHtml + '\n' + mainTsx + '\n' + appTsx + '\n' + stylesCss);
+      res.write(indexHtml + '\n' + mainTsx + '\n' + heroTsx + '\n' + featuresTsx + '\n' + appTsx + '\n' + stylesCss);
       res.write('\n\n');
       res.end();
       return;

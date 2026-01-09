@@ -22,24 +22,36 @@ app.use((req, _res, next) => {
 
 const allowedOrigins = parseAllowedOrigins(process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || process.env.FRONTEND_ORIGINS);
 const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
-const effectiveOrigins = allowedOrigins.length > 0 ? allowedOrigins : defaultDevOrigins;
+const vercelOrigin = process.env.VERCEL_URL ? `https://${String(process.env.VERCEL_URL).trim()}` : null;
+const effectiveOrigins = allowedOrigins.length > 0 ? allowedOrigins : [...defaultDevOrigins, vercelOrigin].filter(Boolean);
 
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (effectiveOrigins.includes('*')) return callback(null, true);
-    if (effectiveOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('CORS_NOT_ALLOWED'), false);
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id'],
-  credentials: false
+const corsOptionsDelegate = (req, callback) => {
+  const origin = String(req.headers.origin || '').trim();
+  const methods = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'];
+  const allowedHeaders = ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id'];
+
+  if (!origin) return callback(null, { origin: true, methods, allowedHeaders, credentials: false });
+
+  let allowed = false;
+  try {
+    const o = new URL(origin);
+    const host = String(req.headers.host || '').trim();
+    if (host && o.host === host) allowed = true;
+    if (!allowed && o.host.endsWith('vercel.app')) allowed = true;
+  } catch {}
+
+  if (!allowed && effectiveOrigins.includes('*')) allowed = true;
+  if (!allowed && effectiveOrigins.includes(origin)) allowed = true;
+
+  const opts = { origin: allowed, methods, allowedHeaders, credentials: false };
+  if (allowed) return callback(null, opts);
+  return callback(new Error('CORS_NOT_ALLOWED'), opts);
 };
 
-app.use(cors(corsOptions));
+app.use(cors(corsOptionsDelegate));
 
 // Handle preflight for all routes
-app.options('*', cors(corsOptions));
+app.options('*', cors(corsOptionsDelegate));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -457,7 +469,7 @@ REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files.`.t
 // Using regex to reliably match both /ai/plan and /api/ai/plan regardless of Vercel rewrites
 const planRouteRegex = /\/api\/ai\/plan|\/ai\/plan/;
 
-app.options(planRouteRegex, cors(corsOptions));
+app.options(planRouteRegex, cors(corsOptionsDelegate));
 
 const planLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 
@@ -542,7 +554,7 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
 // Matches: /api/ai/generate, /ai/generate, /api/generate, /generate, AND /ai/chat (legacy)
 const generateRouteRegex = /\/api\/ai\/generate|\/ai\/generate|\/api\/generate|\/generate|\/api\/ai\/chat|\/ai\/chat/;
 
-app.options(generateRouteRegex, cors(corsOptions));
+app.options(generateRouteRegex, cors(corsOptionsDelegate));
 
 const generateLimiter = createRateLimiter({ windowMs: 60_000, max: 15 });
 

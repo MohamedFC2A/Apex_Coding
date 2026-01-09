@@ -467,14 +467,21 @@ BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.
 REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files.`.trim();
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
-app.options(['/ai/plan', '/api/ai/plan'], (_req, res) => {
+app.all(['/ai/plan', '/api/ai/plan'], async (req, res) => {
+  // Ensure CORS headers are set for all requests to this endpoint
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.status(204).end();
-});
 
-app.post(['/ai/plan', '/api/ai/plan'], async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  if (req.method !== 'POST') {
+    console.log(`[plan] Method Not Allowed: ${req.method} (URL: ${req.url})`);
+    return res.status(405).json({ error: 'Method Not Allowed. Use POST.', method: req.method });
+  }
+
   try {
     const { prompt } = req.body || {};
     console.log('[plan] Generating plan for prompt:', typeof prompt === 'string' ? prompt.slice(0, 500) : prompt);

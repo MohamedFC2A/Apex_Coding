@@ -86,23 +86,35 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
       },
     });
 
-    // Define Dracula theme
-    monaco.editor.defineTheme('dracula', {
+    // Define Apex Midnight theme (better contrast)
+    monaco.editor.defineTheme('apex-midnight', {
       base: 'vs-dark',
       inherit: true,
       rules: [
-        { token: 'comment', foreground: '6272a4', fontStyle: 'italic' },
-        { token: 'keyword', foreground: 'ff79c6' },
-        { token: 'string', foreground: 'f1fa8c' },
-        { token: 'number', foreground: 'bd93f9' },
+        { token: 'comment', foreground: '5c6370', fontStyle: 'italic' },
+        { token: 'keyword', foreground: 'c678dd', fontStyle: 'bold' },
+        { token: 'string', foreground: '98c379' },
+        { token: 'number', foreground: 'd19a66' },
+        { token: 'type', foreground: 'e5c07b' },
+        { token: 'function', foreground: '61afef' },
+        { token: 'variable', foreground: 'e06c75' },
+        { token: 'operator', foreground: '56b6c2' }
       ],
       colors: {
-        'editor.background': '#282a36',
-        'editor.foreground': '#f8f8f2',
-        'editor.lineHighlightBackground': '#44475a',
-        'editor.selectionBackground': '#44475a',
+        'editor.background': '#0B0F14',
+        'editor.foreground': '#abb2bf',
+        'editor.lineHighlightBackground': '#1b2028',
+        'editor.selectionBackground': '#264f78',
+        'editorCursor.foreground': '#528bff',
+        'editorLineNumber.foreground': '#4b5263',
+        'editor.selectionHighlightBackground': '#3a404a',
+        'scrollbarSlider.background': '#1f2430',
+        'scrollbarSlider.hoverBackground': '#2a303e',
+        'scrollbarSlider.activeBackground': '#353b4b'
       },
     });
+
+    monaco.editor.setTheme('apex-midnight');
 
     // Configure TypeScript
     monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
@@ -118,6 +130,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       editor.getAction('editor.action.formatDocument')?.run();
     });
+  }, []);
+
+  useEffect(() => {
+    if (monacoRef.current) {
+      monacoRef.current.editor.setTheme('apex-midnight');
+    }
   }, []);
 
   const handleEditorChange = (value: string | undefined) => {

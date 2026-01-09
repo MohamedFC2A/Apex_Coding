@@ -35,6 +35,24 @@ export const executionService = {
     const resolvedLanguage = normalizeLanguage(params.language);
 
     try {
+      // Special handling for JavaScript/TypeScript: execute in browser if no backend is needed
+      if (resolvedLanguage === 'javascript' || resolvedLanguage === 'typescript') {
+        try {
+          // eslint-disable-next-line no-eval
+          const result = eval(params.sourceCode); // Very basic client-side execution test
+          return {
+            success: true,
+            output: String(result),
+          };
+        } catch (e: any) {
+          return {
+             success: false,
+             output: '',
+             error: e.message
+          };
+        }
+      }
+
       const response = await axios.post(PISTON_URL, {
         language: resolvedLanguage,
         version: '*',

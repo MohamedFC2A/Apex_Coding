@@ -337,11 +337,12 @@ CRITICAL OUTPUT RULES:
 1. Output ONLY raw JSON (no markdown, no code fences, no extra text).
 2. JSON shape exactly:
    {"title":"...","description":"...","stack":"...","fileTree":[...],"steps":[{"id":"1","title":"...","category":"...","files":[...],"description":"..."}]}
-3. Steps MUST be executable, specific, and ordered. Total steps: 10 to 18.
+3. Steps MUST be executable, specific, and ordered. Total steps: 4 to 8.
 4. Categories allowed: config, frontend, backend, integration, testing, deployment.
 5. Prefer editing existing files over creating new files.
 6. Do NOT create .md/.txt documentation files unless absolutely necessary.
 7. Do NOT propose switching to a different stack unless the user explicitly requests it.
+8. ALWAYS generate real code (JavaScript/TypeScript) for functionality, not just comments.
 
 REPO CONSTRAINTS (do not contradict these):
 - Frontend is Vite + React + TypeScript (not Next). Use import.meta.env with VITE_ variables.
@@ -357,6 +358,7 @@ PLAN QUALITY REQUIREMENTS:
   Rollback: how to revert this step safely.
 - Include a concise UI spec inside relevant frontend steps (colors/spacing/states: empty/loading/error).
 - Security: never log secrets; avoid leaking Authorization/Cookie; keep CORS explicit.
+- IMPORTANT: Break down complex tasks into smaller, manageable steps, but keep the total count low (max 8).
 
 Now analyze the user's request and output the plan JSON.`.trim();
 
@@ -421,6 +423,7 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - NO explanations, NO commentary, NO status messages
    - NO markdown, NO code fences
    - NO "Here is", "I will", "Let me" phrases
+   - ALWAYS implement the FULL functionality requested, specifically JavaScript/TypeScript logic. Do not leave "TODO" comments.
 
 FILE-MARKER PROTOCOL:
 [[START_FILE: path/to/file.ext]]
@@ -459,11 +462,14 @@ STATIC SITE EXAMPLE (correct structure):
 
 [[START_FILE: script.js]]
 // ALL JavaScript in ONE file
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('App loaded');
+});
 [[END_FILE]]
 
 BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.
 
-REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files.`.trim();
+REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files. WRITE REAL CODE.`.trim();
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
 // Using regex to reliably match both /ai/plan and /api/ai/plan regardless of Vercel rewrites

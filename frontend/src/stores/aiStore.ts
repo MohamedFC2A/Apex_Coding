@@ -546,6 +546,30 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             .filter((s) => s.title.length > 0);
 
           set({ planSteps, lastPlannedPrompt: prompt, plan: data?.title || 'Architecture Plan' });
+          
+          const project = useProjectStore.getState();
+          if (typeof data?.stack === 'string' && data.stack.trim().length > 0) {
+            project.setStack(data.stack);
+          }
+          if (typeof data?.description === 'string' && data.description.trim().length > 0) {
+            project.setDescription(data.description);
+          }
+          const autoNameSource =
+            typeof data?.title === 'string' && data.title.trim().length > 0
+              ? data.title
+              : prompt;
+          const autoName = autoNameSource
+            .slice(0, 50)
+            .replace(/[^a-z0-9]+/gi, '-')
+            .replace(/^-+|-+$/g, '');
+          if (autoName) {
+            project.setProjectName(autoName);
+          }
+          if (Array.isArray(data?.fileTree) && data.fileTree.length > 0) {
+            project.setFileStructure(
+              data.fileTree.map((p: string) => ({ path: p, type: 'file' as const }))
+            );
+          }
         } catch (err: any) {
           set({ error: err?.message || 'Failed to generate plan' });
         } finally {

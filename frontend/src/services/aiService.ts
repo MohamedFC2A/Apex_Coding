@@ -32,8 +32,8 @@ export const aiService = {
 
       const postOnce = async () => {
         const controller = new AbortController();
-        // FIXED: Increased from 12s to 60s for plan generation
-        const timer = globalThis.setTimeout(() => controller.abort(), 60_000);
+        const timeoutMs = thinkingMode ? 60_000 : 30_000;
+        const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
         try {
           return await fetch(PLAN_URL, {
             method: 'POST',
@@ -473,9 +473,11 @@ export const aiService = {
         let sawDoneStatus = false;
         let streamErrored = false;
 
-        // FIXED: Increased stall timeout from 35s to 120s (2 minutes)
-        const stallMsRaw = Number((options as any).stallTimeoutMs ?? 120_000);
-        const stallMs = Number.isFinite(stallMsRaw) ? Math.max(30_000, stallMsRaw) : 120_000;
+        const defaultStall = thinkingMode ? 120_000 : 60_000;
+        const stallMsRaw = Number((options as any).stallTimeoutMs ?? defaultStall);
+        const stallMs = Number.isFinite(stallMsRaw)
+          ? Math.max(thinkingMode ? 30_000 : 15_000, stallMsRaw)
+          : defaultStall;
         let lastUsefulAt = Date.now();
         let stallTimer: any = null;
 

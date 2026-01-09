@@ -425,6 +425,14 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - NO markdown, NO code fences
    - NO "Here is", "I will", "Let me" phrases
    - ALWAYS implement the FULL functionality requested, specifically JavaScript/TypeScript logic. Do not leave "TODO" comments.
+   - YOU MUST OUTPUT ALL 3 CORE FILES (HTML, CSS, JS) FOR STATIC SITES IN A SINGLE RESPONSE.
+   - DO NOT STOP AFTER THE FIRST FILE.
+
+6. ANTI-LAZINESS RULES:
+   - Do NOT be lazy. Write the FULL code.
+   - Do NOT say "Add more code here". Write it.
+   - If the user asks for a landing page, build the WHOLE landing page (Hero, Features, Footer, etc).
+   - A single HTML file is a FAILURE. You MUST split code into logical files.
 
 FILE-MARKER PROTOCOL:
 [[START_FILE: path/to/file.ext]]

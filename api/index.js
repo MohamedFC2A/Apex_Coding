@@ -484,6 +484,26 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     }
     console.log(`[plan] [${req.requestId}] prompt_length=${prompt.length}`);
 
+    // Fallback plan when AI provider is not configured (demo mode)
+    if (!process.env.DEEPSEEK_API_KEY) {
+      const title = 'Demo Plan';
+      const description = 'Demo mode: backend AI key not configured. Returning a basic plan.';
+      const stack = 'react-vite';
+      const fileTree = [
+        'index.html',
+        'src/main.tsx',
+        'src/App.tsx',
+        'src/styles.css'
+      ];
+      const steps = [
+        { id: '1', title: 'Create index.html', category: 'frontend', files: ['index.html'], description: 'Basic HTML shell' },
+        { id: '2', title: 'Add Vite entry main.tsx', category: 'frontend', files: ['src/main.tsx'], description: 'Render App.tsx' },
+        { id: '3', title: 'Implement App.tsx UI', category: 'frontend', files: ['src/App.tsx'], description: 'Starter component with input and button' },
+        { id: '4', title: 'Add styles.css', category: 'frontend', files: ['src/styles.css'], description: 'Minimal styles' }
+      ];
+      return res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
+    }
+
     const request = {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.0,
@@ -585,6 +605,70 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
     const model = thinkingMode
       ? (process.env.DEEPSEEK_THINKING_MODEL || 'deepseek-reasoner')
       : (process.env.DEEPSEEK_MODEL || 'deepseek-chat');
+
+    // Fallback streaming when AI provider is not configured (demo mode)
+    if (!process.env.DEEPSEEK_API_KEY) {
+      const indexHtml = [
+        '[[START_FILE: index.html]]',
+        '<!doctype html>',
+        '<html>',
+        '<head>',
+        '  <meta charset="utf-8" />',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+        '  <title>Apex Coding Demo</title>',
+        '  <link rel="stylesheet" href="/src/styles.css" />',
+        '</head>',
+        '<body>',
+        '  <div id="root"></div>',
+        '  <script type="module" src="/src/main.tsx"></script>',
+        '</body>',
+        '</html>',
+        '[[END_FILE]]'
+      ].join('\n');
+      const mainTsx = [
+        '[[START_FILE: src/main.tsx]]',
+        "import React from 'react';",
+        "import ReactDOM from 'react-dom/client';",
+        "import App from './App';",
+        "import './styles.css';",
+        "ReactDOM.createRoot(document.getElementById('root')!).render(",
+        "  <React.StrictMode><App /></React.StrictMode>",
+        ");",
+        '[[END_FILE]]'
+      ].join('\n');
+      const appTsx = [
+        '[[START_FILE: src/App.tsx]]',
+        "import React, { useState } from 'react';",
+        '',
+        'export default function App() {',
+        '  const [text, setText] = useState("");',
+        '  return (',
+        '    <div style={{ padding: 24 }}>',
+        '      <h1>Apex Coding Demo</h1>',
+        '      <p>Backend in demo mode (no AI key). Try plan to see a sample.</p>',
+        '      <input',
+        '        value={text}',
+        '        onChange={(e) => setText(e.target.value)}',
+        '        placeholder="اكتب طلبك هنا"',
+        '        style={{ padding: 8, width: 320 }}',
+        '      />',
+        '      <button style={{ marginLeft: 8, padding: 8 }}>إرسال</button>',
+        '    </div>',
+        '  );',
+        '}',
+        '[[END_FILE]]'
+      ].join('\n');
+      const stylesCss = [
+        '[[START_FILE: src/styles.css]]',
+        'body { font-family: system-ui, sans-serif; }',
+        '[[END_FILE]]'
+      ].join('\n');
+
+      res.write(indexHtml + '\n' + mainTsx + '\n' + appTsx + '\n' + stylesCss);
+      res.write('\n\n');
+      res.end();
+      return;
+    }
 
     // Keep-alive while upstream is "thinking" before first token.
     let hasStartedStreaming = false;

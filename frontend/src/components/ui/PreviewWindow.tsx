@@ -4,6 +4,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { StackBlitzPreview } from '../Preview/StackBlitzPreview';
+import { ErrorBoundary } from './ErrorBoundary';
 
 const Window = styled.div`
   height: 100%;

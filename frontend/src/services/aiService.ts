@@ -442,6 +442,25 @@ export const aiService = {
 
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
         const controller = new AbortController();
+        const preTokenTimeoutMs = thinkingMode ? 60000 : 20000;
+        let preTokenTimer: any = null;
+        const startPreTokenTimer = () => {
+          if (preTokenTimer) return;
+          preTokenTimer = globalThis.setTimeout(() => {
+            try {
+              if (!sawAnyToken) controller.abort();
+            } catch {
+              // ignore
+            }
+          }, preTokenTimeoutMs);
+        };
+        const stopPreTokenTimer = () => {
+          if (preTokenTimer) {
+            globalThis.clearTimeout(preTokenTimer);
+            preTokenTimer = null;
+          }
+        };
+        startPreTokenTimer();
         const response = await fetch(apiUrl('/ai/chat'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -510,6 +529,7 @@ export const aiService = {
           const cleanedChunk = filterProtocolNoise(tokenChunk);
           if (!cleanedChunk.trim()) return; // Skip if chunk is only noise
           sawAnyToken = true;
+          stopPreTokenTimer();
           kickStallTimer();
           streamTail = (streamTail + cleanedChunk).slice(-streamTailMax);
           player.enqueue(cleanedChunk);
@@ -588,7 +608,7 @@ export const aiService = {
         }
 
         if (!sawAnyToken) {
-          throw new Error('Backend connection failed or timed out');
+          throw new Error('No response from backend (timeout). Please try again.');
         }
 
         if (streamErrored) {

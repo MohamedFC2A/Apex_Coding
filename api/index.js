@@ -447,16 +447,27 @@ app.options(planRouteRegex, cors());
 
 app.post(planRouteRegex, async (req, res) => {
   try {
-    const { prompt } = req.body || {};
+    const { prompt, config } = req.body || {};
     console.log('[plan] Generating plan for prompt:', typeof prompt === 'string' ? prompt.slice(0, 500) : prompt);
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+
+    let userMessage = prompt;
+    if (config) {
+      userMessage = `Configuration Preferences:
+- Project Type: ${config.type || 'Web App'}
+- Primary Goal: ${config.priority || 'Performance'}
+- Preferred Stack: ${Array.isArray(config.stack) && config.stack.length > 0 ? config.stack.join(', ') : 'Best fit'}
+
+User Request:
+${prompt}`;
+    }
 
     const request = {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.0,
       messages: [
         { role: 'system', content: PLAN_SYSTEM_PROMPT },
-        { role: 'user', content: prompt }
+        { role: 'user', content: userMessage }
       ]
     };
 

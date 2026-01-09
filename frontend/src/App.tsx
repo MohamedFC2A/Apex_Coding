@@ -665,6 +665,7 @@ function App() {
     isPlanning,
     lastTokenAt,
     planSteps,
+    planConfig,
     thinkingContent,
     systemConsoleContent,
     isPreviewOpen,
@@ -679,6 +680,7 @@ function App() {
     clearSystemConsoleContent,
     appendSystemConsoleContent,
     setPlanSteps,
+    setPlanConfig,
     generatePlan,
     clearFileStatuses,
     setFileStatus,
@@ -1643,6 +1645,9 @@ function App() {
         </HeaderArea>
 
         <InputArea>
+          {architectMode && (
+            <PlanConfiguration config={planConfig} onChange={setPlanConfig} />
+          )}
           <PromptInput
             ref={promptRef}
             onSubmit={handleMainActionClick}

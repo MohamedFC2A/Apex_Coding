@@ -47,10 +47,17 @@ interface AISections {
   download?: string;
 }
 
+export interface PlanConfig {
+  type: 'web' | 'api' | 'mobile' | 'cli';
+  priority: 'speed' | 'performance' | 'security';
+  stack: string[];
+}
+
 interface AIStoreState {
   prompt: string;
   plan: string;
   planSteps: PlanStep[];
+  planConfig: PlanConfig;
   architectMode: boolean;
   lastPlannedPrompt: string;
   chatHistory: ChatMessage[];
@@ -77,6 +84,7 @@ interface AIStoreState {
 interface AIStoreActions {
   setPrompt: (prompt: string) => void;
   setPlan: (plan: string) => void;
+  setPlanConfig: (config: PlanConfig) => void;
   setPlanSteps: (steps: PlanStep[]) => void;
   setPlanStepCompleted: (id: string, completed: boolean) => void;
   clearPlanSteps: () => void;
@@ -495,6 +503,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
       setPlan: (plan) => set({ plan }),
 
+      setPlanConfig: (config) => set({ planConfig: config }),
+
       setPlanSteps: (steps) => set({ planSteps: steps }),
 
       setPlanStepCompleted: (id, completed) =>
@@ -531,7 +541,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         set({ isPlanning: true, error: null });
         try {
           const thinkingMode = get().modelMode === 'thinking';
-          const data = await aiService.generatePlan(prompt, thinkingMode);
+          const planConfig = get().planConfig;
+          const data = await aiService.generatePlan(prompt, thinkingMode, planConfig);
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
 
           const planSteps: PlanStep[] = rawSteps

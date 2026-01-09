@@ -20,7 +20,7 @@ const getErrorMessage = (err: any, fallback: string) => {
 };
 
 export const aiService = {
-  async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ title?: string; description?: string; stack?: string; fileTree?: string[]; steps: Array<{ id: string; title: string; category?: string; files?: string[]; description?: string }> }> {
+  async generatePlan(prompt: string, thinkingMode: boolean = false, config?: any): Promise<{ title?: string; description?: string; stack?: string; fileTree?: string[]; steps: Array<{ id: string; title: string; category?: string; files?: string[]; description?: string }> }> {
     const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
     
     if (!canMakeRequest()) {
@@ -39,7 +39,7 @@ export const aiService = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: controller.signal,
-            body: JSON.stringify({ prompt, thinkingMode })
+            body: JSON.stringify({ prompt, thinkingMode, config })
           });
         } finally {
           globalThis.clearTimeout(timer as any);

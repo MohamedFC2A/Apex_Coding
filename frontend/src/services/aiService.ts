@@ -32,7 +32,7 @@ export const aiService = {
 
       const postOnce = async () => {
         const controller = new AbortController();
-        const timeoutMs = thinkingMode ? 45_000 : 20_000;
+        const timeoutMs = thinkingMode ? 60_000 : 30_000;
         const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
         try {
           return await fetch(PLAN_URL, {

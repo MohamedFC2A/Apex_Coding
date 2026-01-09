@@ -88,7 +88,15 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
         <Title>Live Preview</Title>
       </Titlebar>
       <Content>
-        <StackBlitzPreview />
+        <ErrorBoundary fallback={
+            <div style={{ padding: 20, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
+                <div style={{ marginBottom: 10, fontWeight: 'bold', color: '#ef4444' }}>Preview Failed to Load</div>
+                <div>This might be due to ad-blockers or network restrictions.</div>
+                <div style={{ marginTop: 5, fontSize: 12 }}>Please disable ad-blockers for Live Preview to work.</div>
+            </div>
+        }>
+            <StackBlitzPreview />
+        </ErrorBoundary>
       </Content>
     </Window>
   );

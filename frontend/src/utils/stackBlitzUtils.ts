@@ -37,6 +37,45 @@ export const getStackBlitzFiles = (files: ProjectFile[]) => {
     sbFiles[cleanPath] = file.content;
   });
 
+  // Ensure tsconfig.json exists
+  if (!sbFiles['tsconfig.json']) {
+    sbFiles['tsconfig.json'] = JSON.stringify({
+      compilerOptions: {
+        target: 'ES2020',
+        useDefineForClassFields: true,
+        lib: ['ES2020', 'DOM', 'DOM.Iterable'],
+        module: 'ESNext',
+        skipLibCheck: true,
+        moduleResolution: 'bundler',
+        allowImportingTsExtensions: true,
+        resolveJsonModule: true,
+        isolatedModules: true,
+        noEmit: true,
+        jsx: 'react-jsx',
+        strict: true,
+        noUnusedLocals: true,
+        noUnusedParameters: true,
+        noFallthroughCasesInSwitch: true
+      },
+      include: ['src'],
+      references: [{ path: './tsconfig.node.json' }]
+    }, null, 2);
+  }
+
+  // Ensure tsconfig.node.json exists
+  if (!sbFiles['tsconfig.node.json']) {
+      sbFiles['tsconfig.node.json'] = JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          skipLibCheck: true,
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          allowSyntheticDefaultImports: true
+        },
+        include: ['vite.config.ts']
+      }, null, 2);
+  }
+
   // Ensure package.json exists
   if (!sbFiles['package.json']) {
     sbFiles['package.json'] = JSON.stringify({
@@ -45,7 +84,11 @@ export const getStackBlitzFiles = (files: ProjectFile[]) => {
       private: true,
       dependencies: {
         'react': '^18.2.0',
-        'react-dom': '^18.2.0'
+        'react-dom': '^18.2.0',
+        'lucide-react': '^0.294.0',
+        'tailwindcss': '^3.4.0',
+        'postcss': '^8.4.32',
+        'autoprefixer': '^10.4.16'
       },
       devDependencies: {
         '@types/react': '^18.2.43',
@@ -75,6 +118,12 @@ export const getStackBlitzFiles = (files: ProjectFile[]) => {
           pkg.devDependencies = pkg.devDependencies || {};
           if (!pkg.devDependencies['vite']) pkg.devDependencies['vite'] = '^5.0.0';
           if (!pkg.devDependencies['@vitejs/plugin-react']) pkg.devDependencies['@vitejs/plugin-react'] = '^4.2.1';
+          if (!pkg.devDependencies['typescript']) pkg.devDependencies['typescript'] = '^5.0.0';
+
+          // Ensure basic runtime deps if missing
+          pkg.dependencies = pkg.dependencies || {};
+          if (!pkg.dependencies['react']) pkg.dependencies['react'] = '^18.2.0';
+          if (!pkg.dependencies['react-dom']) pkg.dependencies['react-dom'] = '^18.2.0';
           
           sbFiles['package.json'] = JSON.stringify(pkg, null, 2);
       } catch (e) {

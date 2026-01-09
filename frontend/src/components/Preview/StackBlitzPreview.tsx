@@ -36,6 +36,12 @@ export const StackBlitzPreview: React.FC<StackBlitzPreviewProps> = ({ className 
       };
 
       try {
+        // Check if embedRef is valid
+        if (!embedRef.current) {
+             console.warn('Embed container not ready');
+             return;
+        }
+
         // Embed the project
         // We use 'node' template but with Vite setup, it essentially behaves like vite-react-ts but more robust via WebContainers
         const vm = await sdk.embedProject(embedRef.current, project, {
@@ -58,10 +64,12 @@ export const StackBlitzPreview: React.FC<StackBlitzPreviewProps> = ({ className 
       }
     };
 
-    embedProject();
+    // Small delay to ensure DOM is ready
+    const initTimer = setTimeout(embedProject, 100);
 
     return () => {
       isMounted = false;
+      clearTimeout(initTimer);
     };
   }, []); // Initial load
 

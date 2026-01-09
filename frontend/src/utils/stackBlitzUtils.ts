@@ -4,14 +4,40 @@ export const getStackBlitzFiles = (files: ProjectFile[]) => {
   const sbFiles: { [key: string]: string } = {};
   
   files.forEach(file => {
-    // Use path if available, otherwise name (for root files)
     const filePath = file.path || file.name;
     // Remove leading slash if present
-    const cleanPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+    let cleanPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+
+    // Handle nested structure: Flatten 'frontend/' and 'backend/' to root
+    // But prefer 'frontend/' files if we are doing a frontend preview
+    // For now, let's keep it simple: if it starts with frontend/, strip it.
+    // If it starts with backend/, we might not need it in the browser preview unless it's a fullstack container.
+    // StackBlitz WebContainers can run Node, so we can include backend files, but typically we want the vite app at root.
+    
+    // STRATEGY: 
+    // 1. If path starts with 'frontend/', strip 'frontend/' and map to root.
+    // 2. If path starts with 'backend/', map to 'backend/' folder (keep it side-by-side if needed, or ignore).
+    //    The user error suggests it's looking for 'stackblitz:/frontend/tailwind.config.js' which implies 
+    //    the environment expects files at root but they might be nested or vice versa.
+    //    The error "Could not find source file: 'stackblitz:/frontend/tailwind.config.js'" usually means 
+    //    something is trying to import/read it from that path but it's not there.
+    
+    // Let's normalize everything to ROOT for the frontend preview.
+    if (cleanPath.startsWith('frontend/')) {
+        cleanPath = cleanPath.replace('frontend/', '');
+    } else if (cleanPath.startsWith('backend/')) {
+        // Optional: include backend files in a 'backend' folder if we want to run a server later
+        // For now, let's just keep them as is (so they go into a backend folder)
+        // or ignore them if they are causing noise.
+        // However, the user errors show 'stackblitz:/backend/api/...' not found.
+        // This might be because some code is trying to fetch from there?
+        // Let's keep them but ensure the structure is clean.
+    }
+
     sbFiles[cleanPath] = file.content;
   });
 
-  // Ensure package.json exists and has necessary dependencies
+  // Ensure package.json exists
   if (!sbFiles['package.json']) {
     sbFiles['package.json'] = JSON.stringify({
       name: 'apex-coding-project',
@@ -35,37 +61,35 @@ export const getStackBlitzFiles = (files: ProjectFile[]) => {
       }
     }, null, 2);
   } else {
-      // If it exists, parse and ensure essential deps are present for TS support
       try {
           const pkg = JSON.parse(sbFiles['package.json']);
-          pkg.dependencies = { ...pkg.dependencies };
-          pkg.devDependencies = { ...pkg.devDependencies };
+          // Ensure scripts are set for Vite
+          pkg.scripts = { 
+              ...pkg.scripts, 
+              dev: 'vite', 
+              build: 'tsc && vite build', 
+              preview: 'vite preview' 
+          };
           
-          // Add React types if missing and it's a React project
-          if (!pkg.devDependencies['@types/react']) {
-              pkg.devDependencies['@types/react'] = '^18.2.43';
-          }
-          if (!pkg.devDependencies['@types/react-dom']) {
-              pkg.devDependencies['@types/react-dom'] = '^18.2.17';
-          }
-          if (!pkg.devDependencies['typescript']) {
-              pkg.devDependencies['typescript'] = '^5.0.0';
-          }
-
+          // Ensure dependencies
+          pkg.devDependencies = pkg.devDependencies || {};
+          if (!pkg.devDependencies['vite']) pkg.devDependencies['vite'] = '^5.0.0';
+          if (!pkg.devDependencies['@vitejs/plugin-react']) pkg.devDependencies['@vitejs/plugin-react'] = '^4.2.1';
+          
           sbFiles['package.json'] = JSON.stringify(pkg, null, 2);
       } catch (e) {
           console.error('Error parsing package.json', e);
       }
   }
 
-  // Ensure index.html exists for Vite
+  // Ensure index.html exists
   if (!sbFiles['index.html']) {
       sbFiles['index.html'] = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vite + React + TS</title>
+  <title>Vite App</title>
 </head>
 <body>
   <div id="root"></div>
@@ -79,9 +103,8 @@ export const getStackBlitzFiles = (files: ProjectFile[]) => {
       sbFiles['vite.config.ts'] = `import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vitejs.dev/config/
 export default defineConfig({
-plugins: [react()],
+  plugins: [react()],
 })`;
   }
 

@@ -28,7 +28,8 @@ export const PromptPanel: React.FC = () => {
     saveCurrentSession,
     setError,
     error,
-    handleFileEvent
+    handleFileEvent,
+    executionPhase
   } = useAIStore();
   const { setFiles, setFileStructure, setStack, setDescription, setProjectId, setProjectName } = useProjectStore();
   const { setIsExecuting, setExecutionResult, setPreviewUrl, setPreviewContent, addLog } = usePreviewStore();
@@ -394,12 +395,12 @@ export const PromptPanel: React.FC = () => {
         {/* Generation Button */}
         <LiquidButton
           onClick={handleGenerate}
-          disabled={isGenerating || !localPrompt.trim()}
+          disabled={(isGenerating && executionPhase !== 'interrupted') || !localPrompt.trim()}
           glow
-          loading={isGenerating}
+          loading={isGenerating && executionPhase !== 'interrupted'}
           className="w-full"
         >
-          {isGenerating ? (
+          {isGenerating && executionPhase !== 'interrupted' ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
               <span>{thinkingStatus || 'Generating...'}</span>
@@ -407,7 +408,7 @@ export const PromptPanel: React.FC = () => {
           ) : (
             <>
               <Sparkles className="w-5 h-5" />
-              <span>Generate Full Code</span>
+              <span>{executionPhase === 'interrupted' ? 'Resume Generation' : 'Generate Full Code'}</span>
             </>
           )}
         </LiquidButton>

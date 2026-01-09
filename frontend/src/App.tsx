@@ -653,9 +653,16 @@ function App() {
     addChatMessage,
     error,
     setError,
-    setIsPreviewOpen
+    setIsPreviewOpen,
+    recoverSession,
+    executionPhase,
+    setExecutionPhase
   } = useAIStore();
   const { deployAndRun } = useWebContainer();
+
+  useEffect(() => {
+    recoverSession();
+  }, [recoverSession]);
 
   const {
     files,
@@ -843,39 +850,23 @@ function App() {
     const rawPrompt = (promptOverride ?? prompt).trim();
     if (!rawPrompt || isPlanning || isGenerating) return;
 
-    // Auto-save current session before generating new output.
     useAIStore.getState().saveCurrentSession();
 
     const basePrompt = rawPrompt;
     const skipPlanning = options?.skipPlanning === true;
     const preserveProjectMeta = options?.preserveProjectMeta === true;
 
-    if (architectMode && !skipPlanning) {
-      const currentPlanSteps = useAIStore.getState().planSteps;
-      const currentPlannedPrompt = useAIStore.getState().lastPlannedPrompt;
-
-      if (currentPlanSteps.length === 0 || currentPlannedPrompt !== basePrompt) {
-        await generatePlan(basePrompt);
-      }
-
-      const stepsNow = useAIStore.getState().planSteps;
-      if (stepsNow.length === 0) {
-        setError('Failed to generate a plan. Try toggling Architect Mode off for direct generation.');
-        return;
-      }
-    }
-
     autoDebugRef.current = { signature: '', attempts: 0 };
 
-    // Don't auto-open preview during generation - let user click Run after completion
     setIsGenerating(true);
+    setExecutionPhase(architectMode && !skipPlanning ? 'planning' : 'executing');
     setError(null);
     setPreviewUrl(null);
     setSections({});
     setStreamText('');
     clearThinkingContent();
     clearSystemConsoleContent();
-    logSystem('[STATUS] Starting generation stream…');
+    logSystem('[STATUS] Starting generation pipeline…');
     logSystem('[webcontainer] Waiting for code generation to finish...');
     setBrainOpen(false);
     setThinkingStatus('Initializing…');
@@ -903,16 +894,12 @@ function App() {
     }
     reasoningBufferRef.current = '';
 
-    if (architectMode && !skipPlanning) {
-      const stepsNow = useAIStore.getState().planSteps;
-      if (stepsNow.length > 0) setPlanSteps(stepsNow.map((s) => ({ ...s, completed: false })));
-    }
-
     try {
       let generationSucceeded = false;
       const filePathMap = new Map<string, string>();
       const partialPaths = new Set<string>();
       const editOriginalByPath = new Map<string, string>();
+      const filesByBaseName = new Map<string, string>();
 
       // Use global autosave function (defined outside for independence)
       const scheduleAutosave = globalScheduleAutosave;
@@ -1056,22 +1043,14 @@ function App() {
         for (const block of blocks) {
           if (!block.search) continue;
           
-          // Skip if search and replace are identical (no change needed)
-          if (block.search === block.replace) {
-            continue;
-          }
+          if (block.search === block.replace) continue;
           
-          // Skip if search block is not found in content
-          if (!out.includes(block.search)) {
-            continue;
-          }
+          if (!out.includes(block.search)) continue;
           
-          // Apply the replacement
           out = out.replace(block.search, block.replace);
           appliedChanges++;
         }
         
-        // Log if no changes were applied (helps detect AI issues)
         if (blocks.length > 0 && appliedChanges === 0) {
           logSystem('[STATUS] Edit mode: No changes applied (search blocks not found or identical to replace)');
         } else if (appliedChanges > 0) {
@@ -1081,9 +1060,6 @@ function App() {
         return out;
       };
 
-      // Track files by their base name to detect duplicates
-      const filesByBaseName = new Map<string, string>();
-      
       const handleFileEvent = (event: {
         type: 'start' | 'chunk' | 'end';
         path: string;
@@ -1096,21 +1072,17 @@ function App() {
         let resolvedPath = resolveGeneratedPath(event.path || '');
         if (!resolvedPath) return;
         
-        // DUPLICATE PREVENTION: Check if a file with the same base name exists in a different location
         const baseName = resolvedPath.split('/').pop() || resolvedPath;
         const existingPath = filesByBaseName.get(baseName.toLowerCase());
         
         if (event.type === 'start' && event.mode === 'create') {
-          // If this exact base name exists elsewhere, redirect to the existing path
           if (existingPath && existingPath !== resolvedPath) {
-            // Common duplicates: styles.css, script.js, main.js, app.js
             const commonDuplicates = ['styles.css', 'style.css', 'script.js', 'main.js', 'app.js', 'index.css'];
             if (commonDuplicates.includes(baseName.toLowerCase())) {
               logSystem(`[STATUS] Prevented duplicate: ${resolvedPath} -> using existing ${existingPath}`);
-              resolvedPath = existingPath; // Redirect to existing file
+              resolvedPath = existingPath;
             }
           } else {
-            // Track this file
             filesByBaseName.set(baseName.toLowerCase(), resolvedPath);
           }
         }
@@ -1138,7 +1110,6 @@ function App() {
             const cleaned = stripPartialMarkerAtEnd(current);
             let finalText = cleaned;
             
-            // If partial, try to repair
             if (event.partial) {
                finalText = repairTruncatedContent(cleaned, resolvedPath);
                if (finalText !== cleaned) {
@@ -1208,8 +1179,7 @@ function App() {
           }
 
           if (useAIStore.getState().architectMode) {
-            const next = useAIStore.getState().planSteps.find((s) => !s.completed);
-            if (next) useAIStore.getState().setPlanStepCompleted(next.id, true);
+            // Plan step completion handled in main loop now
           }
         }
       };
@@ -1218,87 +1188,136 @@ function App() {
       const isThinkingMode = modelMode === 'thinking';
       let openedBrain = false;
 
-      await aiService.generateCodeStream(
-        basePrompt,
-        (token) => {
-          streamCharCountRef.current += token.length;
-          const now = Date.now();
-          if (now - streamLastLogAtRef.current > 900) {
-            const k = Math.round(streamCharCountRef.current / 100) / 10;
-            logSystem(`[STATUS] Received ${k}k chars...`);
-            streamLastLogAtRef.current = now;
-          }
-          scheduleTokenBeat();
-        },
-        (phase, message) => {
-          const writing = useAIStore.getState().writingFilePath;
-          if (writing && phase === 'streaming') {
-            setThinkingStatus(`Writing ${writing.split('/').pop() || writing}…`);
-          } else if (phase === 'thinking') setThinkingStatus('Thinking…');
-          else if (phase === 'streaming') setThinkingStatus('Generating…');
-          else if (phase === 'validating') setThinkingStatus('Validating…');
-          else if (phase === 'done') setThinkingStatus('Complete');
-          else setThinkingStatus(message);
-          if (message) logSystem(`[STATUS] ${message}`);
-        },
-        (meta) => {
-          if (meta?.resume?.attempt) {
-            logSystem(`[STATUS] Auto-resume attempt ${meta.resume.attempt}`);
-          }
-          if (meta?.raw) logSystem(`[STATUS] ${String(meta.raw)}`);
-        },
-        (payload) => {
-          // File-marker protocol drives file updates incrementally; the service emits a minimal meta payload here.
-          const protocol = payload?.metadata?.protocol;
-          if (protocol === 'file-marker') {
-            logSystem('[STATUS] File-Marker stream finished.');
-          }
-        },
-        (err) => {
-          flushFileBuffers();
-          const message = typeof err === 'string' ? err : 'Generation failed';
-          setError(message);
-          addLog({ timestamp: Date.now(), type: 'error', message: `Generation failed: ${String(err)}` });
-          logSystem(`[ERROR] ${message}`);
-          setIsGenerating(false);
-          setThinkingStatus('');
-        },
-        (chunk) => {
-          reasoningChars += chunk.length;
-          reasoningBufferRef.current += chunk;
-          scheduleReasoningFlush();
-          if (!openedBrain) {
-            openedBrain = true;
-            setBrainOpen(true);
-          }
-          if (!isThinkingMode) return;
-          if (reasoningChars < 500) setThinkingStatus('Thinking…');
-          else if (reasoningChars < 2000) setThinkingStatus('Deep thinking…');
-          else setThinkingStatus('Reasoning…');
-        },
-        () => {
-          flushFileBuffers();
-          flushReasoningBuffer();
-          setIsGenerating(false);
-          setThinkingStatus('');
-          generationSucceeded = useProjectStore.getState().files.length > 0;
-          if (generationSucceeded) {
-            if (partialPaths.size > 0) {
-              logSystem(`[webcontainer] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume...`);
-            } else {
-              logSystem('[webcontainer] Code Complete. Writing to Container...');
-              setTimeout(() => {
-                void deployAndRun();
-              }, 0);
+      const runStream = async (streamPrompt: string) => {
+        await aiService.generateCodeStream(
+          streamPrompt,
+          (token) => {
+            streamCharCountRef.current += token.length;
+            const now = Date.now();
+            if (now - streamLastLogAtRef.current > 900) {
+              const k = Math.round(streamCharCountRef.current / 100) / 10;
+              logSystem(`[STATUS] Received ${k}k chars...`);
+              streamLastLogAtRef.current = now;
             }
-          }
-        },
-        { thinkingMode: isThinkingMode, architectMode, includeReasoning: isThinkingMode, typingMs: 26, onFileEvent: handleFileEvent }
-      );
+            scheduleTokenBeat();
+          },
+          (phase, message) => {
+            const writing = useAIStore.getState().writingFilePath;
+            if (writing && phase === 'streaming') {
+              setThinkingStatus(`Writing ${writing.split('/').pop() || writing}…`);
+            } else if (phase === 'thinking') setThinkingStatus('Thinking…');
+            else if (phase === 'streaming') setThinkingStatus('Generating…');
+            else if (phase === 'validating') setThinkingStatus('Validating…');
+            else if (phase === 'done') setThinkingStatus('Complete');
+            else setThinkingStatus(message);
+            if (message) logSystem(`[STATUS] ${message}`);
+          },
+          (meta) => {
+            if (meta?.resume?.attempt) {
+              logSystem(`[STATUS] Auto-resume attempt ${meta.resume.attempt}`);
+            }
+            if (meta?.raw) logSystem(`[STATUS] ${String(meta.raw)}`);
+          },
+          (payload) => {
+            const protocol = payload?.metadata?.protocol;
+            if (protocol === 'file-marker') {
+              logSystem('[STATUS] File-Marker stream finished.');
+            }
+          },
+          (err) => {
+            throw new Error(typeof err === 'string' ? err : 'Stream error');
+          },
+          (chunk) => {
+            reasoningChars += chunk.length;
+            reasoningBufferRef.current += chunk;
+            scheduleReasoningFlush();
+            if (!openedBrain) {
+              openedBrain = true;
+              setBrainOpen(true);
+            }
+            if (!isThinkingMode) return;
+            if (reasoningChars < 500) setThinkingStatus('Thinking…');
+            else if (reasoningChars < 2000) setThinkingStatus('Deep thinking…');
+            else setThinkingStatus('Reasoning…');
+          },
+          () => {
+            flushFileBuffers();
+            flushReasoningBuffer();
+          },
+          { thinkingMode: isThinkingMode, architectMode, includeReasoning: isThinkingMode, typingMs: 26, onFileEvent: handleFileEvent }
+        );
+      };
+
+      if (architectMode && !skipPlanning) {
+        setExecutionPhase('planning');
+        const currentSteps = useAIStore.getState().planSteps;
+        const lastPlanned = useAIStore.getState().lastPlannedPrompt;
+        
+        if (currentSteps.length === 0 || lastPlanned !== basePrompt) {
+           await generatePlan(basePrompt);
+        }
+        
+        const steps = useAIStore.getState().planSteps;
+        if (steps.length === 0) throw new Error('Failed to generate a plan.');
+        
+        if (lastPlanned !== basePrompt) {
+             setPlanSteps(steps.map(s => ({...s, completed: false})));
+        }
+
+        setExecutionPhase('executing');
+        const updatedSteps = useAIStore.getState().planSteps;
+        
+        for (const step of updatedSteps) {
+            if (step.completed) continue;
+            
+            logSystem(`[PLAN] Executing step: ${step.title}`);
+            const stepPrompt = `
+[PROJECT CONTEXT]
+Project: ${projectName}
+Stack: ${stack}
+Description: ${description}
+
+[CURRENT PLAN]
+${updatedSteps.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
+
+[TASK]
+Implement this step: "${step.title}"
+Description: ${step.description}
+Target Files: ${step.files?.join(', ') || 'Auto-detect'}
+
+Output ONLY the code for these files.
+`.trim();
+            
+            await runStream(stepPrompt);
+            useAIStore.getState().setPlanStepCompleted(step.id, true);
+            
+            // Safety check for interruptions
+            if (useAIStore.getState().executionPhase === 'interrupted') break;
+        }
+      } else {
+        setExecutionPhase('executing');
+        await runStream(basePrompt);
+      }
+
+      setExecutionPhase('completed');
+      generationSucceeded = useProjectStore.getState().files.length > 0;
+      if (generationSucceeded) {
+        if (partialPaths.size > 0) {
+          logSystem(`[webcontainer] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume...`);
+        } else {
+          logSystem('[webcontainer] Code Complete. Writing to Container...');
+          setTimeout(() => {
+            void deployAndRun();
+          }, 0);
+        }
+      }
     } catch (e: any) {
       flushFileBuffers();
       flushReasoningBuffer();
       setError(e?.message || 'Failed to generate code');
+      setExecutionPhase('interrupted');
+      setThinkingStatus('Interrupted');
+    } finally {
       setIsGenerating(false);
       setThinkingStatus('');
     }
@@ -1343,7 +1362,11 @@ function App() {
     updateFile,
     upsertFile,
     upsertFileNode,
-    logSystem
+    logSystem,
+    setExecutionPhase,
+    projectName,
+    stack,
+    description
   ]);
 
   const buildFixPrompt = useCallback(

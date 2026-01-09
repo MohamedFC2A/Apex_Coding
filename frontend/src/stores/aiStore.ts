@@ -48,6 +48,8 @@ interface AISections {
   download?: string;
 }
 
+export type ExecutionPhase = 'idle' | 'planning' | 'executing' | 'confirming' | 'interrupted' | 'completed';
+
 interface AIStoreState {
   prompt: string;
   plan: string;
@@ -58,6 +60,9 @@ interface AIStoreState {
   decisionTrace: string;
   streamText: string;
   lastTokenAt: number;
+  lastActiveTimestamp: number;
+  executionPhase: ExecutionPhase;
+  executionBudget: number;
   modelMode: ModelMode;
   interactionMode: InteractionMode;
   writingFilePath: string | null;
@@ -119,6 +124,9 @@ interface AIStoreActions {
   startNewChat: () => void;
   reset: () => void;
   verifyIntegrity: () => { isSecure: boolean; brokenFiles: string[] };
+  setExecutionPhase: (phase: ExecutionPhase) => void;
+  touchSession: () => void;
+  recoverSession: () => void;
 }
 
 export type AIState = AIStoreState & AIStoreActions;
@@ -466,6 +474,9 @@ const buildInitialState = (): AIStoreState => ({
   decisionTrace: '',
   streamText: '',
   lastTokenAt: 0,
+  lastActiveTimestamp: Date.now(),
+  executionPhase: 'idle',
+  executionBudget: 5,
   modelMode: 'fast',
   interactionMode: 'create',
   writingFilePath: null,
@@ -862,11 +873,34 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         window.location.reload();
       },
 
-      reset: () => set(buildInitialState())
+      reset: () => set(buildInitialState()),
+
+      setExecutionPhase: (phase) => set({ executionPhase: phase }),
+      
+      touchSession: () => set({ lastActiveTimestamp: Date.now() }),
+      
+      recoverSession: () => {
+        const state = get();
+        const now = Date.now();
+        // If generating but silent for > 30s, or just rehydrated in a stuck state
+        if (state.isGenerating || state.executionPhase === 'executing' || state.executionPhase === 'planning') {
+           const silence = now - state.lastTokenAt;
+           if (silence > 10000) { // 10s grace
+              set({ 
+                 isGenerating: false, 
+                 executionPhase: 'interrupted',
+                 error: 'Session restored from interruption. Please check partial files.'
+              });
+           }
+        }
+      }
     }),
     {
       name: 'apex-ai-store',
-      storage: createJSONStorage(() => localStorage)
+      storage: createJSONStorage(() => localStorage),
+      onRehydrateStorage: () => (state) => {
+        state?.recoverSession();
+      }
     }
   )
 );

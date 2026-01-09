@@ -18,6 +18,7 @@ export const StackBlitzPreview: React.FC<StackBlitzPreviewProps> = ({ className 
     let isMounted = true;
 
     const embedProject = async () => {
+      if (typeof window === 'undefined') return;
       if (!embedRef.current) return;
 
       const sbFiles = getStackBlitzFiles(files);

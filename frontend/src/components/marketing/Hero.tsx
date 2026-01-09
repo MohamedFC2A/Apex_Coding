@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/context/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -142,12 +143,12 @@ export function Hero() {
         >
           {t('ui.viewPricing')}
         </a>
-        <a
-          href="#demo"
+        <Link
+          href="/demo"
           className="inline-flex items-center justify-center rounded-2xl border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold text-white/85 backdrop-blur-md transition hover:bg-white/5"
         >
           {t('hero.cta.demo')}
-        </a>
+        </Link>
       </motion.div>
 
       <motion.div

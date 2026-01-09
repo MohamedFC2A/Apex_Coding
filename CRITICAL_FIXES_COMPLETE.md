@@ -50,13 +50,13 @@ const abortTimer = setTimeout(() => {
 **Change:**
 ```typescript
 // BEFORE
-const timer = globalThis.setTimeout(() => controller.abort(), 12_000); // 12s
+const timer = globalThis.setTimeout(() => controller.abort(), 60_000); // 60s
 
 // AFTER
-const timer = globalThis.setTimeout(() => controller.abort(), 60_000); // 60s
+const timer = globalThis.setTimeout(() => controller.abort(), 300_000); // 300s (5 minutes)
 ```
 
-**Impact:** Complex plans now generate without timing out
+**Impact:** Complex plans now generate without timing out (Updated Jan 9, 2026)
 
 ---
 

@@ -514,7 +514,7 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
       return res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
     }
 
-    const TIMEOUT_MS = thinkingMode ? 45_000 : 20_000;
+    const TIMEOUT_MS = thinkingMode ? 290_000 : 110_000;
 
     const request = {
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
@@ -821,7 +821,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       } catch {
         // ignore
       }
-    }, 55000);
+    }, 180_000);
 
     const request = {
       model,

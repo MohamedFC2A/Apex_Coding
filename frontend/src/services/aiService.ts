@@ -137,8 +137,43 @@ export const aiService = {
       const typingMsRaw = Number(options.typingMs ?? 26);
       const typingMs = Number.isFinite(typingMsRaw) ? typingMsRaw : 26;
 
+      // Inject Deep Context
+      const projectState = useProjectStore.getState();
+      const aiState = useAIStore.getState();
+      
+      const context = {
+        files: projectState.files.map(f => f.path || f.name),
+        stack: projectState.stack,
+        projectDescription: projectState.description,
+        currentPlan: aiState.planSteps.map(s => ({
+          title: s.title,
+          completed: s.completed,
+          category: s.category
+        })),
+        activeFile: projectState.activeFile
+      };
+
+      const enhancedPrompt = `
+[PROJECT CONTEXT]
+Project Name: ${projectState.projectName}
+Stack: ${projectState.stack || 'Not detected'}
+Description: ${projectState.description || 'None'}
+Active File: ${projectState.activeFile || 'None'}
+
+[PLAN STATUS]
+${context.currentPlan.map((s, i) => `${i + 1}. [${s.completed ? 'x' : ' '}] ${s.title} (${s.category || 'general'})`).join('\n')}
+
+[FILE STRUCTURE]
+${context.files.slice(0, 100).join('\n')}${context.files.length > 100 ? '\n...(truncated)' : ''}
+
+[USER REQUEST]
+${prompt}
+`.trim();
+
       onMeta({ provider: 'vercel-backend', baseURL: getApiBaseUrl(), thinkingMode, architectMode });
       onStatus('streaming', 'Generating…');
+
+      const streamPrompt = architectMode || thinkingMode ? enhancedPrompt : prompt;
 
       const parseSseEvent = (rawEvent: string) => {
         const lines = rawEvent.split(/\r?\n/);
@@ -473,6 +508,7 @@ export const aiService = {
             thinkingMode,
             architectMode,
             includeReasoning,
+            context,
             history: options.history || []
           })
         });

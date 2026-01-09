@@ -563,7 +563,9 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             .replace(/[^a-z0-9]+/gi, '-')
             .replace(/^-+|-+$/g, '');
           if (autoName) {
-            project.setProjectName(autoName);
+            project.setProjectName(data.title || autoName);
+          } else if (data.title) {
+            project.setProjectName(data.title);
           }
           if (Array.isArray(data?.fileTree) && data.fileTree.length > 0) {
             project.setFileStructure(

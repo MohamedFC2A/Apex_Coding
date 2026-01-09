@@ -74,13 +74,9 @@ export const StackBlitzPreview: React.FC<StackBlitzPreviewProps> = ({ className 
         // We apply fs diff
         vmRef.current.applyFsDiff({
             create: sbFiles,
-            destroy: [] // We don't track deletions easily yet, but applyFsDiff 'create' overwrites. 
-            // Real diffing would be better but overwriting changed files works for updates.
-            // If files are deleted in store, they won't be in sbFiles, but they will remain in VM until destroyed.
-            // For now, let's assume additive updates or overwrite. 
-            // To properly handle deletes we'd need to track previous state.
+            destroy: [] 
         });
-    }, 1000); // 1s debounce
+    }, 400); // Reduced to 400ms for snappier updates
 
     return () => clearTimeout(timer);
   }, [files]);

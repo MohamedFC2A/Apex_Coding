@@ -46,7 +46,7 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth }) => {
   const { fileStatuses, writingFilePath } = useAIStore();
 
   const computeStatus = React.useCallback(
-    (n: FileStructure): NodeStatus => {
+    function computeStatusInner(n: FileStructure): NodeStatus {
       if (n.type === 'file') {
         const status = fileStatuses[n.path] as NodeStatus | undefined;
         if (writingFilePath && writingFilePath === n.path) return 'writing';
@@ -56,7 +56,7 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth }) => {
       const children = n.children || [];
       let hasQueued = false;
       for (const child of children) {
-        const s = computeStatus(child);
+        const s = computeStatusInner(child);
         if (s === 'writing') return 'writing';
         if (s === 'queued') hasQueued = true;
       }

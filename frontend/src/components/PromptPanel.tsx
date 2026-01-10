@@ -40,6 +40,7 @@ export const PromptPanel: React.FC = () => {
   const { addLog } = usePreviewStore();
 
   const isThinkingMode = modelMode === 'thinking';
+  const isSuperMode = modelMode === 'super';
 
   // Monitor token gaps for "Still thinking..." status (fallback only)
   useEffect(() => {
@@ -304,7 +305,7 @@ export const PromptPanel: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setModelMode('fast')}
-                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${!isThinkingMode
+                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${!isThinkingMode && !isSuperMode
                         ? 'liquid-glass border-green-500/50 text-white'
                         : 'liquid-panel hover:bg-white/5 text-white/60'
                       }`}
@@ -326,11 +327,25 @@ export const PromptPanel: React.FC = () => {
                       <span>Thinking</span>
                     </div>
                   </button>
+                  <button
+                    onClick={() => setModelMode('super')}
+                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${isSuperMode
+                        ? 'liquid-glass border-yellow-500/50 text-white'
+                        : 'liquid-panel hover:bg-white/5 text-white/60'
+                      }`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <Sparkles className="w-4 h-4 text-yellow-400" />
+                      <span>Super-Thinking (Beta)</span>
+                    </div>
+                  </button>
                 </div>
                 <p className="text-xs text-white/30">
-                  {isThinkingMode
-                    ? 'Uses DeepSeek Reasoner (slower but more detailed)'
-                    : 'Uses configured DeepSeek model (fast response)'}
+                  {isSuperMode
+                    ? 'Hybrid engine: fast blueprint + deep reasoning'
+                    : isThinkingMode
+                      ? 'Uses DeepSeek Reasoner (slower but more detailed)'
+                      : 'Uses configured DeepSeek model (fast response)'}
                 </p>
               </div>
 

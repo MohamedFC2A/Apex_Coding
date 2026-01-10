@@ -24,6 +24,23 @@ export const StackBlitzPreview = forwardRef<StackBlitzPreviewHandle, StackBlitzP
   const { setRuntimeStatus, setPreviewUrl } = usePreviewStore();
   const STABLE_KEY = 'apex-stable-files';
 
+  function resetVMInternal() {
+    try {
+      const raw = localStorage.getItem(STABLE_KEY);
+      const stable = raw ? JSON.parse(raw) : null;
+      const current = getStackBlitzFiles(files);
+      const fallback = stable && typeof stable === 'object' ? stable : current;
+      const create = fallback;
+      const destroy = Object.keys(prevFilesRef.current).filter((k) => !(k in fallback));
+      vmRef.current?.applyFsDiff({ create, destroy });
+      prevFilesRef.current = fallback;
+      setRuntimeStatus('starting');
+      appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [STATUS] VM reset. Re-starting preview…\n`);
+    } catch {
+      appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [WARNING] Reset failed. Using current workspace.\n`);
+    }
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -151,23 +168,6 @@ export const StackBlitzPreview = forwardRef<StackBlitzPreviewHandle, StackBlitzP
     return () => clearTimeout(timer);
   }, [files]);
 
-  const resetVMInternal = () => {
-    try {
-      const raw = localStorage.getItem(STABLE_KEY);
-      const stable = raw ? JSON.parse(raw) : null;
-      const current = getStackBlitzFiles(files);
-      const fallback = stable && typeof stable === 'object' ? stable : current;
-      const create = fallback;
-      const destroy = Object.keys(prevFilesRef.current).filter((k) => !(k in fallback));
-      vmRef.current?.applyFsDiff({ create, destroy });
-      prevFilesRef.current = fallback;
-      setRuntimeStatus('starting');
-      appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [STATUS] VM reset. Re-starting preview…\n`);
-    } catch {
-      appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [WARNING] Reset failed. Using current workspace.\n`);
-    }
-  };
-
   useImperativeHandle(ref, () => ({
     resetVM: () => resetVMInternal()
   }));
@@ -184,3 +184,5 @@ export const StackBlitzPreview = forwardRef<StackBlitzPreviewHandle, StackBlitzP
     </div>
   );
 });
+
+StackBlitzPreview.displayName = 'StackBlitzPreview';

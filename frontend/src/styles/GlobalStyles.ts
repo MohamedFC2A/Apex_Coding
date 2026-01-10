@@ -1,6 +1,11 @@
 import { createGlobalStyle } from 'styled-components';
 
 export const GlobalStyles = createGlobalStyle`
+  :root {
+    --mobile-nav-height: 60px;
+    --brain-console-collapsed-height: 48px;
+  }
+
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;

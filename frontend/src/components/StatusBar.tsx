@@ -99,9 +99,21 @@ export const StatusBar: React.FC = () => {
             <Separator />
           </>
         )}
-        <Item $clickable title={`AI Mode: ${modelMode === 'thinking' ? 'Thinking (slower, better)' : 'Fast (quick responses)'}`}>
+        <Item $clickable title={`AI Mode: ${
+          modelMode === 'super'
+            ? 'Super-Thinking (hybrid fast + deep)'
+            : modelMode === 'thinking'
+              ? 'Thinking (slower, better)'
+              : 'Fast (quick responses)'
+        }`}>
           <Zap />
-          <span>{modelMode === 'thinking' ? '🧠 Thinking' : '⚡ Fast'}</span>
+          <span>{
+            modelMode === 'super'
+              ? '✨ Super-Thinking (Beta)'
+              : modelMode === 'thinking'
+                ? '🧠 Thinking'
+                : '⚡ Fast'
+          }</span>
         </Item>
         <Item>
           <span>UTF-8</span>

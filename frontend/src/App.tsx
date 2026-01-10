@@ -22,6 +22,7 @@ import { MainActionButton, MainActionState } from './components/ui/MainActionBut
 import { PreviewWindow } from './components/ui/PreviewWindow';
 import { BrainConsole } from './components/ui/BrainConsole';
 import { PlanChecklist } from './components/ui/PlanChecklist';
+import { SuperWorkflow } from './components/ui/SuperWorkflow';
 import { Content, Description, Heading, Popover, Trigger } from './components/ui/InstructionPopover';
 import { GlobalStyles } from './styles/GlobalStyles';
 import { MobileNav } from './components/ui/MobileNav';
@@ -77,6 +78,7 @@ if (typeof window !== 'undefined') {
 const Root = styled.div`
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   position: relative;
   background: 
@@ -91,6 +93,7 @@ const Root = styled.div`
 
 const Container = styled.div`
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -108,7 +111,7 @@ const Container = styled.div`
 
   @media (max-width: 768px) {
     padding: 12px;
-    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--mobile-nav-height) + var(--brain-console-collapsed-height) + env(safe-area-inset-bottom));
     gap: 12px;
   }
 `;
@@ -239,7 +242,7 @@ const OverlayPanel = styled.div<{ $open: boolean }>`
   top: 80px;
   right: 20px;
   width: min(440px, calc(100vw - 40px));
-  max-height: calc(100vh - 160px);
+  max-height: calc(100dvh - 160px);
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(10, 10, 10, 0.70);
@@ -258,6 +261,7 @@ const OverlayPanel = styled.div<{ $open: boolean }>`
     left: 12px;
     width: auto;
     border-radius: 18px;
+    max-height: calc(100dvh - 70px - var(--mobile-nav-height) - env(safe-area-inset-bottom));
   }
 `;
 
@@ -297,7 +301,7 @@ const FloatingPlanWrap = styled.div<{ $open: boolean }>`
 
   @media (max-width: 768px) {
     right: 12px;
-    bottom: 70px;
+    bottom: calc(var(--mobile-nav-height) + var(--brain-console-collapsed-height) + 12px + env(safe-area-inset-bottom));
   }
 `;
 
@@ -686,6 +690,7 @@ function App() {
     clearSystemConsoleContent,
     appendSystemConsoleContent,
     setPlanSteps,
+    setLastPlannedPrompt,
     generatePlan,
     clearFileStatuses,
     setFileStatus,
@@ -777,9 +782,10 @@ function App() {
 
   useEffect(() => {
     if (!architectMode) return;
+    if (modelMode === 'super') return;
     if (planSteps.length === 0) return;
     setPlanOpen(true);
-  }, [architectMode, planSteps.length]);
+  }, [architectMode, modelMode, planSteps.length]);
 
   useEffect(() => {
     if (isGenerating) return;
@@ -1229,7 +1235,7 @@ function App() {
       };
 
       let reasoningChars = 0;
-      const isThinkingMode = modelMode === 'thinking';
+      const isThinkingMode = modelMode === 'thinking' || modelMode === 'super';
       let openedBrain = false;
 
       const runStream = async (streamPrompt: string) => {
@@ -1292,7 +1298,49 @@ function App() {
         );
       };
 
-      if (architectMode && !skipPlanning) {
+      if (modelMode === 'super') {
+        setExecutionPhase('planning');
+        logSystem('[SUPER-THINKING] Initializing Fast-Mode Blueprint...');
+        const data = await aiService.generatePlan(basePrompt, false);
+        const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
+        const planStepsLocal = rawSteps
+          .map((s, i) => ({
+            id: String(s?.id ?? i + 1),
+            title: String(s?.title ?? s?.text ?? s?.step ?? '').trim(),
+            completed: false,
+            category: (s?.category || 'frontend') as any,
+            files: Array.isArray(s?.files) ? s.files : [],
+            description: String(s?.description ?? '')
+          }))
+          .filter((s) => s.title.length > 0);
+        setPlanSteps(planStepsLocal);
+        setLastPlannedPrompt(basePrompt);
+        logSystem('[WORKFLOW] Mapping automated logic nodes...');
+        setExecutionPhase('executing');
+        logSystem('[SUPER-THINKING] Deep-Thinking Engine Engaged...');
+        for (const step of planStepsLocal) {
+          logSystem(`[PLAN] Executing step: ${step.title}`);
+          const stepPrompt = `
+[PROJECT CONTEXT]
+Project: ${projectName}
+Stack: ${stack}
+Description: ${description}
+
+[CURRENT PLAN]
+${planStepsLocal.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
+
+[TASK]
+Implement this step: "${step.title}"
+Description: ${step.description}
+Target Files: ${step.files?.join(', ') || 'Auto-detect'}
+
+Output ONLY the code for these files.
+`.trim();
+          await runStream(stepPrompt);
+          useAIStore.getState().setPlanStepCompleted(step.id, true);
+          if (useAIStore.getState().executionPhase === 'interrupted') break;
+        }
+      } else if (architectMode && !skipPlanning) {
         setExecutionPhase('planning');
         const currentSteps = useAIStore.getState().planSteps;
         const lastPlanned = useAIStore.getState().lastPlannedPrompt;
@@ -1662,14 +1710,16 @@ Output ONLY the code for these files.
             >
               <History size={18} />
             </HeaderIconButton>
-            <HeaderIconButton
-              type="button"
-              onClick={() => setPlanOpen((v) => !v)}
-              aria-label="View plan"
-              title="View plan"
-            >
-              <ListTodo size={18} />
-            </HeaderIconButton>
+            {modelMode !== 'super' && (
+              <HeaderIconButton
+                type="button"
+                onClick={() => setPlanOpen((v) => !v)}
+                aria-label="View plan"
+                title="View plan"
+              >
+                <ListTodo size={18} />
+              </HeaderIconButton>
+            )}
             <MobileMenuButton type="button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
               <Menu size={18} />
             </MobileMenuButton>
@@ -1901,7 +1951,7 @@ Output ONLY the code for these files.
         </OverlayBody>
       </OverlayPanel>
 
-      {architectMode && planSteps.length > 0 && (
+      {modelMode !== 'super' && architectMode && planSteps.length > 0 && (
         <FloatingPlanWrap $open={planOpen}>
           {planOpen ? (
             <FloatingPlanPanel>
@@ -1925,6 +1975,23 @@ Output ONLY the code for these files.
               <ListTodo size={18} />
             </FloatingPlanToggle>
           )}
+        </FloatingPlanWrap>
+      )}
+      
+      {modelMode === 'super' && (
+        <FloatingPlanWrap $open={true}>
+          <FloatingPlanPanel>
+            <FloatingPlanHeader type="button" onClick={() => {}} aria-label="Workflow">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <ListTodo size={16} />
+                Deep-Thinking Workflow
+              </span>
+              <span style={{ opacity: 0.7 }}>✨</span>
+            </FloatingPlanHeader>
+            <FloatingPlanBody>
+              <SuperWorkflow />
+            </FloatingPlanBody>
+          </FloatingPlanPanel>
         </FloatingPlanWrap>
       )}
 

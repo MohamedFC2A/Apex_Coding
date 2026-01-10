@@ -8,12 +8,13 @@ const NavContainer = styled.div`
   bottom: 0;
   left: 0;
   right: 0;
-  height: 60px;
+  height: var(--mobile-nav-height);
   background: rgba(10, 12, 16, 0.95);
   backdrop-filter: blur(20px);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   z-index: 50;
   padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
 
   @media (max-width: 768px) {
     display: flex;

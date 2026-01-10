@@ -40,7 +40,7 @@ const Shell = styled.div<{ $mode: 'create' | 'edit' }>`
     position: fixed;
     left: 12px;
     right: 12px;
-    bottom: calc(12px + 44px);
+    bottom: calc(12px + var(--mobile-nav-height) + var(--brain-console-collapsed-height) + env(safe-area-inset-bottom));
     max-width: none;
     z-index: 80;
     flex-direction: column;

@@ -1,5 +1,5 @@
 import React from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { useAIStore } from '../../stores/aiStore';
 
@@ -29,21 +29,23 @@ const ToggleTrackGlow = styled.div`
   opacity: 0.9;
 `;
 
-const ToggleButton = styled.button`
+const ToggleButton = styled.div<{ $columns: number }>`
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(${(p) => p.$columns}, 1fr);
   gap: 4px;
   align-items: center;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  outline: none;
+  pointer-events: auto;
 `;
 
-const Segment = styled.div<{ $active?: boolean }>`
+const pulse = keyframes`
+  0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5), 0 0 0 0 rgba(234, 179, 8, 0.45); }
+  50% { box-shadow: 0 0 16px 6px rgba(168, 85, 247, 0.65), 0 0 28px 10px rgba(234, 179, 8, 0.55); }
+  100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5), 0 0 0 0 rgba(234, 179, 8, 0.45); }
+`;
+
+const Segment = styled.div<{ $active?: boolean; $super?: boolean }>`
   position: relative;
   height: 38px;
   min-width: 88px;
@@ -55,20 +57,16 @@ const Segment = styled.div<{ $active?: boolean }>`
   letter-spacing: 0.12em;
   font-size: 12px;
   color: ${(p) => (p.$active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)')};
-`;
-
-const Thumb = styled(motion.div)`
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: calc(50% - 6px);
-  height: 38px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(168, 85, 247, 0.22));
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow:
-    0 10px 24px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  ${(p) =>
+    p.$active
+      ? `
+    background: ${p.$super
+      ? 'linear-gradient(135deg, rgba(126,34,206,0.28), rgba(234,179,8,0.24))'
+      : 'linear-gradient(135deg, rgba(59,130,246,0.25), rgba(168,85,247,0.22))'};
+    border: 1px solid rgba(255,255,255,0.16);
+  `
+      : 'background: transparent; border: 1px solid rgba(255,255,255,0.08);'}
+  ${(p) => (p.$super && p.$active ? `animation: ${pulse} 2.2s ease-in-out infinite;` : '')}
 `;
 
 interface ModeToggleProps {
@@ -78,25 +76,47 @@ interface ModeToggleProps {
 export const ModeToggle: React.FC<ModeToggleProps> = ({ className }) => {
   const { modelMode, setModelMode, isGenerating } = useAIStore();
   const isThinking = modelMode === 'thinking';
+  const isSuper = modelMode === 'super';
 
   return (
     <ToggleRoot className={className}>
       <ToggleTrackGlow />
-      <Thumb
-        animate={{ x: isThinking ? '100%' : '0%' }}
-        transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-      />
       <ToggleButton
-        type="button"
-        aria-label="Mode toggle"
-        aria-pressed={isThinking}
-        onClick={() => setModelMode(isThinking ? 'fast' : 'thinking')}
-        disabled={isGenerating}
+        $columns={isSuper ? 1 : 3}
       >
-        <Segment $active={!isThinking}>FAST</Segment>
-        <Segment $active={isThinking}>THINKING</Segment>
+        {!isSuper && (
+          <Segment
+            $active={modelMode === 'fast'}
+            onClick={() => {
+              if (isGenerating) return;
+              setModelMode('fast');
+            }}
+          >
+            FAST
+          </Segment>
+        )}
+        {!isSuper && (
+          <Segment
+            $active={modelMode === 'thinking'}
+            onClick={() => {
+              if (isGenerating) return;
+              setModelMode('thinking');
+            }}
+          >
+            THINKING
+          </Segment>
+        )}
+        <Segment
+          $active={isSuper}
+          $super
+          onClick={() => {
+            if (isGenerating) return;
+            setModelMode(isSuper ? 'fast' : 'super');
+          }}
+        >
+          SUPER-THINKING (BETA)
+        </Segment>
       </ToggleButton>
     </ToggleRoot>
   );
 };
-

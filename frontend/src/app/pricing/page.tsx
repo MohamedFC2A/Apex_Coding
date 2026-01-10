@@ -269,7 +269,7 @@ export default function PricingPage() {
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
-              <h4 className="font-semibold mb-2">What's included in Priority Support?</h4>
+              <h4 className="font-semibold mb-2">What&apos;s included in Priority Support?</h4>
               <p className="text-sm text-white/60">
                 PRO users get 24-hour email response time and access to our dedicated support channel.
               </p>

@@ -123,7 +123,7 @@ export const Popover: React.FC<PopoverProps> = ({ children, openDelayMs = 80, cl
 
   const context = useMemo<PopoverContextValue>(
     () => ({ open, setOpen, openNow, scheduleOpen, scheduleClose, triggerEl, setTriggerEl }),
-    [open, triggerEl]
+    [open, openNow, scheduleOpen, scheduleClose, triggerEl]
   );
 
   return (

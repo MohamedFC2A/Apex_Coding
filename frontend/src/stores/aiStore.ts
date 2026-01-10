@@ -5,7 +5,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { aiService } from '@/services/aiService';
 import { repairTruncatedContent } from '@/utils/codeRepair';
 
-type ModelMode = 'fast' | 'thinking';
+type ModelMode = 'fast' | 'thinking' | 'super';
 export type FileStreamStatus = 'ready' | 'queued' | 'writing' | 'partial' | 'compromised';
 export type InteractionMode = 'create' | 'edit';
 

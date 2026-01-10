@@ -22,7 +22,7 @@ const Sheet = styled(motion.div)<{ $open: boolean }>`
     --console-open-height: 50vh;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
     border-radius: 0;
     border-top: 1px solid rgba(255, 255, 255, 0.12);
   }
@@ -62,6 +62,8 @@ const Body = styled.div`
   line-height: 1.6;
   color: rgba(229, 231, 235, 0.9);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   background: rgba(0, 0, 0, 0.95);
   
   &::-webkit-scrollbar {

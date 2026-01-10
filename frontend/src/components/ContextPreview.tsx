@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled, { css, keyframes } from 'styled-components';
 import { FileText, MessageSquare, CheckSquare, Layers, Zap, AlertTriangle } from 'lucide-react';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -140,7 +140,7 @@ const ContextProgress = styled.div<{ $percentage: number; $warning: boolean; $cr
       'rgba(34, 211, 238, 0.9)'};
     border-radius: 3px;
     transition: width 0.3s ease, background 0.3s ease;
-    ${props => props.$critical && `animation: ${pulse} 1s ease-in-out infinite;`}
+    ${props => props.$critical && css`animation: ${pulse} 1s ease-in-out infinite;`}
   }
 `;
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled, { css, keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { useAIStore } from '../../stores/aiStore';
 
@@ -66,7 +66,7 @@ const Segment = styled.div<{ $active?: boolean; $super?: boolean }>`
     border: 1px solid rgba(255,255,255,0.16);
   `
       : 'background: transparent; border: 1px solid rgba(255,255,255,0.08);'}
-  ${(p) => (p.$super && p.$active ? `animation: ${pulse} 2.2s ease-in-out infinite;` : '')}
+  ${(p) => (p.$super && p.$active ? css`animation: ${pulse} 2.2s ease-in-out infinite;` : '')}
 `;
 
 interface ModeToggleProps {

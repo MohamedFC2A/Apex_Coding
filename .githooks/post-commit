@@ -1,0 +1,4 @@
+#!/bin/sh
+branch=$(git rev-parse --abbrev-ref HEAD)
+remote=origin
+git push "$remote" "$branch"

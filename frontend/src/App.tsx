@@ -115,7 +115,7 @@ const Container = styled.div`
 
 const HeaderArea = styled.div`
   flex-shrink: 0;
-  height: 72px;
+  min-height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -126,11 +126,17 @@ const HeaderArea = styled.div`
   border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 0 20px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  flex-wrap: nowrap;
+
+  @media (max-width: 1024px) {
+    gap: 14px;
+  }
 
   @media (max-width: 768px) {
-    height: 64px;
-    padding: 0 16px;
-    gap: 12px;
+    min-height: auto;
+    padding: 10px 12px;
+    gap: 10px;
+    flex-wrap: wrap;
   }
 `;
 
@@ -141,8 +147,14 @@ const HeaderLeft = styled.div`
   gap: 14px;
   flex: 1;
 
+  @media (max-width: 1024px) {
+    gap: 12px;
+  }
+
   @media (max-width: 768px) {
+    width: 100%;
     gap: 10px;
+    justify-content: space-between;
   }
 `;
 
@@ -151,8 +163,15 @@ const HeaderRight = styled.div`
   align-items: center;
   gap: 12px;
 
+  @media (max-width: 1024px) {
+    gap: 10px;
+  }
+
   @media (max-width: 768px) {
+    width: 100%;
     gap: 8px;
+    justify-content: space-between;
+    flex-wrap: nowrap;
   }
 `;
 
@@ -196,8 +215,8 @@ const HeaderIconButton = styled.button`
   }
 
   @media (max-width: 768px) {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 `;
 
@@ -368,6 +387,10 @@ const BrandStack = styled.div`
   flex-direction: column;
   gap: 2px;
   line-height: 1.05;
+
+  @media (max-width: 768px) {
+    gap: 0;
+  }
 `;
 
 const BrandTitle = styled.div`
@@ -379,6 +402,11 @@ const BrandTitle = styled.div`
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+
+  @media (max-width: 768px) {
+    font-size: 12px;
+    letter-spacing: 0.16em;
+  }
 `;
 
 const BrandSubtitle = styled.div`
@@ -386,6 +414,19 @@ const BrandSubtitle = styled.div`
   font-weight: 600;
   letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.50);
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  @media (max-width: 768px) {
+    font-size: 10px;
+    max-width: 20ch;
+  }
+
+  @media (max-width: 480px) {
+    display: none;
+  }
 `;
 
 const StatusPill = styled.div<{ $active?: boolean }>`
@@ -402,6 +443,11 @@ const StatusPill = styled.div<{ $active?: boolean }>`
   &:hover {
     background: rgba(255, 255, 255, 0.10);
     border-color: rgba(255, 255, 255, 0.20);
+  }
+
+  @media (max-width: 768px) {
+    padding: 6px 12px;
+    font-size: 11px;
   }
 `;
 

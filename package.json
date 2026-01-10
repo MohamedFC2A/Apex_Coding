@@ -7,8 +7,8 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm --workspace frontend run dev\" \"node api/server.js\"",
-    "build": "cd frontend && npm install && npm run build",
-    "install": "cd frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "setup": "cd frontend && npm install",
     "build:frontend": "npm --workspace frontend run build",
     "build:api": "node --check api/index.js"
   },

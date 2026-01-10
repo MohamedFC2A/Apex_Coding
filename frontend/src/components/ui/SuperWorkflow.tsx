@@ -1,208 +1,250 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { useAIStore } from '@/stores/aiStore';
-import { ZoomIn, ZoomOut, Move } from 'lucide-react';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { Maximize, Minimize, RotateCcw } from 'lucide-react';
 
 const Wrap = styled.div`
   position: relative;
   width: 100%;
-  height: 360px;
-  border-radius: 12px;
+  height: 400px;
+  border-radius: 24px;
   border: 1px solid rgba(255,255,255,0.12);
-  background: radial-gradient(180px 80px at 20% 30%, rgba(56,189,248,0.10), transparent 60%),
-              radial-gradient(200px 120px at 80% 70%, rgba(168,85,247,0.10), transparent 60%);
+  background: radial-gradient(circle at 50% 50%, rgba(13, 17, 23, 0.95), #000);
   overflow: hidden;
-`;
+  box-shadow: inset 0 0 80px rgba(0,0,0,0.8);
 
-const Controls = styled.div`
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: flex;
-  gap: 8px;
-  z-index: 2;
-  button {
-    height: 28px;
-    width: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.15);
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.90);
-    cursor: pointer;
+  @media (max-width: 768px) {
+    height: 320px;
+    border-radius: 16px;
   }
 `;
 
-const Canvas = styled.div`
+const OverlayControls = styled.div`
   position: absolute;
-  inset: 0;
-  touch-action: none;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  gap: 12px;
+  z-index: 10;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
 `;
 
-const Node = styled.div<{ $active?: boolean }>`
-  position: absolute;
-  min-width: 160px;
-  padding: 10px 12px;
+const ControlButton = styled.button`
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: ${(p) => (p.$active ? 'linear-gradient(135deg, rgba(126,34,206,0.28), rgba(234,179,8,0.24))' : 'rgba(255,255,255,0.06)')};
-  color: rgba(255,255,255,0.92);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  box-shadow: ${(p) => (p.$active ? '0 0 18px rgba(168,85,247,0.55), 0 0 8px rgba(234,179,8,0.45)' : 'none')};
-  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255,255,255,0.15);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
 `;
 
-const EdgeSvg = styled.svg`
+const WorkflowHeader = styled.div`
   position: absolute;
-  inset: 0;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
   pointer-events: none;
 `;
 
-interface Point {
-  x: number;
-  y: number;
-}
+const Title = styled.h3`
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.9);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
 
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+  &::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #22d3ee;
+    border-radius: 50%;
+    box-shadow: 0 0 12px #22d3ee;
+  }
+`;
+
+const Status = styled.div`
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 4px;
+  margin-left: 16px;
+`;
+
+const CanvasContent = styled.div`
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+`;
+
+const Node = styled.div<{ $active?: boolean; $type?: string }>`
+  min-width: 180px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.5)' : 'rgba(255,255,255,0.1)')};
+  background: ${(p) => 
+    p.$active 
+      ? 'linear-gradient(145deg, rgba(34, 211, 238, 0.15), rgba(168, 85, 247, 0.15))' 
+      : 'rgba(13, 17, 23, 0.8)'};
+  color: rgba(255,255,255,0.95);
+  backdrop-filter: blur(12px);
+  box-shadow: ${(p) => (p.$active ? '0 0 40px rgba(34, 211, 238, 0.2), inset 0 0 20px rgba(34, 211, 238, 0.05)' : '0 4px 20px rgba(0,0,0,0.2)')};
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+
+  &:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255,255,255,0.3);
+  }
+`;
+
+const NodeTitle = styled.div`
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: rgba(255,255,255,0.9);
+`;
+
+const NodeDesc = styled.div`
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  line-height: 1.4;
+`;
+
+const Connector = styled.div`
+  flex: 1;
+  height: 2px;
+  background: rgba(255,255,255,0.1);
+  min-width: 40px;
+  position: relative;
+  overflow: hidden;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.8), transparent);
+    transform: translateX(-100%);
+    animation: flow 2s linear infinite;
+  }
+
+  @keyframes flow {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+`;
+
+const GraphContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0;
+`;
 
 export const SuperWorkflow: React.FC = () => {
   const { isGenerating } = useAIStore();
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<Point | null>(null);
-  const [stage, setStage] = useState(0);
+  const [activeStep, setActiveStep] = useState(0);
 
   useEffect(() => {
     if (!isGenerating) {
-      setStage(0);
+      setActiveStep(0);
       return;
     }
-    let i = 0;
-    const timer = window.setInterval(() => {
-      i = (i + 1) % 5;
-      setStage(i);
-    }, 1200);
-    return () => window.clearInterval(timer);
+    const interval = setInterval(() => {
+      setActiveStep((prev) => (prev + 1) % 4);
+    }, 2000);
+    return () => clearInterval(interval);
   }, [isGenerating]);
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    setDragging(true);
-    dragRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging) return;
-    const d = dragRef.current;
-    if (!d) return;
-    setOffset({ x: e.clientX - d.x, y: e.clientY - d.y });
-  };
-
-  const onPointerUp = () => {
-    setDragging(false);
-    dragRef.current = null;
-  };
-
-  const zoom = (delta: number) => {
-    setScale((s) => {
-      const next = Math.max(0.6, Math.min(2.2, s + delta));
-      return Math.round(next * 100) / 100;
-    });
-  };
-
-  const base: Point[] = [
-    { x: 80, y: 120 },
-    { x: 320, y: 80 },
-    { x: 580, y: 120 },
-    { x: 820, y: 160 },
-    { x: 1080, y: 140 }
-  ];
-
   const nodes = [
-    { label: 'Entry Point', pos: base[0] },
-    { label: 'Logic Gates', pos: base[1] },
-    { label: 'Data Flow', pos: base[2] },
-    { label: 'Components Tree', pos: base[3] },
-    { label: 'Final Output', pos: base[4] }
+    { title: 'Architect', desc: 'Analyzing requirements & structure' },
+    { title: 'Planner', desc: 'Breaking down tasks & dependencies' },
+    { title: 'Coder', desc: 'Writing implementation code' },
+    { title: 'Reviewer', desc: 'Verifying logic & syntax' }
   ];
-
-  const edges = [
-    [0, 1],
-    [1, 2],
-    [2, 3],
-    [3, 4]
-  ] as const;
-
-  const toScreen = (p: Point): Point => ({
-    x: p.x * scale + offset.x,
-    y: p.y * scale + offset.y
-  });
 
   return (
     <Wrap>
-      <Controls>
-        <button type="button" aria-label="Zoom in" onClick={() => zoom(0.15)}>
-          <ZoomIn size={16} />
-        </button>
-        <button type="button" aria-label="Zoom out" onClick={() => zoom(-0.15)}>
-          <ZoomOut size={16} />
-        </button>
-        <button type="button" aria-label="Drag">
-          <Move size={16} />
-        </button>
-      </Controls>
-      <Canvas
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+      <WorkflowHeader>
+        <Title>Deep-Thinking Workflow</Title>
+        <Status>{isGenerating ? 'Processing active task...' : 'System ready'}</Status>
+      </WorkflowHeader>
+
+      <TransformWrapper
+        initialScale={0.85}
+        minScale={0.4}
+        maxScale={2.5}
+        centerOnInit
+        wheel={{ step: 0.1 }}
       >
-        <EdgeSvg viewBox="0 0 1200 400" preserveAspectRatio="none">
-          <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.6)" />
-            </marker>
-          </defs>
-          {edges.map(([a, b], idx) => {
-            const p1 = nodes[a].pos;
-            const p2 = nodes[b].pos;
-            const s1 = toScreen(p1);
-            const s2 = toScreen(p2);
-            const mx = lerp(s1.x, s2.x, 0.5);
-            const my = lerp(s1.y, s2.y, 0.5);
-            return (
-              <path
-                key={idx}
-                d={`M ${s1.x},${s1.y} C ${mx},${s1.y} ${mx},${s2.y} ${s2.x},${s2.y}`}
-                stroke="rgba(255,255,255,0.35)"
-                strokeWidth={2}
-                fill="none"
-                markerEnd="url(#arrow)"
-              />
-            );
-          })}
-        </EdgeSvg>
-        {nodes.map((n, i) => {
-          const p = toScreen(n.pos);
-          const active = stage >= i;
-          return (
-            <Node
-              key={n.label}
-              $active={active}
-              style={{
-                transform: `translate(${p.x - 80}px, ${p.y - 20}px) scale(${scale})`
-              }}
+        {({ zoomIn, zoomOut, resetTransform }) => (
+          <>
+            <OverlayControls>
+              <ControlButton onClick={() => zoomIn()} aria-label="Zoom In">
+                <Maximize size={18} />
+              </ControlButton>
+              <ControlButton onClick={() => zoomOut()} aria-label="Zoom Out">
+                <Minimize size={18} />
+              </ControlButton>
+              <ControlButton onClick={() => resetTransform()} aria-label="Reset View">
+                <RotateCcw size={18} />
+              </ControlButton>
+            </OverlayControls>
+
+            <TransformComponent
+              wrapperStyle={{ width: '100%', height: '100%' }}
+              contentStyle={{ width: '100%', height: '100%' }}
             >
-              {n.label}
-            </Node>
-          );
-        })}
-      </Canvas>
+              <CanvasContent>
+                <GraphContainer>
+                  {nodes.map((node, i) => (
+                    <React.Fragment key={i}>
+                      <Node $active={activeStep === i}>
+                        <NodeTitle>{node.title}</NodeTitle>
+                        <NodeDesc>{node.desc}</NodeDesc>
+                      </Node>
+                      {i < nodes.length - 1 && <Connector />}
+                    </React.Fragment>
+                  ))}
+                </GraphContainer>
+              </CanvasContent>
+            </TransformComponent>
+          </>
+        )}
+      </TransformWrapper>
     </Wrap>
   );
 };

@@ -257,7 +257,9 @@ export const SuperWorkflow: React.FC = () => {
                   {nodes.map((node, i) => (
                     <React.Fragment key={i}>
                       <Node
-                        ref={el => nodeRefs.current[i] = el}
+                        ref={(el) => {
+                          nodeRefs.current[i] = el;
+                        }}
                         $active={activeStep === i}
                       >
                         <NodeTitle>{node.title}</NodeTitle>

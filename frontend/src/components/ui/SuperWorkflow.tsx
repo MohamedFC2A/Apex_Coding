@@ -195,7 +195,7 @@ export const SuperWorkflow: React.FC = () => {
       setActiveStep(0);
       // Reset view when stopped
       if (transformRef.current) {
-        transformRef.current.resetTransform(1000, 'ease-in-out');
+        transformRef.current.resetTransform(1000, 'easeInOutQuad');
       }
       return;
     }
@@ -208,7 +208,7 @@ export const SuperWorkflow: React.FC = () => {
         const nodeEl = nodeRefs.current[next];
         if (nodeEl && transformRef.current) {
           // Zoom to element with smooth animation
-          transformRef.current.zoomToElement(nodeEl, 1.2, 1200, 'ease-in-out');
+          transformRef.current.zoomToElement(nodeEl, 1.2, 1200, 'easeInOutQuad');
         }
         
         return next;

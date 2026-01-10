@@ -87,7 +87,7 @@ export const ModeToggle: React.FC<ModeToggleProps> = ({ className }) => {
 
   return (
     <ToggleRoot className={className}>
-      <ToggleTrackGlow />
+      {/* Glow removed as requested */}
       <ToggleButton
         $columns={isSuper ? 1 : 3}
       >

@@ -30,7 +30,7 @@ const ContentRoot = styled.div<{ $open: boolean; $left: number; $top: number; $p
     }});
   opacity: ${(p) => (p.$open ? 1 : 0)};
   pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition: opacity 80ms ease, transform 80ms ease;
   z-index: 9999;
 `;
 
@@ -93,7 +93,7 @@ const getOverlayRoot = () => {
   return root;
 };
 
-export const Popover: React.FC<PopoverProps> = ({ children, openDelayMs = 80, closeDelayMs = 80 }) => {
+export const Popover: React.FC<PopoverProps> = ({ children, openDelayMs = 0, closeDelayMs = 0 }) => {
   const [open, setOpen] = useState(false);
   const [triggerEl, setTriggerEl] = useState<HTMLElement | null>(null);
   const openTimerRef = useRef<number | null>(null);

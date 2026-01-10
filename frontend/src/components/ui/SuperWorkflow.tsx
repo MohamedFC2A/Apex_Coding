@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useAIStore } from '@/stores/aiStore';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { TransformWrapper, TransformComponent, ReactZoomPanPinchContentRef } from 'react-zoom-pan-pinch';
 import { Maximize, Minimize, RotateCcw } from 'lucide-react';
 
 const Wrap = styled.div`
@@ -116,12 +116,13 @@ const Node = styled.div<{ $active?: boolean; $type?: string }>`
   color: rgba(255,255,255,0.95);
   backdrop-filter: blur(12px);
   box-shadow: ${(p) => (p.$active ? '0 0 40px rgba(34, 211, 238, 0.2), inset 0 0 20px rgba(34, 211, 238, 0.05)' : '0 4px 20px rgba(0,0,0,0.2)')};
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
   gap: 8px;
   position: relative;
   z-index: 2;
+  transform: ${(p) => (p.$active ? 'scale(1.05)' : 'scale(1)')};
 
   &:hover {
     transform: translateY(-4px);
@@ -146,7 +147,7 @@ const Connector = styled.div`
   flex: 1;
   height: 2px;
   background: rgba(255,255,255,0.1);
-  min-width: 40px;
+  min-width: 60px;
   position: relative;
   overflow: hidden;
 
@@ -172,22 +173,14 @@ const GraphContainer = styled.div`
   display: flex;
   align-items: center;
   gap: 0;
+  padding: 100px;
 `;
 
 export const SuperWorkflow: React.FC = () => {
   const { isGenerating } = useAIStore();
   const [activeStep, setActiveStep] = useState(0);
-
-  useEffect(() => {
-    if (!isGenerating) {
-      setActiveStep(0);
-      return;
-    }
-    const interval = setInterval(() => {
-      setActiveStep((prev) => (prev + 1) % 4);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [isGenerating]);
+  const transformRef = useRef<ReactZoomPanPinchContentRef>(null);
+  const nodeRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const nodes = [
     { title: 'Architect', desc: 'Analyzing requirements & structure' },
@@ -196,19 +189,50 @@ export const SuperWorkflow: React.FC = () => {
     { title: 'Reviewer', desc: 'Verifying logic & syntax' }
   ];
 
+  // Auto-navigation logic
+  useEffect(() => {
+    if (!isGenerating) {
+      setActiveStep(0);
+      // Reset view when stopped
+      if (transformRef.current) {
+        transformRef.current.resetTransform(1000, 'ease-in-out');
+      }
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setActiveStep((prev) => {
+        const next = (prev + 1) % nodes.length;
+        
+        // Smart navigation to the next node
+        const nodeEl = nodeRefs.current[next];
+        if (nodeEl && transformRef.current) {
+          // Zoom to element with smooth animation
+          transformRef.current.zoomToElement(nodeEl, 1.2, 1200, 'ease-in-out');
+        }
+        
+        return next;
+      });
+    }, 3500); // Slower interval for better readability
+
+    return () => clearInterval(interval);
+  }, [isGenerating, nodes.length]);
+
   return (
     <Wrap>
       <WorkflowHeader>
         <Title>Deep-Thinking Workflow</Title>
-        <Status>{isGenerating ? 'Processing active task...' : 'System ready'}</Status>
+        <Status>{isGenerating ? 'Auto-Navigating Active Tasks...' : 'System Ready'}</Status>
       </WorkflowHeader>
 
       <TransformWrapper
+        ref={transformRef}
         initialScale={0.85}
         minScale={0.4}
         maxScale={2.5}
         centerOnInit
         wheel={{ step: 0.1 }}
+        smooth={true}
       >
         {({ zoomIn, zoomOut, resetTransform }) => (
           <>
@@ -232,7 +256,10 @@ export const SuperWorkflow: React.FC = () => {
                 <GraphContainer>
                   {nodes.map((node, i) => (
                     <React.Fragment key={i}>
-                      <Node $active={activeStep === i}>
+                      <Node
+                        ref={el => nodeRefs.current[i] = el}
+                        $active={activeStep === i}
+                      >
                         <NodeTitle>{node.title}</NodeTitle>
                         <NodeDesc>{node.desc}</NodeDesc>
                       </Node>

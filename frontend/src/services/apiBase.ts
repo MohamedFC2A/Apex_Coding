@@ -1,5 +1,9 @@
+import { getViteEnv } from '@/utils/env';
+
 export const getApiBaseUrl = () => {
-  const env = import.meta.env.VITE_BACKEND_URL;
+  const env =
+    getViteEnv('VITE_BACKEND_URL') ??
+    (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_BACKEND_URL : undefined);
   if (env && String(env).trim().length > 0) return String(env).trim();
   
   // If we are on Vercel or same domain, we can just use relative paths which Vercel rewrites handle.

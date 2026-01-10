@@ -41,7 +41,7 @@ const ToggleButton = styled.div<{ $columns: number }>`
 
 const pulse = keyframes`
   0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5), 0 0 0 0 rgba(234, 179, 8, 0.45); }
-  50% { box-shadow: 0 0 16px 6px rgba(168, 85, 247, 0.65), 0 0 28px 10px rgba(234, 179, 8, 0.55); }
+  50% { box-shadow: 0 0 16px 6px rgba(168, 85, 247, 0.35), 0 0 28px 10px rgba(234, 179, 8, 0.30); }
   100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5), 0 0 0 0 rgba(234, 179, 8, 0.45); }
 `;
 
@@ -57,6 +57,8 @@ const Segment = styled.div<{ $active?: boolean; $super?: boolean }>`
   letter-spacing: 0.12em;
   font-size: 12px;
   color: ${(p) => (p.$active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)')};
+  transition: all 0.3s ease;
+
   ${(p) =>
     p.$active
       ? `
@@ -66,7 +68,12 @@ const Segment = styled.div<{ $active?: boolean; $super?: boolean }>`
     border: 1px solid rgba(255,255,255,0.16);
   `
       : 'background: transparent; border: 1px solid rgba(255,255,255,0.08);'}
-  ${(p) => (p.$super && p.$active ? css`animation: ${pulse} 2.2s ease-in-out infinite;` : '')}
+  ${(p) => (p.$super && p.$active ? css`animation: ${pulse} 3s ease-in-out infinite;` : '')}
+
+  &:hover {
+    color: rgba(255, 255, 255, 0.95);
+    background: ${(p) => (!p.$active ? 'rgba(255, 255, 255, 0.04)' : '')};
+  }
 `;
 
 interface ModeToggleProps {

@@ -40,12 +40,15 @@ const Shell = styled.div<{ $mode: 'create' | 'edit' }>`
     position: fixed;
     left: 12px;
     right: 12px;
-    bottom: calc(12px + var(--mobile-nav-height) + var(--brain-console-collapsed-height) + env(safe-area-inset-bottom));
+    bottom: calc(12px + var(--mobile-nav-height) + env(safe-area-inset-bottom));
     max-width: none;
-    z-index: 80;
+    z-index: 100;
     flex-direction: column;
     padding: 12px;
     border-radius: 20px;
+    background: rgba(13, 17, 23, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.75);
   }
 `;
 

@@ -86,6 +86,7 @@ export const getStackBlitzFiles = (files: ProjectFile[]) => {
         'react': '^18.2.0',
         'react-dom': '^18.2.0',
         'lucide-react': '^0.294.0',
+        'styled-components': '^6.1.0',
         'tailwindcss': '^3.4.0',
         'postcss': '^8.4.32',
         'autoprefixer': '^10.4.16'
@@ -119,11 +120,18 @@ export const getStackBlitzFiles = (files: ProjectFile[]) => {
           if (!pkg.devDependencies['vite']) pkg.devDependencies['vite'] = '^5.0.0';
           if (!pkg.devDependencies['@vitejs/plugin-react']) pkg.devDependencies['@vitejs/plugin-react'] = '^4.2.1';
           if (!pkg.devDependencies['typescript']) pkg.devDependencies['typescript'] = '^5.0.0';
+          if (!pkg.devDependencies['@types/react']) pkg.devDependencies['@types/react'] = '^18.2.43';
+          if (!pkg.devDependencies['@types/react-dom']) pkg.devDependencies['@types/react-dom'] = '^18.2.17';
 
           // Ensure basic runtime deps if missing
           pkg.dependencies = pkg.dependencies || {};
           if (!pkg.dependencies['react']) pkg.dependencies['react'] = '^18.2.0';
           if (!pkg.dependencies['react-dom']) pkg.dependencies['react-dom'] = '^18.2.0';
+          if (!pkg.dependencies['lucide-react']) pkg.dependencies['lucide-react'] = '^0.294.0';
+          if (!pkg.dependencies['styled-components']) pkg.dependencies['styled-components'] = '^6.1.0';
+          if (!pkg.dependencies['tailwindcss']) pkg.dependencies['tailwindcss'] = '^3.4.0';
+          if (!pkg.dependencies['postcss']) pkg.dependencies['postcss'] = '^8.4.32';
+          if (!pkg.dependencies['autoprefixer']) pkg.dependencies['autoprefixer'] = '^10.4.16';
           
           sbFiles['package.json'] = JSON.stringify(pkg, null, 2);
       } catch (e) {

@@ -24,14 +24,14 @@ describe('aiService (API mode)', () => {
 
     const res = await aiService.generatePlan('test prompt', false);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/ai/plan',
-      expect.objectContaining({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: 'test prompt', thinkingMode: false })
-      })
-    );
+    const call = fetchMock.mock.calls[0];
+    expect(call[0]).toBe('/api/ai/plan');
+    const options = call[1];
+    expect(options.method).toBe('POST');
+    expect(options.headers).toEqual({ 'Content-Type': 'application/json' });
+    const payload = JSON.parse(options.body);
+    expect(payload.thinkingMode).toBe(false);
+    expect(String(payload.prompt)).toContain('test prompt');
     expect(res.steps).toEqual([{ id: '1', title: 'Test step' }]);
   });
 

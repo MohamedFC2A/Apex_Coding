@@ -21,9 +21,10 @@ type WorkspaceFileRecord = {
 };
 
 const DB_NAME = 'apex-coding-workspace';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const META_STORE = 'meta';
 const FILE_STORE = 'files';
+const SESSIONS_STORE = 'sessions';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -42,6 +43,10 @@ const openDb = (): Promise<IDBDatabase> => {
       const db = req.result;
       if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'key' });
       if (!db.objectStoreNames.contains(FILE_STORE)) db.createObjectStore(FILE_STORE, { keyPath: 'path' });
+      if (!db.objectStoreNames.contains(SESSIONS_STORE)) {
+        const store = db.createObjectStore(SESSIONS_STORE, { keyPath: 'id' });
+        store.createIndex('by_updatedAt', 'updatedAt', { unique: false });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -132,4 +137,3 @@ export const clearWorkspace = async () => {
     return;
   });
 };
-

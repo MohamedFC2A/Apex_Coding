@@ -4,6 +4,7 @@ import { FileSystem, GenerationStatus, ProjectFile } from '@/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { aiService } from '@/services/aiService';
 import { repairTruncatedContent } from '@/utils/codeRepair';
+import { loadSessionsFromDisk, saveSessionToDisk, type StoredHistorySession } from '@/utils/sessionDb';
 
 type ModelMode = 'fast' | 'thinking' | 'super';
 export type FileStreamStatus = 'ready' | 'queued' | 'writing' | 'partial' | 'compromised';
@@ -33,6 +34,10 @@ export interface HistorySession {
   title: string;
   projectName: string;
   files: FileSystem;
+  projectFiles?: ProjectFile[];
+  stack?: string;
+  description?: string;
+  activeFile?: string | null;
   chatHistory: ChatMessage[];
   plan: string;
   planSteps: PlanStep[];
@@ -126,6 +131,7 @@ interface AIStoreActions {
   handleFileEvent: (event: { type: 'start' | 'chunk' | 'end'; path: string; mode?: 'create' | 'edit'; chunk?: string; partial?: boolean; line?: number; append?: boolean }) => void;
   setFilesFromProjectFiles: (files: ProjectFile[]) => void;
   saveCurrentSession: () => void;
+  hydrateHistoryFromDisk: () => Promise<void>;
   restoreSession: (sessionId: string) => void;
   startNewChat: () => void;
   reset: () => void;
@@ -287,6 +293,28 @@ const compressChatHistory = (history: ChatMessage[]): ChatMessage[] => {
 };
 
 const normalizeFileSystem = (files: FileSystemState): FileSystem => (Array.isArray(files) ? {} : files);
+
+const flattenFileSystem = (tree: FileSystem, currentPath: string = ''): ProjectFile[] => {
+  const out: ProjectFile[] = [];
+
+  for (const [name, entry] of Object.entries(tree || {})) {
+    const nextPath = currentPath ? `${currentPath}/${name}` : name;
+
+    if (entry.file) {
+      out.push({
+        name,
+        path: nextPath,
+        content: entry.file.contents || ''
+      });
+    }
+
+    if (entry.directory) {
+      out.push(...flattenFileSystem(entry.directory, nextPath));
+    }
+  }
+
+  return out;
+};
 
 const cloneFileSystem = (tree: FileSystem): FileSystem => {
   const cloned: FileSystem = {};
@@ -765,6 +793,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         const projectStore = useProjectStore.getState();
         const projectFiles = projectStore.files;
         const projectName = projectStore.projectName || '';
+        const stack = projectStore.stack || '';
+        const description = projectStore.description || '';
+        const activeFile = projectStore.activeFile || null;
+        const fileStructure = projectStore.fileStructure || [];
 
         const projectBytes = projectFiles.reduce((acc, f) => acc + (f.content ? f.content.length : 0), 0);
         const shouldSnapshotFileContents = projectFiles.length > 0 && projectBytes <= 700_000 && projectFiles.length <= 120;
@@ -818,6 +850,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           title: titleSource.slice(0, 60),
           projectName,
           files: cloneFileSystem(snapshotFiles),
+          projectFiles: shouldSnapshotFileContents ? projectFiles.map((f) => ({ ...f })) : undefined,
+          stack,
+          description,
+          activeFile,
           chatHistory: compressChatHistory(state.chatHistory),
           plan: state.plan,
           planSteps: state.planSteps.map((step) => ({ ...step })),
@@ -837,16 +873,98 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           const nextHistory = [snapshot, ...state.history];
           set({ history: nextHistory.slice(0, 12), currentSessionId: sessionId });
         }
+
+        // Persist the session to IndexedDB (non-blocking).
+        try {
+          const stored: StoredHistorySession = {
+            id: snapshot.id,
+            createdAt: snapshot.createdAt,
+            updatedAt: snapshot.updatedAt,
+            title: snapshot.title,
+            projectName,
+            stack,
+            description,
+            activeFile,
+            fileStructure,
+            projectFiles: projectFiles.map((f) => ({
+              name: f.name,
+              path: f.path,
+              content: f.content,
+              language: f.language
+            })),
+            chatHistory: snapshot.chatHistory.map((m) => ({ role: m.role, content: m.content })),
+            plan: snapshot.plan,
+            planSteps: snapshot.planSteps.map((s) => ({
+              id: s.id,
+              title: s.title,
+              completed: s.completed,
+              category: s.category as any,
+              files: s.files,
+              description: s.description
+            })),
+            contextSize: snapshot.contextSize
+          };
+          setTimeout(() => void saveSessionToDisk(stored).catch(() => undefined), 0);
+        } catch {
+          // ignore persistence errors
+        }
+      },
+
+      hydrateHistoryFromDisk: async () => {
+        if (typeof window === 'undefined') return;
+        try {
+          const stored = await loadSessionsFromDisk(40).catch(() => []);
+          if (!Array.isArray(stored) || stored.length === 0) return;
+
+          const sessions: HistorySession[] = stored.map((s) => ({
+            id: s.id,
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt,
+            title: s.title,
+            projectName: s.projectName,
+            stack: s.stack,
+            description: s.description,
+            activeFile: s.activeFile,
+            projectFiles: Array.isArray(s.projectFiles) ? s.projectFiles : [],
+            files: buildTreeFromProjectFiles(Array.isArray(s.projectFiles) ? s.projectFiles : []),
+            chatHistory: Array.isArray(s.chatHistory) ? s.chatHistory.map((m) => ({ role: m.role as any, content: m.content })) : [],
+            plan: s.plan || '',
+            planSteps: Array.isArray(s.planSteps) ? s.planSteps.map((p) => ({ ...p })) : [],
+            contextSize: Number(s.contextSize || 0)
+          }));
+
+          set((prev) => ({
+            history: sessions.slice(0, 40),
+            currentSessionId: prev.currentSessionId
+          }));
+        } catch {
+          // ignore
+        }
       },
 
       restoreSession: (sessionId) => {
         const session = get().history.find((item) => item.id === sessionId);
         if (!session) return;
 
-        // Restore project name in projectStore
-        if (session.projectName) {
-          useProjectStore.getState().setProjectName(session.projectName);
-        }
+        const projectStore = useProjectStore.getState();
+        const projectFiles =
+          Array.isArray(session.projectFiles) && session.projectFiles.length > 0
+            ? session.projectFiles
+            : flattenFileSystem(session.files);
+
+        if (session.projectName) projectStore.setProjectName(session.projectName);
+        if (typeof session.stack === 'string') projectStore.setStack(session.stack);
+        if (typeof session.description === 'string') projectStore.setDescription(session.description);
+        projectStore.setFiles(projectFiles);
+        projectStore.setFileStructure(
+          projectFiles.map((file) => ({
+            path: file.path || file.name,
+            type: 'file' as const
+          }))
+        );
+
+        const nextActive = session.activeFile || projectFiles[0]?.path || projectFiles[0]?.name || null;
+        if (nextActive) projectStore.setActiveFile(nextActive);
 
         set({
           files: cloneFileSystem(session.files),
@@ -914,7 +1032,6 @@ export const useAIStore = createWithEqualityFn<AIState>()(
          }
 
          useProjectStore.getState().reset();
-         window.location.reload();
        },
 
       reset: () => set(buildInitialState()),

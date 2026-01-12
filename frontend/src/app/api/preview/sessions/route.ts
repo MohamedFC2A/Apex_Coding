@@ -6,6 +6,27 @@ const getRunnerConfig = () => {
   return { url, token };
 };
 
+const joinUrlPath = (baseUrl: string, path: string) => {
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  const p = String(path || '');
+  if (!base) return p;
+  if (!p) return base;
+  if (p.startsWith('/')) return `${base}${p}`;
+  return `${base}/${p}`;
+};
+
+const rewritePreviewSessionUrl = (runnerBaseUrl: string, maybeUrl: string) => {
+  const raw = String(maybeUrl || '').trim();
+  if (!raw) return raw;
+  if (raw.startsWith('/')) return joinUrlPath(runnerBaseUrl, raw);
+  try {
+    const parsed = new URL(raw);
+    return joinUrlPath(runnerBaseUrl, `${parsed.pathname}${parsed.search}${parsed.hash}`);
+  } catch {
+    return raw;
+  }
+};
+
 export async function POST(req: Request) {
   const { url, token } = getRunnerConfig();
   if (!url || !token) {
@@ -33,9 +54,23 @@ export async function POST(req: Request) {
     });
 
     const text = await upstream.text().catch(() => '');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+
+    if (upstream.ok && contentType.includes('application/json')) {
+      try {
+        const data = JSON.parse(text);
+        if (data && typeof data === 'object' && typeof data.url === 'string') {
+          data.url = rewritePreviewSessionUrl(url, data.url);
+          return NextResponse.json(data, { status: upstream.status });
+        }
+      } catch {
+        // fall through
+      }
+    }
+
     return new NextResponse(text, {
       status: upstream.status,
-      headers: { 'Content-Type': upstream.headers.get('content-type') || 'application/json' }
+      headers: { 'Content-Type': contentType }
     });
   } catch (err: any) {
     return NextResponse.json(

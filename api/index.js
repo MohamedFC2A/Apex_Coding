@@ -190,8 +190,93 @@ const proxyToPreviewRunner = async (req, res, { method, url, body }) => {
   }
 };
 
+const joinUrlPath = (baseUrl, path) => {
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  const p = String(path || '');
+  if (!base) return p;
+  if (!p) return base;
+  if (p.startsWith('/')) return `${base}${p}`;
+  return `${base}/${p}`;
+};
+
+const rewritePreviewSessionUrl = (runnerBaseUrl, maybeUrl) => {
+  const raw = String(maybeUrl || '').trim();
+  if (!raw) return raw;
+
+  if (raw.startsWith('/')) return joinUrlPath(runnerBaseUrl, raw);
+
+  try {
+    const parsed = new URL(raw);
+    const pathAndQuery = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return joinUrlPath(runnerBaseUrl, pathAndQuery);
+  } catch {
+    return raw;
+  }
+};
+
 app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
-  return proxyToPreviewRunner(req, res, { method: 'POST', url: '/api/sessions', body: req.body });
+  const config = getPreviewRunnerConfig();
+  if (!config) {
+    return res.status(500).json({
+      error: 'Preview runner is not configured',
+      missing: ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim()),
+      requestId: req.requestId
+    });
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = 25_000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const upstream = await fetch(`${config.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.token}`
+      },
+      body: JSON.stringify(req.body || {}),
+      signal: controller.signal
+    });
+
+    const text = await upstream.text().catch(() => '');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+
+    if (!upstream.ok) {
+      res.status(upstream.status);
+      res.setHeader('Content-Type', contentType);
+      return res.send(text);
+    }
+
+    // Ensure preview URL is reachable from the client by anchoring it to PREVIEW_RUNNER_URL.
+    if (contentType.includes('application/json')) {
+      try {
+        const data = JSON.parse(text);
+        if (data && typeof data === 'object' && typeof data.url === 'string') {
+          data.url = rewritePreviewSessionUrl(config.baseUrl, data.url);
+          res.status(upstream.status);
+          res.setHeader('Content-Type', 'application/json');
+          return res.send(JSON.stringify(data));
+        }
+      } catch {
+        // fall through
+      }
+    }
+
+    res.status(upstream.status);
+    res.setHeader('Content-Type', contentType);
+    return res.send(text);
+  } catch (err) {
+    const message = String(err?.name === 'AbortError' ? 'Preview runner timeout' : err?.message || err || 'Preview runner error');
+    return res.status(502).json({
+      error: message,
+      hint:
+        'Preview runner is unreachable. Local dev: run `cd preview-runner && docker compose up -d` and set PREVIEW_RUNNER_URL=http://localhost:8080. Vercel: PREVIEW_RUNNER_URL must be a public URL (not localhost).',
+      requestId: req.requestId
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {

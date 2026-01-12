@@ -695,6 +695,10 @@ function App() {
     void useProjectStore.getState().hydrateFromDisk();
   }, []);
 
+  useEffect(() => {
+    void useAIStore.getState().hydrateHistoryFromDisk();
+  }, []);
+
   const {
     files,
     activeFile,

@@ -83,7 +83,9 @@ async function waitForHttpReady({ url, timeoutMs }) {
   while (Date.now() < deadline) {
     try {
       const res = await fetch(url, { method: 'GET' });
-      if (res.ok || res.status === 404) return;
+      // Many dev servers are "ready" even if they return a non-2xx response on `/` (e.g. Vite can return 403
+      // when Host headers don't match its allowed list during early startup).
+      if (res.status < 500) return;
       lastErr = new Error(`HTTP ${res.status}`);
     } catch (e) {
       lastErr = e;

@@ -16,6 +16,7 @@ const PREVIEW_PROTOCOL = String(process.env.PREVIEW_PROTOCOL || 'http').trim();
 const PREVIEW_PUBLIC_PORT_RAW = String(process.env.PREVIEW_PUBLIC_PORT || '').trim();
 const PREVIEW_PUBLIC_PORT_PARSED = PREVIEW_PUBLIC_PORT_RAW ? Number(PREVIEW_PUBLIC_PORT_RAW) : PORT;
 const PREVIEW_PUBLIC_PORT = Number.isFinite(PREVIEW_PUBLIC_PORT_PARSED) ? PREVIEW_PUBLIC_PORT_PARSED : PORT;
+const PREVIEW_URL_MODE_RAW = String(process.env.PREVIEW_URL_MODE || '').trim().toLowerCase();
 const API_TOKEN = String(process.env.PREVIEW_RUNNER_TOKEN || '').trim();
 const SESSION_TTL_MINUTES = Number(process.env.SESSION_TTL_MINUTES || 45);
 const SANDBOX_IMAGE = String(process.env.SANDBOX_IMAGE || 'apex-preview-sandbox:latest').trim();
@@ -61,11 +62,21 @@ const PatchFilesSchema = z.object({
 
 const createId = () => crypto.randomBytes(10).toString('base64url');
 
+const getPreviewUrlMode = () => {
+  if (PREVIEW_URL_MODE_RAW === 'subdomain' || PREVIEW_URL_MODE_RAW === 'path') return PREVIEW_URL_MODE_RAW;
+  // Windows DNS does not reliably resolve `*.localhost` for all tools.
+  // Default to path-based sessions on localhost.
+  if (PREVIEW_DOMAIN === 'localhost' || PREVIEW_DOMAIN === '127.0.0.1') return 'path';
+  return 'subdomain';
+};
+
 const sessionUrlForId = (id) => {
+  const mode = getPreviewUrlMode();
   const omitPort =
     (PREVIEW_PROTOCOL === 'http' && PREVIEW_PUBLIC_PORT === 80) ||
     (PREVIEW_PROTOCOL === 'https' && PREVIEW_PUBLIC_PORT === 443);
   const portPart = omitPort ? '' : `:${PREVIEW_PUBLIC_PORT}`;
+  if (mode === 'path') return `${PREVIEW_PROTOCOL}://${PREVIEW_DOMAIN}${portPart}/s/${id}/`;
   return `${PREVIEW_PROTOCOL}://${id}.${PREVIEW_DOMAIN}${portPart}/`;
 };
 
@@ -203,9 +214,12 @@ app.get('/', (_req, res) => {
   res.type('text').send('Apex Preview Runner is running.');
 });
 
-const proxy = httpProxy.createProxyServer({ ws: true, changeOrigin: true, xfwd: true });
+// NOTE: keep the original Host header so dev servers like Vite (DNS rebinding protection)
+// accept `*.localhost` and similar preview domains.
+const proxy = httpProxy.createProxyServer({ ws: true, changeOrigin: false, xfwd: true });
 
 const getSessionIdFromHost = (host) => {
+  if (getPreviewUrlMode() !== 'subdomain') return null;
   const cleanHost = String(host || '').trim().toLowerCase();
   if (!cleanHost) return null;
   if (cleanHost === PREVIEW_DOMAIN) return null;
@@ -215,11 +229,26 @@ const getSessionIdFromHost = (host) => {
   return id || null;
 };
 
+const getSessionIdFromPath = (url) => {
+  if (getPreviewUrlMode() !== 'path') return null;
+  const u = String(url || '');
+  const m = /^\/s\/([A-Za-z0-9_-]+)(\/|$)/.exec(u);
+  return m ? m[1] : null;
+};
+
+const stripSessionPrefixFromPath = (url, id) => {
+  const u = String(url || '');
+  const prefix = `/s/${id}`;
+  if (!u.startsWith(prefix)) return u;
+  const rest = u.slice(prefix.length);
+  return rest.length > 0 ? rest : '/';
+};
+
 const server = http.createServer((req, res) => {
   const isApi = String(req.url || '').startsWith('/api/');
   if (isApi) return app(req, res);
 
-  const id = getSessionIdFromHost(req.headers.host);
+  const id = getSessionIdFromHost(req.headers.host) || getSessionIdFromPath(req.url);
   if (!id) return app(req, res);
 
   const s = sessions.get(id);
@@ -231,6 +260,7 @@ const server = http.createServer((req, res) => {
   }
 
   touchSession(id);
+  req.url = stripSessionPrefixFromPath(req.url, id);
   proxy.web(req, res, { target: `http://${s.containerName}:${SESSION_PORT}` }, (err) => {
     res.statusCode = 502;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -239,10 +269,11 @@ const server = http.createServer((req, res) => {
 });
 
 server.on('upgrade', (req, socket, head) => {
-  const id = getSessionIdFromHost(req.headers.host);
+  const id = getSessionIdFromHost(req.headers.host) || getSessionIdFromPath(req.url);
   const s = id ? sessions.get(id) : null;
   if (!s) return socket.destroy();
   touchSession(id);
+  req.url = stripSessionPrefixFromPath(req.url, id);
   proxy.ws(req, socket, head, { target: `http://${s.containerName}:${SESSION_PORT}` });
 });
 

@@ -8,7 +8,7 @@ Runs AI-generated TypeScript projects on your own server using Docker, then serv
 - API is protected with a bearer token; the preview itself is public via an unguessable session subdomain.
 
 ## Local dev (no DNS needed)
-`*.localhost` resolves to `127.0.0.1`, so session URLs like `http://<id>.localhost:8080` work automatically.
+On Windows, `*.localhost` does not always resolve in every tool, so local dev defaults to **path-based** session URLs like `http://localhost:8080/s/<id>/`.
 
 1) Build + run:
 ```bash
@@ -16,9 +16,13 @@ cd preview-runner
 docker compose up --build
 ```
 
-2) Set the same token in your app backend (server-side env):
+2) Configure a token (recommended):
+- Copy `preview-runner/.env.example` to `preview-runner/.env`
+- Set `PREVIEW_RUNNER_TOKEN` to a long random string
+
+3) Set the same values in your app backend (server-side env):
 - `PREVIEW_RUNNER_URL=http://localhost:8080`
-- `PREVIEW_RUNNER_TOKEN=replace-me`
+- `PREVIEW_RUNNER_TOKEN=<same token>`
 
 ## Production (recommended)
 1) Create a wildcard DNS record:
@@ -27,6 +31,10 @@ docker compose up --build
 2) Run the runner on your server (Docker is recommended).
 
 3) Put TLS in front of it (recommended). You will need a wildcard certificate for `*.preview.example.com` (usually via DNS challenge).
+
+## URL modes
+- `PREVIEW_URL_MODE=path` (best for local dev): URLs look like `http://localhost:8080/s/<id>/`
+- `PREVIEW_URL_MODE=subdomain` (best for production): URLs look like `https://<id>.preview.example.com/`
 
 ## Requirements for generated projects
 The preview runner expects:

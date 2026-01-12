@@ -39,12 +39,17 @@ async function createSessionContainer(docker, { containerName, image, networkNam
     ].join('; ')
   ];
 
+  const memoryMbRaw = Number(process.env.SESSION_MEMORY_MB || process.env.SESSION_MEMORY || 1024);
+  const memoryMb = Number.isFinite(memoryMbRaw) ? Math.max(256, Math.floor(memoryMbRaw)) : 1024;
+  const nanoCpusRaw = Number(process.env.SESSION_NANOCPUS || 1_500_000_000);
+  const nanoCpus = Number.isFinite(nanoCpusRaw) ? Math.max(250_000_000, Math.floor(nanoCpusRaw)) : 1_500_000_000;
+
   const hostConfig = {
     AutoRemove: true,
     CapDrop: ['ALL'],
     SecurityOpt: ['no-new-privileges'],
-    Memory: 1536 * 1024 * 1024,
-    NanoCpus: 1_500_000_000, // ~1.5 CPU
+    Memory: memoryMb * 1024 * 1024,
+    NanoCpus: nanoCpus,
     PidsLimit: 512
   };
 

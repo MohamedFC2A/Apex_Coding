@@ -19,6 +19,7 @@ docker compose up --build
 2) Configure a token (recommended):
 - Copy `preview-runner/.env.example` to `preview-runner/.env`
 - Set `PREVIEW_RUNNER_TOKEN` to a long random string
+ - If your machine is low on RAM, set `SESSION_MEMORY_MB=768` (or even `512` for tiny projects)
 
 3) Set the same values in your app backend (server-side env):
 - `PREVIEW_RUNNER_URL=http://localhost:8080`

@@ -21,7 +21,7 @@ app.use((req, _res, next) => {
 });
 
 const allowedOrigins = parseAllowedOrigins(process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || process.env.FRONTEND_ORIGINS);
-const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5000', 'http://127.0.0.1:5000'];
 const vercelOrigin = process.env.VERCEL_URL ? `https://${String(process.env.VERCEL_URL).trim()}` : null;
 const effectiveOrigins = allowedOrigins.length > 0 ? allowedOrigins : [...defaultDevOrigins, vercelOrigin].filter(Boolean);
 
@@ -38,6 +38,8 @@ const corsOptionsDelegate = (req, callback) => {
     const host = String(req.headers.host || '').trim();
     if (host && o.host === host) allowed = true;
     if (!allowed && o.host.endsWith('vercel.app')) allowed = true;
+    if (!allowed && o.host.endsWith('.replit.dev')) allowed = true;
+    if (!allowed && o.host.endsWith('.repl.co')) allowed = true;
   } catch {}
 
   if (!allowed && effectiveOrigins.includes('*')) allowed = true;

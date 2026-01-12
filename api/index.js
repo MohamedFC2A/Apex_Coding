@@ -188,27 +188,15 @@ const toPreviewFileMapFromArray = (files) => {
 };
 
 app.get(['/preview/config', '/api/preview/config'], (req, res) => {
-  const provider = getPreviewProvider();
-
-  const runnerBaseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
-  const runnerToken = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
-
   const { apiKey: csbApiKey } = getCodeSandboxConfig();
 
-  const baseUrl = provider === 'preview-runner' ? runnerBaseUrl : 'https://codesandbox.io';
-  const token = provider === 'preview-runner' ? runnerToken : csbApiKey;
   return res.json({
-    provider,
-    configured: provider === 'preview-runner' ? Boolean(runnerBaseUrl && runnerToken) : Boolean(csbApiKey),
-    missing:
-      provider === 'preview-runner'
-        ? ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim())
-        : Boolean(csbApiKey)
-          ? []
-          : ['CSB_API_KEY'],
-    baseUrl: baseUrl || null,
-    tokenPresent: Boolean(token),
-    tokenLast4: token ? token.slice(-4) : null,
+    provider: 'codesandbox',
+    configured: Boolean(csbApiKey),
+    missing: csbApiKey ? [] : ['CSB_API_KEY'],
+    baseUrl: 'https://codesandbox.io',
+    tokenPresent: Boolean(csbApiKey),
+    tokenLast4: csbApiKey ? csbApiKey.slice(-4) : null,
     requestId: req.requestId
   });
 });
@@ -290,146 +278,57 @@ const rewritePreviewSessionUrl = (runnerBaseUrl, maybeUrl) => {
 };
 
 app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
-  const provider = getPreviewProvider();
-  if (provider === 'codesandbox') {
-    try {
-      const fileMap = toPreviewFileMapFromArray(req.body?.files);
-      const fileCount = Object.keys(fileMap).length;
-      if (fileCount === 0) return res.status(400).json({ error: 'files is required' });
-
-      const { sandboxId, url } = await createSandboxPreview({ fileMap });
-
-      const now = Date.now();
-      return res.json({ id: sandboxId, url, createdAt: now, updatedAt: now, provider });
-    } catch (err) {
-      const message = String(err?.message || err || 'CodeSandbox preview error');
-      return res.status(502).json({ error: message, requestId: req.requestId });
-    }
-  }
-
-  const config = getPreviewRunnerConfig();
-  if (!config) {
-    return res.status(500).json({
-      error: 'Preview runner is not configured',
-      missing: ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim()),
-      requestId: req.requestId
-    });
-  }
-
-  const controller = new AbortController();
-  const timeoutMs = 25_000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
+  const provider = 'codesandbox';
   try {
-    const upstream = await fetch(`${config.baseUrl}/api/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.token}`
-      },
-      body: JSON.stringify(req.body || {}),
-      signal: controller.signal
-    });
+    const fileMap = toPreviewFileMapFromArray(req.body?.files);
+    const fileCount = Object.keys(fileMap).length;
+    if (fileCount === 0) return res.status(400).json({ error: 'files is required' });
 
-    const text = await upstream.text().catch(() => '');
-    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const { sandboxId, url } = await createSandboxPreview({ fileMap });
 
-    if (upstream.status === 401 || upstream.status === 403) {
-      return res.status(upstream.status).json({
-        error: 'Unauthorized from preview runner',
-        hint:
-          'PREVIEW_RUNNER_TOKEN mismatch. Ensure Vercel env PREVIEW_RUNNER_TOKEN exactly matches the preview-runner env PREVIEW_RUNNER_TOKEN (no quotes/spaces), then redeploy Vercel and restart preview-runner.',
-        requestId: req.requestId
-      });
-    }
-
-    if (!upstream.ok) {
-      res.status(upstream.status);
-      res.setHeader('Content-Type', contentType);
-      return res.send(text);
-    }
-
-    // Ensure preview URL is reachable from the client by anchoring it to PREVIEW_RUNNER_URL.
-    if (contentType.includes('application/json')) {
-      try {
-        const data = JSON.parse(text);
-        if (data && typeof data === 'object' && typeof data.url === 'string') {
-          data.url = rewritePreviewSessionUrl(config.baseUrl, data.url);
-          res.status(upstream.status);
-          res.setHeader('Content-Type', 'application/json');
-          return res.send(JSON.stringify(data));
-        }
-      } catch {
-        // fall through
-      }
-    }
-
-    res.status(upstream.status);
-    res.setHeader('Content-Type', contentType);
-    return res.send(text);
+    const now = Date.now();
+    return res.json({ id: sandboxId, url, createdAt: now, updatedAt: now, provider });
   } catch (err) {
-    const message = String(err?.name === 'AbortError' ? 'Preview runner timeout' : err?.message || err || 'Preview runner error');
-    return res.status(502).json({
-      error: message,
-      hint:
-        'Preview runner is unreachable. Local dev: run `cd preview-runner && docker compose up -d` and set PREVIEW_RUNNER_URL=http://localhost:8080. Vercel: PREVIEW_RUNNER_URL must be a public URL (not localhost).',
-      requestId: req.requestId
-    });
-  } finally {
-    clearTimeout(timer);
+    const message = String(err?.message || err || 'CodeSandbox preview error');
+    return res.status(502).json({ error: message, requestId: req.requestId });
   }
 });
 
 app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
-  const provider = getPreviewProvider();
-  if (provider === 'codesandbox') {
-    const id = String(req.params.id || '').trim();
-    if (!id) return res.status(400).json({ error: 'id is required', requestId: req.requestId });
-    return res.json({
-      id,
-      url: `https://${encodeURIComponent(id)}-3000.csb.app`,
-      requestId: req.requestId,
-      provider
-    });
-  }
-
+  const provider = 'codesandbox';
   const id = String(req.params.id || '').trim();
-  return proxyToPreviewRunner(req, res, { method: 'GET', url: `/api/sessions/${encodeURIComponent(id)}` });
+  if (!id) return res.status(400).json({ error: 'id is required', requestId: req.requestId });
+  return res.json({
+    id,
+    url: `https://${encodeURIComponent(id)}-3000.csb.app`,
+    requestId: req.requestId,
+    provider
+  });
 });
 
 app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
-  const provider = getPreviewProvider();
-  if (provider === 'codesandbox') {
-    try {
-      const sandboxId = String(req.params.id || '').trim();
-      const { url } = await patchSandboxFiles({
-        sandboxId,
-        create: req.body?.create,
-        destroy: req.body?.destroy,
-        files: req.body?.files
-      });
-      const updatedAt = Date.now();
-      return res.json({ ok: true, id: sandboxId, url, updatedAt, requestId: req.requestId, provider });
-    } catch (err) {
-      const message = String(err?.message || err || 'CodeSandbox preview update error');
-      return res.status(502).json({ error: message, requestId: req.requestId });
-    }
+  const provider = 'codesandbox';
+  try {
+    const sandboxId = String(req.params.id || '').trim();
+    const { url } = await patchSandboxFiles({
+      sandboxId,
+      create: req.body?.create,
+      destroy: req.body?.destroy,
+      files: req.body?.files
+    });
+    const updatedAt = Date.now();
+    return res.json({ ok: true, id: sandboxId, url, updatedAt, requestId: req.requestId, provider });
+  } catch (err) {
+    const message = String(err?.message || err || 'CodeSandbox preview update error');
+    return res.status(502).json({ error: message, requestId: req.requestId });
   }
-
-  const id = String(req.params.id || '').trim();
-  return proxyToPreviewRunner(req, res, { method: 'PATCH', url: `/api/sessions/${encodeURIComponent(id)}/files`, body: req.body });
 });
 
 app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
-  const provider = getPreviewProvider();
-  if (provider === 'codesandbox') {
-    const sandboxId = String(req.params.id || '').trim();
-    await hibernateSandbox(sandboxId);
-    return res.json({ ok: true, requestId: req.requestId, provider });
-  }
-
-  const id = String(req.params.id || '').trim();
-  return proxyToPreviewRunner(req, res, { method: 'DELETE', url: `/api/sessions/${encodeURIComponent(id)}` });
+  const provider = 'codesandbox';
+  const sandboxId = String(req.params.id || '').trim();
+  await hibernateSandbox(sandboxId);
+  return res.json({ ok: true, requestId: req.requestId, provider });
 });
 
 const normalizeDeepSeekBaseUrl = (raw) => {

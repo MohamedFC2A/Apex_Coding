@@ -32,6 +32,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
 
   const sessionIdRef = useRef<string | null>(null);
+  const creatingSessionRef = useRef(false);
   const prevMapRef = useRef<FileMap>({});
   const patchTimerRef = useRef<number | null>(null);
   const idleHandleRef = useRef<number | null>(null);
@@ -41,6 +42,8 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   };
 
   const createSession = async (initialFiles = files) => {
+    if (creatingSessionRef.current) return;
+    creatingSessionRef.current = true;
     if (!Array.isArray(initialFiles) || initialFiles.length === 0) {
       setRuntimeStatus('idle');
       setPreviewUrl(null);
@@ -48,6 +51,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       setSessionId(null);
       sessionIdRef.current = null;
       setIsLoading(false);
+      creatingSessionRef.current = false;
       return;
     }
 
@@ -100,6 +104,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       sessionIdRef.current = null;
     } finally {
       setIsLoading(false);
+      creatingSessionRef.current = false;
     }
   };
 
@@ -133,6 +138,16 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
+
+  // If the user opened preview before files existed (common), create a session once files arrive.
+  useEffect(() => {
+    if (!enabled) return;
+    if (sessionIdRef.current) return;
+    if (!Array.isArray(files) || files.length === 0) return;
+    if (isGenerating || isPlanning) return;
+    void createSession(files);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, files.length, isGenerating, isPlanning]);
 
   useEffect(() => {
     if (!sessionId) return;

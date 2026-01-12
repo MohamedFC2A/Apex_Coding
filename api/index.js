@@ -140,13 +140,33 @@ app.post(['/download/zip', '/api/download/zip'], async (req, res) => {
 // Preview Runner proxy (Vercel)
 // ================================
 const normalizePreviewRunnerUrl = (raw) => String(raw || '').trim().replace(/\/+$/, '');
+const normalizePreviewRunnerToken = (raw) => {
+  const token = String(raw || '').trim();
+  // Guard against env values accidentally copied with quotes in Vercel UI.
+  if (token.length >= 2 && ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'")))) {
+    return token.slice(1, -1).trim();
+  }
+  return token;
+};
 
 const getPreviewRunnerConfig = () => {
   const baseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
-  const token = String(process.env.PREVIEW_RUNNER_TOKEN || '').trim();
+  const token = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
   if (!baseUrl || !token) return null;
   return { baseUrl, token };
 };
+
+app.get(['/preview/config', '/api/preview/config'], (req, res) => {
+  const baseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
+  const token = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
+  return res.json({
+    configured: Boolean(baseUrl && token),
+    baseUrl: baseUrl || null,
+    tokenPresent: Boolean(token),
+    tokenLast4: token ? token.slice(-4) : null,
+    requestId: req.requestId
+  });
+});
 
 const proxyToPreviewRunner = async (req, res, { method, url, body }) => {
   const config = getPreviewRunnerConfig();

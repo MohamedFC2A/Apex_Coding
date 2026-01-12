@@ -12,7 +12,7 @@ const nextConfig = {
     '.janeway.replit.dev'
   ],
   async rewrites() {
-    if (process.env.NODE_ENV !== 'development') return [];
+    // We proxy both development and production internally on Replit
     return [
       {
         source: '/api/:path*',

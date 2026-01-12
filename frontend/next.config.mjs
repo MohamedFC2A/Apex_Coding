@@ -4,7 +4,13 @@ const nextConfig = {
   compiler: {
     styledComponents: true
   },
-  allowedDevOrigins: ['*'],
+  allowedDevOrigins: [
+    '127.0.0.1',
+    'localhost',
+    '.replit.dev',
+    '.repl.co',
+    '.janeway.replit.dev'
+  ],
   async rewrites() {
     if (process.env.NODE_ENV !== 'development') return [];
     const backend = process.env.NEXT_PUBLIC_BACKEND_URL;

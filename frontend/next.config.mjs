@@ -12,13 +12,11 @@ const nextConfig = {
     '.janeway.replit.dev'
   ],
   async rewrites() {
-    // We proxy both development and production internally on Replit
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:3001/api/:path*'
-      }
-    ];
+    // Local dev: proxy Next -> local Express API.
+    // Vercel: DO NOT proxy to localhost; let `vercel.json` route `/api/*` to the serverless function.
+    if (process.env.VERCEL) return [];
+
+    return [{ source: '/api/:path*', destination: 'http://localhost:3001/api/:path*' }];
   }
 };
 

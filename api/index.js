@@ -1,4 +1,5 @@
 // api/index.js (Vercel Serverless, CommonJS)
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
@@ -6,6 +7,7 @@ require('dotenv').config();
 const { requestIdMiddleware } = require('./middleware/requestId');
 const { createRateLimiter } = require('./middleware/rateLimit');
 const { parseAllowedOrigins } = require('./utils/security');
+const { createDefineSandbox, buildEmbedUrl } = require('./utils/codesandbox');
 
 const app = express();
 
@@ -137,7 +139,7 @@ app.post(['/download/zip', '/api/download/zip'], async (req, res) => {
 });
 
 // ================================
-// Preview Runner proxy (Vercel)
+// Live Preview providers (Vercel)
 // ================================
 const normalizePreviewRunnerUrl = (raw) => String(raw || '').trim().replace(/\/+$/, '');
 const normalizePreviewRunnerToken = (raw) => {
@@ -149,6 +151,8 @@ const normalizePreviewRunnerToken = (raw) => {
   return token;
 };
 
+const createPreviewSessionId = () => crypto.randomBytes(10).toString('base64url');
+
 const getPreviewRunnerConfig = () => {
   const baseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
   const token = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
@@ -156,11 +160,49 @@ const getPreviewRunnerConfig = () => {
   return { baseUrl, token };
 };
 
+const getCodeSandboxConfig = () => {
+  const token = normalizePreviewRunnerToken(process.env.CSB_API_TOKEN || process.env.CODESANDBOX_API_TOKEN);
+  return { token };
+};
+
+const getPreviewProvider = () => {
+  const raw = String(process.env.PREVIEW_PROVIDER || '').trim().toLowerCase();
+  if (raw === 'codesandbox' || raw === 'csb') return 'codesandbox';
+  if (raw === 'preview-runner' || raw === 'runner') return 'preview-runner';
+  if (getPreviewRunnerConfig()) return 'preview-runner';
+  return 'codesandbox';
+};
+
+const codeSandboxSessions = new Map(); // sessionId -> { id, sandboxId, url, fileMap, createdAt, updatedAt }
+
+const toPreviewFileMapFromArray = (files) => {
+  const map = {};
+  const list = Array.isArray(files) ? files : [];
+
+  for (const f of list) {
+    const rawPath = String(f?.path || f?.name || '').trim();
+    if (!rawPath) continue;
+    const normalized = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!normalized) continue;
+    map[normalized] = String(f?.content ?? '');
+  }
+
+  return map;
+};
+
 app.get(['/preview/config', '/api/preview/config'], (req, res) => {
-  const baseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
-  const token = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
+  const provider = getPreviewProvider();
+
+  const runnerBaseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
+  const runnerToken = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
+
+  const { token: csbToken } = getCodeSandboxConfig();
+
+  const baseUrl = provider === 'preview-runner' ? runnerBaseUrl : 'https://codesandbox.io';
+  const token = provider === 'preview-runner' ? runnerToken : csbToken;
   return res.json({
-    configured: Boolean(baseUrl && token),
+    provider,
+    configured: provider === 'preview-runner' ? Boolean(runnerBaseUrl && runnerToken) : true,
     baseUrl: baseUrl || null,
     tokenPresent: Boolean(token),
     tokenLast4: token ? token.slice(-4) : null,
@@ -245,6 +287,35 @@ const rewritePreviewSessionUrl = (runnerBaseUrl, maybeUrl) => {
 };
 
 app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
+  const provider = getPreviewProvider();
+  if (provider === 'codesandbox') {
+    try {
+      const fileMap = toPreviewFileMapFromArray(req.body?.files);
+      const fileCount = Object.keys(fileMap).length;
+      if (fileCount === 0) return res.status(400).json({ error: 'files is required' });
+
+      const sessionId = createPreviewSessionId();
+      const { token } = getCodeSandboxConfig();
+      const sandboxId = await createDefineSandbox({ fileMap, apiToken: token });
+      const url = buildEmbedUrl(sandboxId);
+
+      const now = Date.now();
+      codeSandboxSessions.set(sessionId, {
+        id: sessionId,
+        sandboxId,
+        url,
+        fileMap,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      return res.json({ id: sessionId, url, createdAt: now, updatedAt: now });
+    } catch (err) {
+      const message = String(err?.message || err || 'CodeSandbox preview error');
+      return res.status(502).json({ error: message, requestId: req.requestId });
+    }
+  }
+
   const config = getPreviewRunnerConfig();
   if (!config) {
     return res.status(500).json({
@@ -319,16 +390,66 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
 });
 
 app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
+  const provider = getPreviewProvider();
+  if (provider === 'codesandbox') {
+    const id = String(req.params.id || '').trim();
+    const s = codeSandboxSessions.get(id);
+    if (!s) return res.status(404).json({ error: 'Not found', requestId: req.requestId });
+    return res.json({ id: s.id, url: s.url, createdAt: s.createdAt, updatedAt: s.updatedAt, requestId: req.requestId });
+  }
+
   const id = String(req.params.id || '').trim();
   return proxyToPreviewRunner(req, res, { method: 'GET', url: `/api/sessions/${encodeURIComponent(id)}` });
 });
 
 app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
+  const provider = getPreviewProvider();
+  if (provider === 'codesandbox') {
+    const id = String(req.params.id || '').trim();
+    const s = codeSandboxSessions.get(id);
+    if (!s) return res.status(404).json({ error: 'Not found', requestId: req.requestId });
+
+    const create = req.body && typeof req.body === 'object' && req.body.create && typeof req.body.create === 'object' ? req.body.create : {};
+    const destroy = req.body && typeof req.body === 'object' && Array.isArray(req.body.destroy) ? req.body.destroy : [];
+
+    for (const [rawPath, content] of Object.entries(create)) {
+      const path = String(rawPath || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+      if (!path) continue;
+      s.fileMap[path] = String(content ?? '');
+    }
+
+    for (const rawPath of destroy) {
+      const path = String(rawPath || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+      if (!path) continue;
+      delete s.fileMap[path];
+    }
+
+    try {
+      const { token } = getCodeSandboxConfig();
+      const sandboxId = await createDefineSandbox({ fileMap: s.fileMap, apiToken: token });
+      s.sandboxId = sandboxId;
+      s.url = buildEmbedUrl(sandboxId);
+      s.updatedAt = Date.now();
+      return res.json({ ok: true, id: s.id, url: s.url, updatedAt: s.updatedAt, requestId: req.requestId });
+    } catch (err) {
+      const message = String(err?.message || err || 'CodeSandbox preview update error');
+      return res.status(502).json({ error: message, requestId: req.requestId });
+    }
+  }
+
   const id = String(req.params.id || '').trim();
   return proxyToPreviewRunner(req, res, { method: 'PATCH', url: `/api/sessions/${encodeURIComponent(id)}/files`, body: req.body });
 });
 
 app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
+  const provider = getPreviewProvider();
+  if (provider === 'codesandbox') {
+    const id = String(req.params.id || '').trim();
+    const existed = codeSandboxSessions.delete(id);
+    if (!existed) return res.status(404).json({ error: 'Not found', requestId: req.requestId });
+    return res.json({ ok: true, requestId: req.requestId });
+  }
+
   const id = String(req.params.id || '').trim();
   return proxyToPreviewRunner(req, res, { method: 'DELETE', url: `/api/sessions/${encodeURIComponent(id)}` });
 });

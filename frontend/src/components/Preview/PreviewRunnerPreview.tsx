@@ -180,6 +180,17 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
             const text = await res.text().catch(() => '');
             throw new Error(text || `Sync failed (${res.status})`);
           }
+
+          const text = await res.text().catch(() => '');
+          try {
+            const parsed = JSON.parse(text);
+            const nextUrl = typeof parsed?.url === 'string' ? parsed.url : null;
+            if (nextUrl) {
+              setIframeUrl(nextUrl);
+              setPreviewUrl(nextUrl);
+            }
+          } catch {}
+
           prevMapRef.current = nextMap;
         } catch (err: any) {
           const msg = String(err?.message || err || 'Sync failed');
@@ -231,7 +242,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
           <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-          <span className="ml-2 text-white">Initializing Preview Runner…</span>
+          <span className="ml-2 text-white">Initializing Preview…</span>
         </div>
       )}
 
@@ -257,7 +268,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           {(() => {
             if (!Array.isArray(files) || files.length === 0) return 'Generate a project first, then open Live Preview.';
             if (runtimeStatus === 'error' && runtimeMessage) return `Preview error: ${runtimeMessage}`;
-            return 'Preview is not available. Check preview-runner config.';
+            return 'Preview is not available. Check preview configuration.';
           })()}
         </div>
       )}

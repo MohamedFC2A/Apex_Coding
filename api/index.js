@@ -280,6 +280,26 @@ const rewritePreviewSessionUrl = (runnerBaseUrl, maybeUrl) => {
 app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
   const provider = 'codesandbox';
   try {
+    const { apiKey: csbApiKey } = getCodeSandboxConfig();
+    if (!csbApiKey) {
+      return res.status(400).json({
+        error: 'Missing CodeSandbox API key',
+        missing: ['CSB_API_KEY'],
+        hint: 'Set CSB_API_KEY on the server (Vercel env or .env) and redeploy.',
+        requestId: req.requestId
+      });
+    }
+    const keyLooksInvalid =
+      csbApiKey.length < 20 ||
+      /csb_?api_?key/i.test(csbApiKey) ||
+      /placeholder|invalid|example/i.test(csbApiKey);
+    if (keyLooksInvalid) {
+      return res.status(401).json({
+        error: 'CodeSandbox unauthorized',
+        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
+        requestId: req.requestId
+      });
+    }
     const fileMap = toPreviewFileMapFromArray(req.body?.files);
     const fileCount = Object.keys(fileMap).length;
     if (fileCount === 0) return res.status(400).json({ error: 'files is required' });
@@ -290,6 +310,13 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
     return res.json({ id: sandboxId, url, createdAt: now, updatedAt: now, provider });
   } catch (err) {
     const message = String(err?.message || err || 'CodeSandbox preview error');
+    if (/unauthorized|invalid token|401|403/i.test(message)) {
+      return res.status(401).json({
+        error: 'CodeSandbox unauthorized',
+        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
+        requestId: req.requestId
+      });
+    }
     return res.status(502).json({ error: message, requestId: req.requestId });
   }
 });
@@ -309,6 +336,26 @@ app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res)
 app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
   const provider = 'codesandbox';
   try {
+    const { apiKey: csbApiKey } = getCodeSandboxConfig();
+    if (!csbApiKey) {
+      return res.status(400).json({
+        error: 'Missing CodeSandbox API key',
+        missing: ['CSB_API_KEY'],
+        hint: 'Set CSB_API_KEY on the server (Vercel env or .env) and redeploy.',
+        requestId: req.requestId
+      });
+    }
+    const keyLooksInvalid =
+      csbApiKey.length < 20 ||
+      /csb_?api_?key/i.test(csbApiKey) ||
+      /placeholder|invalid|example/i.test(csbApiKey);
+    if (keyLooksInvalid) {
+      return res.status(401).json({
+        error: 'CodeSandbox unauthorized',
+        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
+        requestId: req.requestId
+      });
+    }
     const sandboxId = String(req.params.id || '').trim();
     const { url } = await patchSandboxFiles({
       sandboxId,
@@ -320,15 +367,47 @@ app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, re
     return res.json({ ok: true, id: sandboxId, url, updatedAt, requestId: req.requestId, provider });
   } catch (err) {
     const message = String(err?.message || err || 'CodeSandbox preview update error');
+    if (/unauthorized|invalid token|401|403/i.test(message)) {
+      return res.status(401).json({
+        error: 'CodeSandbox unauthorized',
+        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
+        requestId: req.requestId
+      });
+    }
     return res.status(502).json({ error: message, requestId: req.requestId });
   }
 });
 
 app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
   const provider = 'codesandbox';
-  const sandboxId = String(req.params.id || '').trim();
-  await hibernateSandbox(sandboxId);
-  return res.json({ ok: true, requestId: req.requestId, provider });
+  try {
+    const { apiKey: csbApiKey } = getCodeSandboxConfig();
+    if (!csbApiKey) {
+      return res.status(400).json({
+        error: 'Missing CodeSandbox API key',
+        missing: ['CSB_API_KEY'],
+        hint: 'Set CSB_API_KEY on the server (Vercel env or .env) and redeploy.',
+        requestId: req.requestId
+      });
+    }
+    const keyLooksInvalid =
+      csbApiKey.length < 20 ||
+      /csb_?api_?key/i.test(csbApiKey) ||
+      /placeholder|invalid|example/i.test(csbApiKey);
+    if (keyLooksInvalid) {
+      return res.status(401).json({
+        error: 'CodeSandbox unauthorized',
+        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
+        requestId: req.requestId
+      });
+    }
+    const sandboxId = String(req.params.id || '').trim();
+    await hibernateSandbox(sandboxId);
+    return res.json({ ok: true, requestId: req.requestId, provider });
+  } catch (err) {
+    const message = String(err?.message || err || 'CodeSandbox preview delete error');
+    return res.status(502).json({ error: message, requestId: req.requestId });
+  }
 });
 
 const normalizeDeepSeekBaseUrl = (raw) => {

@@ -136,6 +136,73 @@ app.post(['/download/zip', '/api/download/zip'], async (req, res) => {
   }
 });
 
+// ================================
+// Preview Runner proxy (Vercel)
+// ================================
+const normalizePreviewRunnerUrl = (raw) => String(raw || '').trim().replace(/\/+$/, '');
+
+const getPreviewRunnerConfig = () => {
+  const baseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
+  const token = String(process.env.PREVIEW_RUNNER_TOKEN || '').trim();
+  if (!baseUrl || !token) return null;
+  return { baseUrl, token };
+};
+
+const proxyToPreviewRunner = async (req, res, { method, url, body }) => {
+  const config = getPreviewRunnerConfig();
+  if (!config) {
+    return res.status(500).json({
+      error: 'Preview runner is not configured',
+      missing: ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim())
+    });
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = 25_000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const upstream = await fetch(`${config.baseUrl}${url}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.token}`
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+
+    const text = await upstream.text().catch(() => '');
+    res.status(upstream.status);
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
+    return res.send(text);
+  } catch (err) {
+    const message = String(err?.name === 'AbortError' ? 'Preview runner timeout' : err?.message || err || 'Preview runner error');
+    return res.status(502).json({ error: message });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
+  return proxyToPreviewRunner(req, res, { method: 'POST', url: '/api/sessions', body: req.body });
+});
+
+app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  return proxyToPreviewRunner(req, res, { method: 'GET', url: `/api/sessions/${encodeURIComponent(id)}` });
+});
+
+app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  return proxyToPreviewRunner(req, res, { method: 'PATCH', url: `/api/sessions/${encodeURIComponent(id)}/files`, body: req.body });
+});
+
+app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  return proxyToPreviewRunner(req, res, { method: 'DELETE', url: `/api/sessions/${encodeURIComponent(id)}` });
+});
+
 const normalizeDeepSeekBaseUrl = (raw) => {
   const base = String(raw || 'https://api.deepseek.com').trim().replace(/\/+$/, '');
   return base.endsWith('/v1') ? base : `${base}/v1`;

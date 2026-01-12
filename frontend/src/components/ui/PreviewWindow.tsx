@@ -75,9 +75,10 @@ const Content = styled.div`
 
 interface PreviewWindowProps {
   className?: string;
+  enabled?: boolean;
 }
 
-export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
+export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled = true }) => {
   const previewRef = useRef<PreviewRunnerPreviewHandle>(null);
   return (
     <Window className={className}>
@@ -97,7 +98,13 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
                 <div style={{ marginTop: 5, fontSize: 12 }}>Please disable ad-blockers for Live Preview to work.</div>
             </div>
         }>
-            <PreviewRunnerPreview ref={previewRef} />
+            {enabled ? (
+              <PreviewRunnerPreview ref={previewRef} enabled />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
+                Live Preview is closed.
+              </div>
+            )}
         </ErrorBoundary>
       </Content>
     </Window>

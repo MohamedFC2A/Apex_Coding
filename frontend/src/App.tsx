@@ -1787,7 +1787,7 @@ Output ONLY the code for these files.
             <CodeEditor showFileTree={false} />
           </PanelSlot>
           <PanelSlot $mobileActive={mobileTab === 'preview'} $desktopHidden={!isPreviewOpen}>
-            <PreviewWindow />
+            <PreviewWindow enabled={isPreviewOpen || mobileTab === 'preview'} />
           </PanelSlot>
         </MainWorkspace>
 

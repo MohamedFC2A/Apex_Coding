@@ -8,13 +8,15 @@ import { diffPreviewFileMaps, toPreviewFileMap, type FileMap } from '@/utils/pre
 
 interface PreviewRunnerPreviewProps {
   className?: string;
+  enabled?: boolean;
 }
 
 export type PreviewRunnerPreviewHandle = {
   resetSession: () => void;
 };
 
-export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, PreviewRunnerPreviewProps>(({ className }, ref) => {
+export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, PreviewRunnerPreviewProps>(
+  ({ className, enabled = true }, ref) => {
   const files = useProjectStore((s) => s.files);
   const setRuntimeStatus = usePreviewStore((s) => s.setRuntimeStatus);
   const setPreviewUrl = usePreviewStore((s) => s.setPreviewUrl);
@@ -108,6 +110,16 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   };
 
   useEffect(() => {
+    if (!enabled) {
+      setRuntimeStatus('idle');
+      setPreviewUrl(null);
+      setIframeUrl(null);
+      setSessionId(null);
+      sessionIdRef.current = null;
+      setIsLoading(false);
+      return;
+    }
+
     void createSession(files);
     return () => {
       const currentId = sessionIdRef.current;
@@ -116,10 +128,11 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     if (!sessionId) return;
+    if (!enabled) return;
     if (isGenerating || isPlanning) return;
 
     if (patchTimerRef.current) window.clearTimeout(patchTimerRef.current);
@@ -177,7 +190,16 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
         (window as any).cancelIdleCallback?.(h);
       }
     };
-  }, [files, sessionId, isGenerating, isPlanning, setRuntimeStatus, appendThinkingContent, appendSystemConsoleContent]);
+  }, [
+    files,
+    sessionId,
+    enabled,
+    isGenerating,
+    isPlanning,
+    setRuntimeStatus,
+    appendThinkingContent,
+    appendSystemConsoleContent
+  ]);
 
   useImperativeHandle(ref, () => ({
     resetSession: () => {

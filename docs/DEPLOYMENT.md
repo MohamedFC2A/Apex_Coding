@@ -5,7 +5,7 @@ Set these in Vercel for both **Production** and **Preview**.
 
 ### Live Preview (recommended: CodeSandbox)
 - `PREVIEW_PROVIDER=codesandbox`
-- Optional: `CSB_API_TOKEN=csb_v1_...`
+- `CSB_API_KEY=csb_v1_...`
 
 ### AI (required to generate code)
 - `DEEPSEEK_API_KEY=...`
@@ -18,11 +18,11 @@ Set these in Vercel for both **Production** and **Preview**.
 
 ## Where to get the keys
 
-### CodeSandbox API token (`CSB_API_TOKEN`)
+### CodeSandbox API key (`CSB_API_KEY`)
 1. Open CodeSandbox.
 2. Go to **Settings** → **API Tokens / Personal Access Tokens**.
 3. Create a token and copy it once.
-4. Paste it into Vercel as `CSB_API_TOKEN`.
+4. Paste it into Vercel as `CSB_API_KEY`.
 
 Security:
 - Never commit this token to git.
@@ -32,4 +32,3 @@ Security:
 1. Open the DeepSeek developer dashboard.
 2. Create an API key.
 3. Paste it into Vercel as `DEEPSEEK_API_KEY`.
-

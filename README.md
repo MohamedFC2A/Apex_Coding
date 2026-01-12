@@ -23,11 +23,10 @@ Copy `env.example.txt` to `.env` and set your real values.
 This project can generate a CodeSandbox sandbox from the current project files and embed it in the app.
 
 - `PREVIEW_PROVIDER=codesandbox`
-- Optional: `CSB_API_TOKEN=csb_v1_...`
+- `CSB_API_KEY=csb_v1_...`
 
 Notes:
-- The token is stored server-side only (Vercel env). Do not put it in the frontend.
-- On serverless, updates are stateless: changes create a new sandbox URL.
+- The key is stored server-side only (Vercel env). Do not put it in the frontend.
 
 ### Live Preview (legacy: self-hosted preview-runner)
 If you prefer running previews on your own server via Docker:
@@ -45,10 +44,9 @@ If you prefer running previews on your own server via Docker:
 ### Vercel env checklist
 - `DEEPSEEK_API_KEY`
 - `PREVIEW_PROVIDER=codesandbox`
-- Optional: `CSB_API_TOKEN`
+- `CSB_API_KEY`
 - Optional: `NEXT_PUBLIC_SITE_URL` (used for metadata)
 
 ## Security
 - Never commit API keys/tokens (`.env` is gitignored).
 - If a token was pasted into chat/logs, rotate it in the provider dashboard.
-

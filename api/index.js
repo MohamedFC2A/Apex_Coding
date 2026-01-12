@@ -1,5 +1,4 @@
 // api/index.js (Vercel Serverless, CommonJS)
-const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
@@ -7,7 +6,7 @@ require('dotenv').config();
 const { requestIdMiddleware } = require('./middleware/requestId');
 const { createRateLimiter } = require('./middleware/rateLimit');
 const { parseAllowedOrigins } = require('./utils/security');
-const { createDefineSandbox, buildEmbedUrl } = require('./utils/codesandbox');
+const { getCodeSandboxApiKey, createSandboxPreview, patchSandboxFiles, hibernateSandbox } = require('./utils/codesandbox');
 
 const app = express();
 
@@ -153,8 +152,6 @@ const normalizePreviewRunnerToken = (raw) => {
   return token;
 };
 
-const createPreviewSessionId = () => crypto.randomBytes(10).toString('base64url');
-
 const getPreviewRunnerConfig = () => {
   const baseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
   const token = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
@@ -163,8 +160,8 @@ const getPreviewRunnerConfig = () => {
 };
 
 const getCodeSandboxConfig = () => {
-  const token = normalizePreviewRunnerToken(process.env.CSB_API_TOKEN || process.env.CODESANDBOX_API_TOKEN);
-  return { token };
+  const apiKey = getCodeSandboxApiKey();
+  return { apiKey };
 };
 
 const getPreviewProvider = () => {
@@ -196,17 +193,19 @@ app.get(['/preview/config', '/api/preview/config'], (req, res) => {
   const runnerBaseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
   const runnerToken = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
 
-  const { token: csbToken } = getCodeSandboxConfig();
+  const { apiKey: csbApiKey } = getCodeSandboxConfig();
 
   const baseUrl = provider === 'preview-runner' ? runnerBaseUrl : 'https://codesandbox.io';
-  const token = provider === 'preview-runner' ? runnerToken : csbToken;
+  const token = provider === 'preview-runner' ? runnerToken : csbApiKey;
   return res.json({
     provider,
-    configured: provider === 'preview-runner' ? Boolean(runnerBaseUrl && runnerToken) : true,
+    configured: provider === 'preview-runner' ? Boolean(runnerBaseUrl && runnerToken) : Boolean(csbApiKey),
     missing:
       provider === 'preview-runner'
         ? ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim())
-        : [],
+        : Boolean(csbApiKey)
+          ? []
+          : ['CSB_API_KEY'],
     baseUrl: baseUrl || null,
     tokenPresent: Boolean(token),
     tokenLast4: token ? token.slice(-4) : null,
@@ -298,9 +297,7 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
       const fileCount = Object.keys(fileMap).length;
       if (fileCount === 0) return res.status(400).json({ error: 'files is required' });
 
-      const { token } = getCodeSandboxConfig();
-      const sandboxId = await createDefineSandbox({ fileMap, apiToken: token });
-      const url = buildEmbedUrl(sandboxId);
+      const { sandboxId, url } = await createSandboxPreview({ fileMap });
 
       const now = Date.now();
       return res.json({ id: sandboxId, url, createdAt: now, updatedAt: now, provider });
@@ -390,7 +387,7 @@ app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res)
     if (!id) return res.status(400).json({ error: 'id is required', requestId: req.requestId });
     return res.json({
       id,
-      url: buildEmbedUrl(id),
+      url: `https://${encodeURIComponent(id)}-3000.csb.app`,
       requestId: req.requestId,
       provider
     });
@@ -404,18 +401,13 @@ app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, re
   const provider = getPreviewProvider();
   if (provider === 'codesandbox') {
     try {
-      const { token } = getCodeSandboxConfig();
-      const fileMap = toPreviewFileMapFromArray(req.body?.files);
-      const fileCount = Object.keys(fileMap).length;
-      if (fileCount === 0) {
-        return res.status(400).json({
-          error: 'files is required for CodeSandbox updates (stateless on serverless)',
-          requestId: req.requestId
-        });
-      }
-
-      const sandboxId = await createDefineSandbox({ fileMap, apiToken: token });
-      const url = buildEmbedUrl(sandboxId);
+      const sandboxId = String(req.params.id || '').trim();
+      const { url } = await patchSandboxFiles({
+        sandboxId,
+        create: req.body?.create,
+        destroy: req.body?.destroy,
+        files: req.body?.files
+      });
       const updatedAt = Date.now();
       return res.json({ ok: true, id: sandboxId, url, updatedAt, requestId: req.requestId, provider });
     } catch (err) {
@@ -431,6 +423,8 @@ app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, re
 app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
   const provider = getPreviewProvider();
   if (provider === 'codesandbox') {
+    const sandboxId = String(req.params.id || '').trim();
+    await hibernateSandbox(sandboxId);
     return res.json({ ok: true, requestId: req.requestId, provider });
   }
 

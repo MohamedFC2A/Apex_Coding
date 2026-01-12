@@ -1707,7 +1707,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         .finally(() => window.clearTimeout(timer));
 
       setError(
-        'Live Preview configuration error. This is not a code bug.\n\nFix:\n- Recommended: set PREVIEW_PROVIDER=codesandbox (optional: CSB_API_TOKEN)\n- Or (legacy): set PREVIEW_RUNNER_URL + PREVIEW_RUNNER_TOKEN (no quotes/spaces) and ensure preview-runner uses the same token\n- Redeploy Vercel after changing env vars'
+        'Live Preview configuration error. This is not a code bug.\n\nFix:\n- Recommended: set PREVIEW_PROVIDER=codesandbox + CSB_API_KEY (server-side in Vercel)\n- Or (legacy): set PREVIEW_RUNNER_URL + PREVIEW_RUNNER_TOKEN (no quotes/spaces) and ensure preview-runner uses the same token\n- Redeploy Vercel after changing env vars'
       );
       return;
     }

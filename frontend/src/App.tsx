@@ -1659,10 +1659,21 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     if (isGenerating || isPlanning) return;
 
     const signature = String(runtimeMessage || 'preview-error');
+    const signatureLower = signature.toLowerCase();
     const attempts = autoDebugRef.current.signature === signature ? autoDebugRef.current.attempts : 0;
     if (attempts >= 1) return;
 
     autoDebugRef.current = { signature, attempts: attempts + 1 };
+
+    const isPreviewConfigIssue =
+      signatureLower.includes('unauthorized') ||
+      signatureLower.includes('401') ||
+      signatureLower.includes('403') ||
+      signatureLower.includes('not configured') ||
+      signatureLower.includes('failed to reach preview runner') ||
+      signatureLower.includes('preview runner is unreachable') ||
+      signatureLower.includes('fetch failed') ||
+      signatureLower.includes('timeout');
 
     const tail = logs
       .slice(-45)
@@ -1671,6 +1682,35 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         return `${t} ${line.message}`;
       })
       .join('\n');
+
+    if (isPreviewConfigIssue) {
+      logSystem(`[STATUS] Preview config issue detected: ${signature}`);
+
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 4500);
+      void fetch('/api/preview/config', { signal: controller.signal })
+        .then(async (res) => {
+          const text = await res.text().catch(() => '');
+          try {
+            const parsed = JSON.parse(text);
+            const baseUrl = parsed?.baseUrl ? String(parsed.baseUrl) : '';
+            const tokenPresent = Boolean(parsed?.tokenPresent);
+            const tokenLast4 = parsed?.tokenLast4 ? String(parsed.tokenLast4) : '';
+            logSystem(
+              `[preview] Config: baseUrl=${baseUrl || '(missing)'} tokenPresent=${tokenPresent} tokenLast4=${tokenLast4 || '(n/a)'}`
+            );
+          } catch {
+            if (text) logSystem(`[preview] Config: ${text.slice(0, 300)}`);
+          }
+        })
+        .catch(() => {})
+        .finally(() => window.clearTimeout(timer));
+
+      setError(
+        'Live Preview configuration error. This is not a code bug.\n\nFix:\n- Ensure Vercel env vars PREVIEW_RUNNER_URL + PREVIEW_RUNNER_TOKEN are set (no quotes/spaces)\n- Ensure preview-runner uses the same PREVIEW_RUNNER_TOKEN\n- Redeploy Vercel after changing env vars'
+      );
+      return;
+    }
 
     logSystem(`[STATUS] Auto-debugging: ${signature}`);
     const requestText = [
@@ -1692,6 +1732,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     isPreviewOpen,
     logSystem,
     logs,
+    setError,
     runtimeMessage,
     runtimeStatus
   ]);

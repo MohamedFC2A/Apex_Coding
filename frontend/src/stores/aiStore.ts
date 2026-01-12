@@ -208,6 +208,10 @@ const createInitialFiles = (): FileSystemState => {
 const MAX_MESSAGE_LENGTH = 4000;
 const COMPRESSION_THRESHOLD = 100000;
 
+// Keep long-running sessions responsive: cap large UI strings.
+const MAX_THINKING_CHARS = 120_000;
+const MAX_CONSOLE_CHARS = 160_000;
+
 // Calculate total context size in characters
 const calculateContextSize = (chatHistory: ChatMessage[], files: FileSystem): number => {
   let size = 0;
@@ -540,8 +544,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       addChatMessage: (message) =>
         set((state) => {
           const updatedHistory = [...state.chatHistory, message];
-          // Auto-save when chat message is added
-          setTimeout(() => get().saveCurrentSession(), 100);
+          // Avoid expensive snapshotting while generating; save opportunistically when idle.
+          if (!get().isGenerating && !get().isPlanning) {
+            setTimeout(() => get().saveCurrentSession(), 1200);
+          }
           return { chatHistory: updatedHistory };
         }),
 
@@ -646,14 +652,22 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
       appendThinkingContent: (chunk) =>
         set((state) => ({
-          thinkingContent: state.thinkingContent + chunk
+          thinkingContent: (() => {
+            const next = state.thinkingContent + chunk;
+            if (next.length <= MAX_THINKING_CHARS) return next;
+            return next.slice(next.length - MAX_THINKING_CHARS);
+          })()
         })),
 
       clearThinkingContent: () => set({ thinkingContent: '' }),
 
       appendSystemConsoleContent: (chunk) =>
         set((state) => ({
-          systemConsoleContent: state.systemConsoleContent + chunk
+          systemConsoleContent: (() => {
+            const next = state.systemConsoleContent + chunk;
+            if (next.length <= MAX_CONSOLE_CHARS) return next;
+            return next.slice(next.length - MAX_CONSOLE_CHARS);
+          })()
         })),
 
       clearSystemConsoleContent: () => set({ systemConsoleContent: '' }),
@@ -747,7 +761,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         const projectFiles = projectStore.files;
         const projectName = projectStore.projectName || '';
 
-        const snapshotFiles = projectFiles.length > 0
+        const projectBytes = projectFiles.reduce((acc, f) => acc + (f.content ? f.content.length : 0), 0);
+        const shouldSnapshotFileContents = projectFiles.length > 0 && projectBytes <= 700_000 && projectFiles.length <= 120;
+
+        const snapshotFiles = shouldSnapshotFileContents
           ? buildTreeFromProjectFiles(projectFiles)
           : normalizeFileSystem(state.files);
 
@@ -812,7 +829,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             currentSessionId: sessionId
           }));
         } else {
-          set({ history: [snapshot, ...state.history], currentSessionId: sessionId });
+          const nextHistory = [snapshot, ...state.history];
+          set({ history: nextHistory.slice(0, 12), currentSessionId: sessionId });
         }
       },
 
@@ -917,6 +935,13 @@ export const useAIStore = createWithEqualityFn<AIState>()(
     {
       name: 'apex-ai-store',
       storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        architectMode: state.architectMode,
+        modelMode: state.modelMode,
+        interactionMode: state.interactionMode,
+        executionBudget: state.executionBudget,
+        isPreviewOpen: state.isPreviewOpen
+      }),
       onRehydrateStorage: () => (state) => {
         state?.recoverSession();
       }

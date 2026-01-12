@@ -104,7 +104,6 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
       partialize: (state) => ({
         projectId: state.projectId,
         projectName: state.projectName,
-        files: state.files,
         fileStructure: state.fileStructure,
         activeFile: state.activeFile,
         stack: state.stack,

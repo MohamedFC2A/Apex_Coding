@@ -830,44 +830,56 @@ function App() {
     setInteractionMode('create');
   }, [files.length, interactionMode, setInteractionMode]);
 
-  const flushFileBuffers = useCallback(() => {
+  const flushFileBuffers = useCallback((options?: { onlyPath?: string; force?: boolean }) => {
     if (fileChunkBuffersRef.current.size === 0) return;
 
     const writingPath = useAIStore.getState().writingFilePath || '';
-    const maxActive = 120;
-    const maxOther = 420;
+    const activePath = useProjectStore.getState().activeFile || '';
+    const onlyPath = options?.onlyPath;
+    const force = options?.force === true;
+
+    // Keep UI responsive: only stream partial updates for the active/writing file.
+    // Flush all remaining content for a file only on "end" (force=true).
+    const maxActive = 6000;
+    let needsAnotherFlush = false;
 
     for (const [path, buffer] of fileChunkBuffersRef.current.entries()) {
+      if (onlyPath && path !== onlyPath) continue;
       if (!buffer) {
         fileChunkBuffersRef.current.delete(path);
         continue;
       }
 
-      const max = path === writingPath ? maxActive : maxOther;
+      const shouldFlush = force || path === writingPath || path === activePath;
+      if (!shouldFlush) continue;
+
+      const max = force ? buffer.length : maxActive;
       const chunk = buffer.length <= max ? buffer : buffer.slice(0, max);
       const rest = buffer.length <= max ? '' : buffer.slice(max);
 
       appendToFile(path, chunk);
-      appendToFileNode(path, chunk);
 
       if (rest.length === 0) fileChunkBuffersRef.current.delete(path);
-      else fileChunkBuffersRef.current.set(path, rest);
+      else {
+        fileChunkBuffersRef.current.set(path, rest);
+        needsAnotherFlush = true;
+      }
     }
 
-    if (fileChunkBuffersRef.current.size > 0 && !fileFlushTimerRef.current) {
+    if (!fileFlushTimerRef.current && needsAnotherFlush) {
       fileFlushTimerRef.current = window.setTimeout(() => {
         fileFlushTimerRef.current = null;
-        flushFileBuffers();
-      }, 24);
+        flushFileBuffers(options);
+      }, 140);
     }
-  }, [appendToFile, appendToFileNode]);
+  }, [appendToFile]);
 
   const scheduleFileFlush = useCallback(() => {
     if (fileFlushTimerRef.current) return;
     fileFlushTimerRef.current = window.setTimeout(() => {
       fileFlushTimerRef.current = null;
       flushFileBuffers();
-    }, 24);
+    }, 140);
   }, [flushFileBuffers]);
 
   const scheduleTokenBeat = useCallback(() => {
@@ -1176,7 +1188,8 @@ function App() {
             upsertFileNode(resolvedPath, finalText);
             upsertFile({ name, path: resolvedPath, content: finalText, language: getLanguageFromExtension(resolvedPath) });
           } else {
-            flushFileBuffers();
+            const prevWriting = useAIStore.getState().writingFilePath;
+            if (prevWriting) flushFileBuffers({ onlyPath: prevWriting, force: true });
             fileChunkBuffersRef.current.delete(resolvedPath);
             updateFile(resolvedPath, '');
             upsertFileNode(resolvedPath, '');
@@ -1198,7 +1211,8 @@ function App() {
         }
 
         if (event.type === 'end') {
-          flushFileBuffers();
+          flushFileBuffers({ onlyPath: resolvedPath, force: true });
+          fileChunkBuffersRef.current.delete(resolvedPath);
           setFileStatus(resolvedPath, 'ready');
           if (useAIStore.getState().writingFilePath === resolvedPath) setWritingFilePath(null);
 
@@ -1216,6 +1230,12 @@ function App() {
 
           if (resolvedPath.toLowerCase().endsWith('.html')) {
             finalizeHtmlFile(resolvedPath, Boolean(event.partial));
+          }
+
+          // Keep the AI file tree in sync without per-chunk updates.
+          if (event.mode !== 'edit') {
+            const latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '';
+            upsertFileNode(resolvedPath, latest);
           }
 
           if (event.partial) {

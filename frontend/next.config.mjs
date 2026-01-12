@@ -7,6 +7,9 @@ const nextConfig = {
   allowedDevOrigins: [
     '127.0.0.1',
     'localhost',
+    '.csb.app',
+    'codesandbox.io',
+    '.codesandbox.io',
     '.replit.dev',
     '.repl.co',
     '.janeway.replit.dev'

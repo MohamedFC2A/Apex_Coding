@@ -40,6 +40,8 @@ const corsOptionsDelegate = (req, callback) => {
     const host = String(req.headers.host || '').trim();
     if (host && o.host === host) allowed = true;
     if (!allowed && o.host.endsWith('vercel.app')) allowed = true;
+    if (!allowed && o.host.endsWith('.csb.app')) allowed = true;
+    if (!allowed && (o.host === 'codesandbox.io' || o.host.endsWith('.codesandbox.io'))) allowed = true;
     if (!allowed && o.host.endsWith('.replit.dev')) allowed = true;
     if (!allowed && o.host.endsWith('.repl.co')) allowed = true;
   } catch {}
@@ -169,11 +171,9 @@ const getPreviewProvider = () => {
   const raw = String(process.env.PREVIEW_PROVIDER || '').trim().toLowerCase();
   if (raw === 'codesandbox' || raw === 'csb') return 'codesandbox';
   if (raw === 'preview-runner' || raw === 'runner') return 'preview-runner';
-  if (getPreviewRunnerConfig()) return 'preview-runner';
+  // Default: CodeSandbox. (Preview runner requires explicit opt-in on Vercel.)
   return 'codesandbox';
 };
-
-const codeSandboxSessions = new Map(); // sessionId -> { id, sandboxId, url, fileMap, createdAt, updatedAt }
 
 const toPreviewFileMapFromArray = (files) => {
   const map = {};
@@ -203,6 +203,10 @@ app.get(['/preview/config', '/api/preview/config'], (req, res) => {
   return res.json({
     provider,
     configured: provider === 'preview-runner' ? Boolean(runnerBaseUrl && runnerToken) : true,
+    missing:
+      provider === 'preview-runner'
+        ? ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim())
+        : [],
     baseUrl: baseUrl || null,
     tokenPresent: Boolean(token),
     tokenLast4: token ? token.slice(-4) : null,
@@ -294,22 +298,12 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
       const fileCount = Object.keys(fileMap).length;
       if (fileCount === 0) return res.status(400).json({ error: 'files is required' });
 
-      const sessionId = createPreviewSessionId();
       const { token } = getCodeSandboxConfig();
       const sandboxId = await createDefineSandbox({ fileMap, apiToken: token });
       const url = buildEmbedUrl(sandboxId);
 
       const now = Date.now();
-      codeSandboxSessions.set(sessionId, {
-        id: sessionId,
-        sandboxId,
-        url,
-        fileMap,
-        createdAt: now,
-        updatedAt: now
-      });
-
-      return res.json({ id: sessionId, url, createdAt: now, updatedAt: now });
+      return res.json({ id: sandboxId, url, createdAt: now, updatedAt: now, provider });
     } catch (err) {
       const message = String(err?.message || err || 'CodeSandbox preview error');
       return res.status(502).json({ error: message, requestId: req.requestId });
@@ -393,9 +387,13 @@ app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res)
   const provider = getPreviewProvider();
   if (provider === 'codesandbox') {
     const id = String(req.params.id || '').trim();
-    const s = codeSandboxSessions.get(id);
-    if (!s) return res.status(404).json({ error: 'Not found', requestId: req.requestId });
-    return res.json({ id: s.id, url: s.url, createdAt: s.createdAt, updatedAt: s.updatedAt, requestId: req.requestId });
+    if (!id) return res.status(400).json({ error: 'id is required', requestId: req.requestId });
+    return res.json({
+      id,
+      url: buildEmbedUrl(id),
+      requestId: req.requestId,
+      provider
+    });
   }
 
   const id = String(req.params.id || '').trim();
@@ -405,32 +403,21 @@ app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res)
 app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
   const provider = getPreviewProvider();
   if (provider === 'codesandbox') {
-    const id = String(req.params.id || '').trim();
-    const s = codeSandboxSessions.get(id);
-    if (!s) return res.status(404).json({ error: 'Not found', requestId: req.requestId });
-
-    const create = req.body && typeof req.body === 'object' && req.body.create && typeof req.body.create === 'object' ? req.body.create : {};
-    const destroy = req.body && typeof req.body === 'object' && Array.isArray(req.body.destroy) ? req.body.destroy : [];
-
-    for (const [rawPath, content] of Object.entries(create)) {
-      const path = String(rawPath || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
-      if (!path) continue;
-      s.fileMap[path] = String(content ?? '');
-    }
-
-    for (const rawPath of destroy) {
-      const path = String(rawPath || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
-      if (!path) continue;
-      delete s.fileMap[path];
-    }
-
     try {
       const { token } = getCodeSandboxConfig();
-      const sandboxId = await createDefineSandbox({ fileMap: s.fileMap, apiToken: token });
-      s.sandboxId = sandboxId;
-      s.url = buildEmbedUrl(sandboxId);
-      s.updatedAt = Date.now();
-      return res.json({ ok: true, id: s.id, url: s.url, updatedAt: s.updatedAt, requestId: req.requestId });
+      const fileMap = toPreviewFileMapFromArray(req.body?.files);
+      const fileCount = Object.keys(fileMap).length;
+      if (fileCount === 0) {
+        return res.status(400).json({
+          error: 'files is required for CodeSandbox updates (stateless on serverless)',
+          requestId: req.requestId
+        });
+      }
+
+      const sandboxId = await createDefineSandbox({ fileMap, apiToken: token });
+      const url = buildEmbedUrl(sandboxId);
+      const updatedAt = Date.now();
+      return res.json({ ok: true, id: sandboxId, url, updatedAt, requestId: req.requestId, provider });
     } catch (err) {
       const message = String(err?.message || err || 'CodeSandbox preview update error');
       return res.status(502).json({ error: message, requestId: req.requestId });
@@ -444,10 +431,7 @@ app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, re
 app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
   const provider = getPreviewProvider();
   if (provider === 'codesandbox') {
-    const id = String(req.params.id || '').trim();
-    const existed = codeSandboxSessions.delete(id);
-    if (!existed) return res.status(404).json({ error: 'Not found', requestId: req.requestId });
-    return res.json({ ok: true, requestId: req.requestId });
+    return res.json({ ok: true, requestId: req.requestId, provider });
   }
 
   const id = String(req.params.id || '').trim();

@@ -174,7 +174,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           const res = await fetch(`/api/preview/sessions/${encodeURIComponent(sessionId)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ create, destroy })
+            body: JSON.stringify({ create, destroy, files })
           });
           if (!res.ok) {
             const text = await res.text().catch(() => '');
@@ -184,7 +184,12 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           const text = await res.text().catch(() => '');
           try {
             const parsed = JSON.parse(text);
+            const nextId = typeof parsed?.id === 'string' ? parsed.id : null;
             const nextUrl = typeof parsed?.url === 'string' ? parsed.url : null;
+            if (nextId && nextId !== sessionIdRef.current) {
+              setSessionId(nextId);
+              sessionIdRef.current = nextId;
+            }
             if (nextUrl) {
               setIframeUrl(nextUrl);
               setPreviewUrl(nextUrl);

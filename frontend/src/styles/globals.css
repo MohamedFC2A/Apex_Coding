@@ -19,6 +19,11 @@
     padding: 0;
   }
   code { font-family: source-code-pro, Menlo, Monaco, monospace; }
+
+  :focus-visible {
+    outline: 2px solid rgba(34, 211, 238, 0.45);
+    outline-offset: 2px;
+  }
 }
 
 html, body {
@@ -37,6 +42,15 @@ html, body {
 ::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ==================== DARK LIQUID GLASS CORE ==================== */

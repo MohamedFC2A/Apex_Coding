@@ -30,20 +30,20 @@ const ContentRoot = styled.div<{ $open: boolean; $left: number; $top: number; $p
     }});
   opacity: ${(p) => (p.$open ? 1 : 0)};
   pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
-  transition: opacity 80ms ease, transform 80ms ease;
+  transition: opacity 140ms cubic-bezier(0.2, 0.9, 0.2, 1), transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1);
   z-index: 9999;
 `;
 
 const Card = styled.div`
-  width: 280px;
+  width: 320px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(13, 17, 23, 0.72);
-  backdrop-filter: blur(18px);
+  background: rgba(9, 12, 18, 0.78);
+  backdrop-filter: blur(22px);
   box-shadow:
-    0 22px 60px rgba(0, 0, 0, 0.62),
+    0 26px 74px rgba(0, 0, 0, 0.70),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  padding: 12px 12px 11px;
+  padding: 14px 14px 13px;
 `;
 
 const Arrow = styled.div<{ $placement: 'top' | 'bottom' }>`
@@ -53,7 +53,7 @@ const Arrow = styled.div<{ $placement: 'top' | 'bottom' }>`
   width: 12px;
   height: 12px;
   transform: translateX(-50%) rotate(45deg);
-  background: rgba(13, 17, 23, 0.72);
+  background: rgba(9, 12, 18, 0.78);
   border-left: 1px solid rgba(255, 255, 255, 0.14);
   border-top: 1px solid rgba(255, 255, 255, 0.14);
 `;
@@ -70,6 +70,7 @@ const DescriptionText = styled.div`
   margin-top: 8px;
   font-size: 12px;
   line-height: 1.45;
+  white-space: pre-wrap;
   color: rgba(255, 255, 255, 0.68);
 `;
 
@@ -142,6 +143,10 @@ export const Trigger: React.FC<{ children: React.ReactNode }> = ({ children }) =
       ref={(node) => ctx.setTriggerEl(node as HTMLElement | null)}
       onMouseEnter={ctx.scheduleOpen}
       onMouseLeave={ctx.scheduleClose}
+      onClick={() => {
+        if (ctx.open) ctx.setOpen(false);
+        else ctx.openNow();
+      }}
       onFocusCapture={ctx.openNow}
       onBlurCapture={(event) => {
         const nextTarget = event.relatedTarget as Node | null;
@@ -206,6 +211,32 @@ export const Content: React.FC<{ children: React.ReactNode }> = ({ children }) =
       window.removeEventListener('scroll', onScroll, true);
     };
   }, [ctx.open, ctx.triggerEl]);
+
+  useLayoutEffect(() => {
+    if (!ctx.open) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') ctx.setOpen(false);
+    };
+
+    const onPointerDown = (event: MouseEvent | PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (cardRef.current && cardRef.current.contains(target)) return;
+      if (ctx.triggerEl && ctx.triggerEl.contains(target)) return;
+      ctx.setOpen(false);
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('mousedown', onPointerDown, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('mousedown', onPointerDown, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+    };
+  }, [ctx.open, ctx.triggerEl, ctx.setOpen]);
 
   if (!overlayRoot) return null;
 

@@ -1,7 +1,7 @@
 {
   "version": 2,
   "framework": "nextjs",
-  "outputDirectory": ".next",
+  "outputDirectory": "frontend/.next",
   "functions": {
     "api/index.js": {
       "maxDuration": 300

@@ -691,6 +691,10 @@ function App() {
     recoverSession();
   }, [recoverSession]);
 
+  useEffect(() => {
+    void useProjectStore.getState().hydrateFromDisk();
+  }, []);
+
   const {
     files,
     activeFile,
@@ -2106,6 +2110,3 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 }
 
 export default App;
-  useEffect(() => {
-    void useProjectStore.getState().hydrateFromDisk();
-  }, []);

@@ -1,9 +1,9 @@
 import React from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { Sparkles, Brain, Loader2, Wrench } from 'lucide-react';
+import { Sparkles, Brain, Loader2, Wrench, X, Play } from 'lucide-react';
 
-export type MainActionState = 'idle' | 'planning' | 'coding' | 'done';
+export type MainActionState = 'idle' | 'planning' | 'coding' | 'interrupted' | 'done';
 
 const shimmer = keyframes`
   0% { transform: translateX(-60%) rotate(12deg); opacity: 0.0; }
@@ -130,6 +130,7 @@ const SwapLayer = styled.span<{ $visible: boolean }>`
 const getStateWidth = (state: MainActionState) => {
   if (state === 'planning') return 240;
   if (state === 'coding') return 200;
+  if (state === 'interrupted') return 200;
   if (state === 'done') return 180;
   return 190;
 };
@@ -143,19 +144,20 @@ export interface MainActionButtonProps {
 
 export const MainActionButton: React.FC<MainActionButtonProps> = ({ state, disabled, onClick, className }) => {
   const isBusy = state === 'planning' || state === 'coding';
+  const isDisabled = Boolean(disabled);
 
   return (
     <ButtonRoot
       className={className}
       type="button"
       onClick={onClick}
-      disabled={disabled || isBusy}
+      disabled={isDisabled}
       aria-busy={isBusy}
       aria-label={
-        state === 'planning'
-          ? 'Architecting'
-          : state === 'coding'
-            ? 'Coding'
+        state === 'planning' || state === 'coding'
+          ? 'Stop'
+          : state === 'interrupted'
+            ? 'Continue'
             : state === 'done'
               ? 'Fix or edit'
               : 'Generate'
@@ -163,21 +165,24 @@ export const MainActionButton: React.FC<MainActionButtonProps> = ({ state, disab
       $state={state}
       layout
       animate={{ width: getStateWidth(state) }}
-      whileHover={disabled || isBusy ? undefined : { scale: 1.03, y: -2 }}
-      whileTap={disabled || isBusy ? undefined : { scale: 0.97, y: 0 }}
+      whileHover={isDisabled ? undefined : { scale: 1.03, y: -2 }}
+      whileTap={isDisabled ? undefined : { scale: 0.97, y: 0 }}
       transition={{ type: 'spring', stiffness: 450, damping: 28 }}
     >
-      <Shine $active={!disabled && !isBusy} />
+      <Shine $active={!isDisabled} />
       <Label>
         <IconSlot aria-hidden="true">
           <SwapLayer $visible={state === 'idle'}>
             <Sparkles size={18} />
           </SwapLayer>
           <SwapLayer $visible={state === 'planning'}>
-            <Brain size={18} />
+            <X size={18} />
           </SwapLayer>
           <SwapLayer $visible={state === 'coding'}>
-            <Loader2 size={18} className="animate-spin" />
+            <X size={18} />
+          </SwapLayer>
+          <SwapLayer $visible={state === 'interrupted'}>
+            <Play size={18} />
           </SwapLayer>
           <SwapLayer $visible={state === 'done'}>
             <Wrench size={18} />
@@ -185,8 +190,9 @@ export const MainActionButton: React.FC<MainActionButtonProps> = ({ state, disab
         </IconSlot>
         <SwapSlot aria-hidden="true">
           <SwapLayer $visible={state === 'idle'}>Generate</SwapLayer>
-          <SwapLayer $visible={state === 'planning'}>Architecting…</SwapLayer>
-          <SwapLayer $visible={state === 'coding'}>Coding…</SwapLayer>
+          <SwapLayer $visible={state === 'planning'}>Stop</SwapLayer>
+          <SwapLayer $visible={state === 'coding'}>Stop</SwapLayer>
+          <SwapLayer $visible={state === 'interrupted'}>Continue</SwapLayer>
           <SwapLayer $visible={state === 'done'}>Fix / Edit</SwapLayer>
         </SwapSlot>
       </Label>

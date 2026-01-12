@@ -62,19 +62,21 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
         body: JSON.stringify({ files: initialFiles })
       });
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        let message = text || `Failed to start preview (${res.status})`;
-        try {
-          const parsed = JSON.parse(text);
-          if (parsed?.error) message = String(parsed.error);
-          if (Array.isArray(parsed?.missing) && parsed.missing.length > 0) {
-            message = `${message} (missing: ${parsed.missing.join(', ')})`;
-          }
-          if (parsed?.details) message = `${message} - ${String(parsed.details)}`;
-        } catch {}
-        throw new Error(message);
-      }
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          let message = text || `Failed to start preview (${res.status})`;
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed?.error) message = String(parsed.error);
+            if (Array.isArray(parsed?.missing) && parsed.missing.length > 0) {
+              message = `${message} (missing: ${parsed.missing.join(', ')})`;
+            }
+            if (parsed?.details) message = `${message} - ${String(parsed.details)}`;
+            if (parsed?.hint) message = `${message}\n${String(parsed.hint)}`;
+            if (parsed?.requestId) message = `${message}\n(requestId: ${String(parsed.requestId)})`;
+          } catch {}
+          throw new Error(message);
+        }
 
       const data: any = await res.json();
       const id = typeof data?.id === 'string' ? data.id : null;

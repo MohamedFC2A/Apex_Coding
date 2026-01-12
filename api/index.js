@@ -153,7 +153,8 @@ const proxyToPreviewRunner = async (req, res, { method, url, body }) => {
   if (!config) {
     return res.status(500).json({
       error: 'Preview runner is not configured',
-      missing: ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim())
+      missing: ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim()),
+      requestId: req.requestId
     });
   }
 
@@ -178,7 +179,12 @@ const proxyToPreviewRunner = async (req, res, { method, url, body }) => {
     return res.send(text);
   } catch (err) {
     const message = String(err?.name === 'AbortError' ? 'Preview runner timeout' : err?.message || err || 'Preview runner error');
-    return res.status(502).json({ error: message });
+    return res.status(502).json({
+      error: message,
+      hint:
+        'Preview runner is unreachable. Local dev: run `cd preview-runner && docker compose up -d` and set PREVIEW_RUNNER_URL=http://localhost:8080. Vercel: PREVIEW_RUNNER_URL must be a public URL (not localhost).',
+      requestId: req.requestId
+    });
   } finally {
     clearTimeout(timer);
   }

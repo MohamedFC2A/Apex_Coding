@@ -98,7 +98,7 @@ interface AIStoreActions {
   addChatMessage: (message: ChatMessage) => void;
   clearChatHistory: () => void;
   setInteractionMode: (mode: InteractionMode) => void;
-  generatePlan: (prompt?: string) => Promise<void>;
+  generatePlan: (prompt?: string, abortSignal?: AbortSignal) => Promise<void>;
   setDecisionTrace: (trace: string) => void;
   appendStreamText: (text: string) => void;
   setStreamText: (text: string) => void;
@@ -555,14 +555,14 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
       setInteractionMode: (mode) => set({ interactionMode: mode }),
 
-      generatePlan: async (promptOverride?: string) => {
+      generatePlan: async (promptOverride?: string, abortSignal?: AbortSignal) => {
         const prompt = (promptOverride ?? get().prompt ?? '').trim();
         if (!prompt) return;
 
         set({ isPlanning: true, error: null });
         try {
           const thinkingMode = get().modelMode === 'thinking';
-          const data = await aiService.generatePlan(prompt, thinkingMode);
+          const data = await aiService.generatePlan(prompt, thinkingMode, abortSignal);
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
 
           const planSteps: PlanStep[] = rawSteps
@@ -604,6 +604,11 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             );
           }
         } catch (err: any) {
+          if (err?.abortedByUser || err?.message === 'ABORTED_BY_USER' || err?.name === 'AbortError') {
+            set({ error: null });
+            return;
+          }
+
           set({ error: err?.message || 'Failed to generate plan' });
         } finally {
           set({ isPlanning: false });
@@ -871,9 +876,9 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       },
 
       startNewChat: () => {
-        get().saveCurrentSession();
+         get().saveCurrentSession();
 
-        set({
+         set({
           files: createInitialFiles(),
           chatHistory: [],
           plan: '',
@@ -898,11 +903,19 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           isPreviewOpen: false,
           interactionMode: 'create',
           currentSessionId: null
-        });
+         });
 
-        useProjectStore.getState().reset();
-        window.location.reload();
-      },
+         // Clear persisted workspace before reload so "New Chat" doesn't restore old files.
+         void useProjectStore.getState().clearDisk();
+         try {
+           void (window as any).__APEX_WORKSPACE_PERSIST__?.flush?.();
+         } catch {
+           // ignore
+         }
+
+         useProjectStore.getState().reset();
+         window.location.reload();
+       },
 
       reset: () => set(buildInitialState()),
 

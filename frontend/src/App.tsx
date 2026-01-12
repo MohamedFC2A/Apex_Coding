@@ -31,32 +31,10 @@ import { MobileNav } from './components/ui/MobileNav';
 // GLOBAL AUTOSAVE - INDEPENDENT OF CHAT/COMPONENT LIFECYCLE
 // ============================================================================
 let globalAutosaveTimer: number | null = null;
-let lastAutosaveHash = '';
 
 const globalWriteAutosaveNow = () => {
   try {
-    // Dynamic import to avoid circular dependencies
-    const project = (window as any).__APEX_PROJECT_STORE__?.getState?.() || {};
-    const snapshot = {
-      savedAt: Date.now(),
-      projectName: project.projectName || 'Untitled',
-      stack: project.stack || '',
-      description: project.description || '',
-      activeFile: project.activeFile || '',
-      files: (project.files || []).map((f: any) => ({
-        name: f.name,
-        path: f.path || f.name,
-        content: f.content || ''
-      }))
-    };
-    
-    // Only save if content actually changed
-    const hash = JSON.stringify(snapshot.files.map((f: any) => f.path + ':' + (f.content?.length || 0)));
-    if (hash === lastAutosaveHash) return;
-    lastAutosaveHash = hash;
-    
-    localStorage.setItem('apex-coding-autosave', JSON.stringify(snapshot));
-    console.log('[AutoSave] Saved', snapshot.files.length, 'files');
+    (window as any).__APEX_WORKSPACE_PERSIST__?.flush?.();
   } catch (e) {
     console.warn('[AutoSave] Failed:', e);
   }
@@ -749,13 +727,15 @@ function App() {
   const streamCharCountRef = useRef(0);
   const streamLastLogAtRef = useRef(0);
   const autoDebugRef = useRef<{ signature: string; attempts: number }>({ signature: '', attempts: 0 });
+  const generationAbortRef = useRef<AbortController | null>(null);
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
     if (isGenerating) return 'coding';
+    if (executionPhase === 'interrupted') return 'interrupted';
     if (files.length > 0) return 'done';
     return 'idle';
-  }, [files.length, isGenerating, isPlanning]);
+  }, [executionPhase, files.length, isGenerating, isPlanning]);
 
   const currentPlanStepId = useMemo(() => planSteps.find((step) => !step.completed)?.id, [planSteps]);
 
@@ -905,23 +885,47 @@ function App() {
     }, 80);
   }, [flushReasoningBuffer]);
 
+  const stopGeneration = useCallback(() => {
+    const controller = generationAbortRef.current;
+    if (!controller) return;
+
+    logSystem('[STATUS] Stop requested by user.');
+    setExecutionPhase('interrupted');
+    setThinkingStatus('Stopping…');
+
+    try {
+      controller.abort();
+    } catch {
+      // ignore
+    }
+
+    flushFileBuffers({ force: true });
+    flushReasoningBuffer();
+  }, [flushFileBuffers, flushReasoningBuffer, logSystem, setExecutionPhase]);
+
   const handleGenerate = useCallback(async (
     promptOverride?: string,
-    options?: { skipPlanning?: boolean; preserveProjectMeta?: boolean }
+    options?: { skipPlanning?: boolean; preserveProjectMeta?: boolean; resume?: boolean }
   ) => {
+    const requestedResume = options?.resume === true;
     const rawPrompt = (promptOverride ?? prompt).trim();
-    if (!rawPrompt || isPlanning || isGenerating) return;
+    const fallbackPrompt = requestedResume ? String(useAIStore.getState().lastPlannedPrompt || '').trim() : '';
+    const basePrompt = (rawPrompt || fallbackPrompt).trim();
+    if (!basePrompt || isPlanning || isGenerating) return;
 
     useAIStore.getState().saveCurrentSession();
 
-    const basePrompt = rawPrompt;
     const skipPlanning = options?.skipPlanning === true;
-    const preserveProjectMeta = options?.preserveProjectMeta === true;
+    const isResuming = requestedResume;
+    const preserveProjectMeta = options?.preserveProjectMeta === true || isResuming;
 
     autoDebugRef.current = { signature: '', attempts: 0 };
 
+    const abortController = new AbortController();
+    generationAbortRef.current = abortController;
+
     setIsGenerating(true);
-    setExecutionPhase(architectMode && !skipPlanning ? 'planning' : 'executing');
+    setExecutionPhase(architectMode && !skipPlanning && !isResuming ? 'planning' : 'executing');
     setError(null);
     setPreviewUrl(null);
     setSections({});
@@ -931,10 +935,10 @@ function App() {
     logSystem('[STATUS] Starting generation pipeline…');
     logSystem('[preview] Waiting for code generation to finish…');
     setBrainOpen(false);
-    setThinkingStatus('Initializing…');
+    setThinkingStatus(isResuming ? 'Resuming…' : 'Initializing…');
     streamCharCountRef.current = 0;
     streamLastLogAtRef.current = Date.now();
-    clearFileStatuses();
+    if (!isResuming) clearFileStatuses();
     setWritingFilePath(null);
     if (!preserveProjectMeta) resetProject();
     if (!preserveProjectMeta) resetFiles();
@@ -962,6 +966,23 @@ function App() {
       const partialPaths = new Set<string>();
       const editOriginalByPath = new Map<string, string>();
       const filesByBaseName = new Map<string, string>();
+
+      const resumeSnapshot = useAIStore.getState();
+      const resumeContext = isResuming
+        ? {
+            completedFiles: resumeSnapshot.completedFiles,
+            lastSuccessfulFile: resumeSnapshot.lastSuccessfulFile,
+            lastSuccessfulLine: resumeSnapshot.lastSuccessfulLine
+          }
+        : undefined;
+
+      const partialFile = isResuming
+        ? Object.entries(resumeSnapshot.fileStatuses).find(([_, s]) => s === 'partial')?.[0] || null
+        : null;
+
+      const baseStreamPrompt = partialFile
+        ? `CONTINUE ${partialFile} FROM LINE ${Number(resumeSnapshot.lastSuccessfulLine || 0) + 1}.\n\nOriginal Request: ${basePrompt}`
+        : basePrompt;
 
       // Use global autosave function (defined outside for independence)
       const scheduleAutosave = globalScheduleAutosave;
@@ -1213,8 +1234,14 @@ function App() {
         if (event.type === 'end') {
           flushFileBuffers({ onlyPath: resolvedPath, force: true });
           fileChunkBuffersRef.current.delete(resolvedPath);
-          setFileStatus(resolvedPath, 'ready');
+          const currentStatus = useAIStore.getState().fileStatuses?.[resolvedPath];
+          if (event.partial) setFileStatus(resolvedPath, 'partial');
+          else if (currentStatus !== 'compromised') setFileStatus(resolvedPath, 'ready');
           if (useAIStore.getState().writingFilePath === resolvedPath) setWritingFilePath(null);
+
+          if (typeof event.line === 'number') {
+            useAIStore.getState().setExecutionCursor(resolvedPath, event.line);
+          }
 
           if (event.mode === 'edit') {
             const original = editOriginalByPath.get(resolvedPath) ?? '';
@@ -1245,6 +1272,7 @@ function App() {
           } else {
             partialPaths.delete(resolvedPath);
             logSystem(`[STATUS] Completed ${resolvedPath}`);
+            useAIStore.getState().addCompletedFile(resolvedPath);
             scheduleAutosave();
           }
 
@@ -1314,14 +1342,22 @@ function App() {
             flushFileBuffers();
             flushReasoningBuffer();
           },
-          { thinkingMode: isThinkingMode, architectMode, includeReasoning: isThinkingMode, typingMs: 26, onFileEvent: handleFileEvent }
+          {
+            thinkingMode: isThinkingMode,
+            architectMode,
+            includeReasoning: isThinkingMode,
+            typingMs: 26,
+            onFileEvent: handleFileEvent,
+            abortSignal: abortController.signal,
+            resumeContext
+          }
         );
       };
 
       if (modelMode === 'super') {
         setExecutionPhase('planning');
         logSystem('[SUPER-THINKING] Initializing Fast-Mode Blueprint...');
-        const data = await aiService.generatePlan(basePrompt, false);
+        const data = await aiService.generatePlan(basePrompt, false, abortController.signal);
         const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
         const planStepsLocal = rawSteps
           .map((s, i) => ({
@@ -1338,6 +1374,12 @@ function App() {
         logSystem('[WORKFLOW] Mapping automated logic nodes...');
         setExecutionPhase('executing');
         logSystem('[SUPER-THINKING] Deep-Thinking Engine Engaged...');
+
+        if (isResuming && partialFile) {
+          logSystem('[STATUS] Resuming partial file before continuing plan…');
+          await runStream(baseStreamPrompt);
+        }
+
         for (const step of planStepsLocal) {
           logSystem(`[PLAN] Executing step: ${step.title}`);
           const stepPrompt = `
@@ -1360,34 +1402,42 @@ Output ONLY the code for these files.
           useAIStore.getState().setPlanStepCompleted(step.id, true);
           if (useAIStore.getState().executionPhase === 'interrupted') break;
         }
-      } else if (architectMode && !skipPlanning) {
+      } else if (architectMode && (!skipPlanning || isResuming)) {
         setExecutionPhase('planning');
         const currentSteps = useAIStore.getState().planSteps;
         const lastPlanned = useAIStore.getState().lastPlannedPrompt;
         
-        if (currentSteps.length === 0 || lastPlanned !== basePrompt) {
-           await generatePlan(basePrompt);
+        if (!isResuming && (currentSteps.length === 0 || lastPlanned !== basePrompt)) {
+           await generatePlan(basePrompt, abortController.signal);
         }
         
         const steps = useAIStore.getState().planSteps;
-        if (steps.length === 0) throw new Error('Failed to generate a plan.');
+        if (steps.length === 0) {
+          setExecutionPhase('executing');
+          await runStream(baseStreamPrompt);
+        } else {
         
-        if (lastPlanned !== basePrompt) {
-             setPlanSteps(steps.map(s => ({...s, completed: false})));
-        }
+          if (!isResuming && lastPlanned !== basePrompt) {
+               setPlanSteps(steps.map(s => ({...s, completed: false})));
+          }
 
-        setExecutionPhase('executing');
-        const updatedSteps = useAIStore.getState().planSteps;
-        
-        for (const step of updatedSteps) {
-            if (step.completed) continue;
-            
-            logSystem(`[PLAN] Executing step: ${step.title}`);
-            const stepPrompt = `
-[PROJECT CONTEXT]
-Project: ${projectName}
-Stack: ${stack}
-Description: ${description}
+          setExecutionPhase('executing');
+          const updatedSteps = useAIStore.getState().planSteps;
+
+          if (isResuming && partialFile) {
+            logSystem('[STATUS] Resuming partial file before continuing plan…');
+            await runStream(baseStreamPrompt);
+          }
+          
+          for (const step of updatedSteps) {
+              if (step.completed) continue;
+              
+              logSystem(`[PLAN] Executing step: ${step.title}`);
+              const stepPrompt = `
+ [PROJECT CONTEXT]
+ Project: ${projectName}
+ Stack: ${stack}
+ Description: ${description}
 
 [CURRENT PLAN]
 ${updatedSteps.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
@@ -1397,39 +1447,49 @@ Implement this step: "${step.title}"
 Description: ${step.description}
 Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
-Output ONLY the code for these files.
-`.trim();
-            
-            await runStream(stepPrompt);
-            useAIStore.getState().setPlanStepCompleted(step.id, true);
-            
-            // Safety check for interruptions
-            if (useAIStore.getState().executionPhase === 'interrupted') break;
+ Output ONLY the code for these files.
+ `.trim();
+              
+              await runStream(stepPrompt);
+              useAIStore.getState().setPlanStepCompleted(step.id, true);
+              
+              // Safety check for interruptions
+              if (useAIStore.getState().executionPhase === 'interrupted') break;
+          }
         }
       } else {
         setExecutionPhase('executing');
-        await runStream(basePrompt);
+        await runStream(baseStreamPrompt);
       }
 
-      setExecutionPhase('completed');
-      generationSucceeded = useProjectStore.getState().files.length > 0;
-      if (generationSucceeded) {
-        if (partialPaths.size > 0) {
-          logSystem(`[preview] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume…`);
-        } else {
-          logSystem('[preview] Code complete. Preview updating…');
-          setIsPreviewOpen(true);
+      if (useAIStore.getState().executionPhase !== 'interrupted') {
+        setExecutionPhase('completed');
+        generationSucceeded = useProjectStore.getState().files.length > 0;
+        if (generationSucceeded) {
+          if (partialPaths.size > 0) {
+            logSystem(`[preview] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume…`);
+          } else {
+            logSystem('[preview] Code complete. Preview updating…');
+            setIsPreviewOpen(true);
+          }
         }
+      } else {
+        setThinkingStatus('Interrupted');
       }
     } catch (e: any) {
       flushFileBuffers();
       flushReasoningBuffer();
-      setError(e?.message || 'Failed to generate code');
+      if (e?.abortedByUser || e?.message === 'ABORTED_BY_USER' || e?.name === 'AbortError') {
+        setError(null);
+      } else {
+        setError(e?.message || 'Failed to generate code');
+      }
       setExecutionPhase('interrupted');
       setThinkingStatus('Interrupted');
     } finally {
       setIsGenerating(false);
       setThinkingStatus('');
+      if (generationAbortRef.current === abortController) generationAbortRef.current = null;
     }
   }, [
     architectMode,
@@ -1629,6 +1689,16 @@ Output ONLY the code for these files.
   ]);
 
   const handleMainActionClick = useCallback(() => {
+    if (mainActionState === 'planning' || mainActionState === 'coding') {
+      stopGeneration();
+      return;
+    }
+
+    if (mainActionState === 'interrupted') {
+      handleGenerate(undefined, { resume: true, preserveProjectMeta: true });
+      return;
+    }
+
     if (mainActionState === 'done') {
       if (interactionMode !== 'edit') {
         setInteractionMode('edit');
@@ -1654,6 +1724,7 @@ Output ONLY the code for these files.
   }, [
     addChatMessage,
     buildFixPrompt,
+    stopGeneration,
     handleGenerate,
     interactionMode,
     mainActionState,
@@ -1700,7 +1771,9 @@ Output ONLY the code for these files.
               <BrandTitle>APEX CODING</BrandTitle>
               <BrandSubtitle>{projectName?.trim() || 'Untitled Project'}</BrandSubtitle>
             </BrandStack>
-            <StatusPill $active={isGenerating}>{isGenerating ? thinkingStatus || 'Working…' : 'Ready'}</StatusPill>
+            <StatusPill $active={isGenerating}>
+              {isGenerating ? thinkingStatus || 'Working…' : executionPhase === 'interrupted' ? 'Stopped' : 'Ready'}
+            </StatusPill>
           </HeaderLeft>
           <HeaderRight>
             <SubscriptionIndicator />
@@ -2033,3 +2106,6 @@ Output ONLY the code for these files.
 }
 
 export default App;
+  useEffect(() => {
+    void useProjectStore.getState().hydrateFromDisk();
+  }, []);

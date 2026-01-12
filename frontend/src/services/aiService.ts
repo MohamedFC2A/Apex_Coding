@@ -22,7 +22,11 @@ const getErrorMessage = (err: any, fallback: string) => {
 };
 
 export const aiService = {
-  async generatePlan(prompt: string, thinkingMode: boolean = false): Promise<{ title?: string; description?: string; stack?: string; fileTree?: string[]; steps: Array<{ id: string; title: string; category?: string; files?: string[]; description?: string }> }> {
+  async generatePlan(
+    prompt: string,
+    thinkingMode: boolean = false,
+    abortSignal?: AbortSignal
+  ): Promise<{ title?: string; description?: string; stack?: string; fileTree?: string[]; steps: Array<{ id: string; title: string; category?: string; files?: string[]; description?: string }> }> {
     const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
     
     if (!canMakeRequest()) {
@@ -32,14 +36,32 @@ export const aiService = {
     try {
       const PLAN_URL = apiUrl('/ai/plan');
 
-      const postOnce = async () => {
-        const controller = new AbortController();
-        const timeoutMs = thinkingMode ? 600_000 : 300_000; // Increased timeout for Replit/Vercel
-        const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
-        
-        const planningRules = `
-[SYSTEM PERSONA]
-You are Apex Coding V2.1 EXECUTION ENGINE.
+        const postOnce = async () => {
+          const controller = new AbortController();
+          let abortedByUser = false;
+          const timeoutMs = thinkingMode ? 600_000 : 300_000; // Increased timeout for Replit/Vercel
+          const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+          const externalAbortListener = () => {
+            abortedByUser = true;
+            try {
+              controller.abort();
+            } catch {
+              // ignore
+            }
+          };
+
+          if (abortSignal) {
+            if (abortSignal.aborted) {
+              externalAbortListener();
+            } else {
+              abortSignal.addEventListener('abort', externalAbortListener, { once: true });
+            }
+          }
+          
+          const planningRules = `
+ [SYSTEM PERSONA]
+ You are Apex Coding V2.1 EXECUTION ENGINE.
 Your goal is 100% Execution Completeness.
 
 STRICT PLANNING RULES:
@@ -52,17 +74,30 @@ STRICT PLANNING RULES:
 
         const enhancedPlanPrompt = `${planningRules}\n\n[USER REQUEST]\n${prompt}`;
 
-        try {
-          return await fetch(PLAN_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify({ prompt: enhancedPlanPrompt, thinkingMode })
-          });
-        } finally {
-          globalThis.clearTimeout(timer as any);
-        }
-      };
+          try {
+            return await fetch(PLAN_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
+              body: JSON.stringify({ prompt: enhancedPlanPrompt, thinkingMode })
+            });
+          } catch (e: any) {
+            if (abortedByUser) {
+              const err = Object.assign(new Error('ABORTED_BY_USER'), { name: 'AbortError', abortedByUser: true });
+              throw err;
+            }
+            throw e;
+          } finally {
+            if (abortSignal) {
+              try {
+                abortSignal.removeEventListener('abort', externalAbortListener);
+              } catch {
+                // ignore
+              }
+            }
+            globalThis.clearTimeout(timer as any);
+          }
+        };
 
       let response: Response | null = null;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -121,12 +156,13 @@ STRICT PLANNING RULES:
     onComplete: () => void,
     thinkingModeOrOptions:
       | boolean
-      | {
+        | {
           thinkingMode?: boolean;
           architectMode?: boolean;
           includeReasoning?: boolean;
           history?: any[];
           typingMs?: number;
+          abortSignal?: AbortSignal;
           onFileEvent?: (event: {
             type: 'start' | 'chunk' | 'end';
             path: string;
@@ -157,6 +193,7 @@ STRICT PLANNING RULES:
       const thinkingMode = Boolean(options.thinkingMode);
       const architectMode = Boolean(options.architectMode);
       const includeReasoning = Boolean(options.includeReasoning);
+      const abortSignal = (options as any).abortSignal as AbortSignal | undefined;
       const typingMsRaw = Number(options.typingMs ?? 26);
       const typingMs = Number.isFinite(typingMsRaw) ? typingMsRaw : 26;
       const resumeContext = options.resumeContext;
@@ -561,6 +598,26 @@ ${prompt}
 
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
         const controller = new AbortController();
+        let abortedByUser = false;
+
+        const externalAbortListener = () => {
+          abortedByUser = true;
+          try {
+            controller.abort();
+          } catch {
+            // ignore
+          }
+        };
+
+        if (abortSignal) {
+          if (abortSignal.aborted) {
+            externalAbortListener();
+          } else {
+            abortSignal.addEventListener('abort', externalAbortListener, { once: true });
+          }
+        }
+
+        try {
         const preTokenTimeoutMs = thinkingMode ? 60000 : 20000;
         let preTokenTimer: any = null;
         const startPreTokenTimer = () => {
@@ -580,20 +637,29 @@ ${prompt}
           }
         };
         startPreTokenTimer();
-        const response = await fetch(apiUrl('/ai/chat'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          mode: 'cors',
-          signal: controller.signal,
-          body: JSON.stringify({
-            prompt: streamPrompt,
-            thinkingMode,
-            architectMode,
-            includeReasoning,
-            context,
-            history: options.history || []
-          })
-        });
+        let response: Response;
+        try {
+          response = await fetch(apiUrl('/ai/chat'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            mode: 'cors',
+            signal: controller.signal,
+            body: JSON.stringify({
+              prompt: streamPrompt,
+              thinkingMode,
+              architectMode,
+              includeReasoning,
+              context,
+              history: options.history || []
+            })
+          });
+        } catch (e: any) {
+          if (abortedByUser) {
+            const err = Object.assign(new Error('ABORTED_BY_USER'), { name: 'AbortError', abortedByUser: true });
+            throw err;
+          }
+          throw e;
+        }
 
         if (!response.ok) {
           let message = `Streaming failed (${response.status})`;
@@ -718,6 +784,10 @@ ${prompt}
           }
         } catch (e: any) {
           streamErrored = true;
+          if (abortedByUser) {
+            const err = Object.assign(new Error('ABORTED_BY_USER'), { name: 'AbortError', abortedByUser: true });
+            throw err;
+          }
           if (!sawAnyToken) throw e;
         }
 
@@ -738,6 +808,15 @@ ${prompt}
         }
 
         return { markerParser };
+        } finally {
+          if (abortSignal) {
+            try {
+              abortSignal.removeEventListener('abort', externalAbortListener);
+            } catch {
+              // ignore
+            }
+          }
+        }
       };
 
       const maxResumeAttempts = 2;
@@ -748,6 +827,7 @@ ${prompt}
           first = await runStreamOnce(prompt);
           break;
         } catch (e: any) {
+          if (e?.abortedByUser || e?.message === 'ABORTED_BY_USER' || e?.name === 'AbortError') throw e;
           if (attempt >= 2) throw e;
           onStatus('streaming', 'Retrying…');
           await new Promise((r) => setTimeout(r, 1000));
@@ -779,6 +859,12 @@ ${prompt}
 
       onComplete();
     } catch (err: any) {
+      if (err?.abortedByUser || err?.message === 'ABORTED_BY_USER' || err?.name === 'AbortError') {
+        onStatus('done', 'Stopped');
+        onComplete();
+        return;
+      }
+
       onError(err?.message || 'Streaming failed');
       onComplete();
     }

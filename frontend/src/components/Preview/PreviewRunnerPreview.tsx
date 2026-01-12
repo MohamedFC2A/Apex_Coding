@@ -15,9 +15,13 @@ export type PreviewRunnerPreviewHandle = {
 };
 
 export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, PreviewRunnerPreviewProps>(({ className }, ref) => {
-  const { files } = useProjectStore();
-  const { setRuntimeStatus, setPreviewUrl } = usePreviewStore();
-  const { appendSystemConsoleContent, appendThinkingContent } = useAIStore();
+  const files = useProjectStore((s) => s.files);
+  const setRuntimeStatus = usePreviewStore((s) => s.setRuntimeStatus);
+  const setPreviewUrl = usePreviewStore((s) => s.setPreviewUrl);
+  const appendSystemConsoleContent = useAIStore((s) => s.appendSystemConsoleContent);
+  const appendThinkingContent = useAIStore((s) => s.appendThinkingContent);
+  const isGenerating = useAIStore((s) => s.isGenerating);
+  const isPlanning = useAIStore((s) => s.isPlanning);
 
   const [isLoading, setIsLoading] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -26,12 +30,23 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   const sessionIdRef = useRef<string | null>(null);
   const prevMapRef = useRef<FileMap>({});
   const patchTimerRef = useRef<number | null>(null);
+  const idleHandleRef = useRef<number | null>(null);
 
   const logStatus = (line: string) => {
     appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [PREVIEW] ${line}\n`);
   };
 
   const createSession = async (initialFiles = files) => {
+    if (!Array.isArray(initialFiles) || initialFiles.length === 0) {
+      setRuntimeStatus('idle');
+      setPreviewUrl(null);
+      setIframeUrl(null);
+      setSessionId(null);
+      sessionIdRef.current = null;
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setRuntimeStatus('booting');
     logStatus('Starting preview session…');
@@ -96,39 +111,64 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
 
   useEffect(() => {
     if (!sessionId) return;
+    if (isGenerating || isPlanning) return;
 
     if (patchTimerRef.current) window.clearTimeout(patchTimerRef.current);
+    if (idleHandleRef.current) {
+      const h = idleHandleRef.current;
+      idleHandleRef.current = null;
+      (window as any).cancelIdleCallback?.(h);
+    }
+
     patchTimerRef.current = window.setTimeout(async () => {
-      const nextMap = toPreviewFileMap(files);
-      const { create, destroy } = diffPreviewFileMaps(prevMapRef.current, nextMap);
-      if (Object.keys(create).length === 0 && destroy.length === 0) return;
+      const run = async () => {
+        const nextMap = toPreviewFileMap(files);
+        const { create, destroy } = diffPreviewFileMaps(prevMapRef.current, nextMap);
+        if (Object.keys(create).length === 0 && destroy.length === 0) return;
 
-      setRuntimeStatus('starting');
-      logStatus(`Syncing ${Object.keys(create).length} change(s), removing ${destroy.length} file(s)…`);
+        setRuntimeStatus('starting');
+        logStatus(`Syncing ${Object.keys(create).length} change(s), removing ${destroy.length} file(s)…`);
 
-      try {
-        const res = await fetch(`/api/preview/sessions/${encodeURIComponent(sessionId)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ create, destroy })
-        });
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          throw new Error(text || `Sync failed (${res.status})`);
+        try {
+          const res = await fetch(`/api/preview/sessions/${encodeURIComponent(sessionId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ create, destroy })
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error(text || `Sync failed (${res.status})`);
+          }
+          prevMapRef.current = nextMap;
+        } catch (err: any) {
+          const msg = String(err?.message || err || 'Sync failed');
+          setRuntimeStatus('error', msg);
+          appendThinkingContent(`[THOUGHT] Preview sync error: ${msg}\n`);
+          logStatus(`ERROR: ${msg}`);
         }
-        prevMapRef.current = nextMap;
-      } catch (err: any) {
-        const msg = String(err?.message || err || 'Sync failed');
-        setRuntimeStatus('error', msg);
-        appendThinkingContent(`[THOUGHT] Preview sync error: ${msg}\n`);
-        logStatus(`ERROR: ${msg}`);
+      };
+
+      const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void, opts?: any) => number);
+      if (typeof ric === 'function') {
+        idleHandleRef.current = ric(() => {
+          idleHandleRef.current = null;
+          void run();
+        }, { timeout: 1500 });
+        return;
       }
-    }, 450);
+
+      void run();
+    }, 1200);
 
     return () => {
       if (patchTimerRef.current) window.clearTimeout(patchTimerRef.current);
+      if (idleHandleRef.current) {
+        const h = idleHandleRef.current;
+        idleHandleRef.current = null;
+        (window as any).cancelIdleCallback?.(h);
+      }
     };
-  }, [files, sessionId, setRuntimeStatus, appendThinkingContent, appendSystemConsoleContent]);
+  }, [files, sessionId, isGenerating, isPlanning, setRuntimeStatus, appendThinkingContent, appendSystemConsoleContent]);
 
   useImperativeHandle(ref, () => ({
     resetSession: () => {
@@ -163,8 +203,10 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           referrerPolicy="no-referrer"
         />
       ) : (
-        <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30">
-          Preview is not available. Check preview-runner config.
+        <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
+          {Array.isArray(files) && files.length > 0
+            ? 'Preview is not available. Check preview-runner config.'
+            : 'Generate a project first, then open Live Preview.'}
         </div>
       )}
     </div>

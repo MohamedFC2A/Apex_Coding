@@ -277,29 +277,75 @@ const rewritePreviewSessionUrl = (runnerBaseUrl, maybeUrl) => {
   }
 };
 
+app.get(['/preview/mock', '/api/preview/mock'], (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Preview Config Required</title>
+      <style>
+        body { margin: 0; padding: 0; background: #0B0F14; color: #fff; font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .card { background: #1E293B; padding: 2rem; border-radius: 12px; max-width: 480px; text-align: center; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        h1 { margin-top: 0; font-size: 1.5rem; color: #60A5FA; }
+        p { color: #94A3B8; line-height: 1.5; margin-bottom: 1.5rem; }
+        code { background: rgba(0,0,0,0.3); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; color: #E2E8F0; }
+        .steps { text-align: left; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
+        .steps ol { margin: 0; padding-left: 1.2rem; }
+        .steps li { margin-bottom: 0.5rem; color: #CBD5E1; }
+        .btn { display: inline-block; background: #3B82F6; color: white; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 500; transition: background 0.2s; }
+        .btn:hover { background: #2563EB; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h1>Live Preview Configuration</h1>
+        <p>To see your code running live, you need to configure a preview provider.</p>
+        
+        <div class="steps">
+          <ol>
+            <li>Get a free API Key from <strong>CodeSandbox</strong>.</li>
+            <li>Open the <code>.env</code> file in your project root.</li>
+            <li>Replace <code>csb_v1_REPLACE_ME</code> with your actual key:
+              <div style="margin-top: 0.5rem"><code>CSB_API_KEY=csb_v1_...</code></div>
+            </li>
+            <li>Restart the server.</li>
+          </ol>
+        </div>
+
+        <a href="https://codesandbox.io/dashboard/settings/api-keys" target="_blank" class="btn">Get API Key</a>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
 app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
   const provider = 'codesandbox';
   try {
     const { apiKey: csbApiKey } = getCodeSandboxConfig();
-    if (!csbApiKey) {
-      return res.status(400).json({
-        error: 'Missing CodeSandbox API key',
-        missing: ['CSB_API_KEY'],
-        hint: 'Set CSB_API_KEY on the server (Vercel env or .env) and redeploy.',
-        requestId: req.requestId
+    
+    // Check for missing or placeholder key
+    const isMissing = !csbApiKey;
+    const isPlaceholder = csbApiKey && (
+      csbApiKey.includes('REPLACE_ME') || 
+      csbApiKey.length < 20 || 
+      /placeholder|invalid|example/i.test(csbApiKey)
+    );
+
+    if (isMissing || isPlaceholder) {
+      // Return a Mock Session instead of erroring
+      return res.json({
+        id: 'mock-session',
+        url: `${req.protocol}://${req.get('host')}/api/preview/mock`,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        provider: 'mock'
       });
     }
-    const keyLooksInvalid =
-      csbApiKey.length < 20 ||
-      /csb_?api_?key/i.test(csbApiKey) ||
-      /placeholder|invalid|example/i.test(csbApiKey);
-    if (keyLooksInvalid) {
-      return res.status(401).json({
-        error: 'CodeSandbox unauthorized',
-        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
-        requestId: req.requestId
-      });
-    }
+
     const fileMap = toPreviewFileMapFromArray(req.body?.files);
     const fileCount = Object.keys(fileMap).length;
     if (fileCount === 0) return res.status(400).json({ error: 'files is required' });
@@ -325,6 +371,16 @@ app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res)
   const provider = 'codesandbox';
   const id = String(req.params.id || '').trim();
   if (!id) return res.status(400).json({ error: 'id is required', requestId: req.requestId });
+  
+  if (id === 'mock-session') {
+    return res.json({
+      id: 'mock-session',
+      url: `${req.protocol}://${req.get('host')}/api/preview/mock`,
+      requestId: req.requestId,
+      provider: 'mock'
+    });
+  }
+
   return res.json({
     id,
     url: `https://${encodeURIComponent(id)}-3000.csb.app`,
@@ -334,6 +390,18 @@ app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res)
 });
 
 app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (id === 'mock-session') {
+    return res.json({ 
+      ok: true, 
+      id: 'mock-session', 
+      url: `${req.protocol}://${req.get('host')}/api/preview/mock`, 
+      updatedAt: Date.now(), 
+      requestId: req.requestId, 
+      provider: 'mock' 
+    });
+  }
+
   const provider = 'codesandbox';
   try {
     const { apiKey: csbApiKey } = getCodeSandboxConfig();
@@ -379,6 +447,11 @@ app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, re
 });
 
 app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (id === 'mock-session') {
+    return res.json({ ok: true, requestId: req.requestId, provider: 'mock' });
+  }
+
   const provider = 'codesandbox';
   try {
     const { apiKey: csbApiKey } = getCodeSandboxConfig();

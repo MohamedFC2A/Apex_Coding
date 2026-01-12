@@ -3,7 +3,7 @@
 import React, { useRef } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
-import { StackBlitzPreview, StackBlitzPreviewHandle } from '../Preview/StackBlitzPreview';
+import { PreviewRunnerPreview, PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreview';
 import { ErrorBoundary } from './ErrorBoundary';
 
 const Window = styled.div`
@@ -78,7 +78,7 @@ interface PreviewWindowProps {
 }
 
 export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
-  const previewRef = useRef<StackBlitzPreviewHandle>(null);
+  const previewRef = useRef<PreviewRunnerPreviewHandle>(null);
   return (
     <Window className={className}>
       <Titlebar>
@@ -90,14 +90,14 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className }) => {
         <Title>Live Preview</Title>
       </Titlebar>
       <Content>
-        <ErrorBoundary onReset={() => previewRef.current?.resetVM()} fallback={
+        <ErrorBoundary onReset={() => previewRef.current?.resetSession()} fallback={
             <div style={{ padding: 20, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
                 <div style={{ marginBottom: 10, fontWeight: 'bold', color: '#ef4444' }}>Preview Failed to Load</div>
                 <div>This might be due to ad-blockers or network restrictions.</div>
                 <div style={{ marginTop: 5, fontSize: 12 }}>Please disable ad-blockers for Live Preview to work.</div>
             </div>
         }>
-            <StackBlitzPreview ref={previewRef} />
+            <PreviewRunnerPreview ref={previewRef} />
         </ErrorBoundary>
       </Content>
     </Window>

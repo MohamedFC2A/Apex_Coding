@@ -917,7 +917,7 @@ function App() {
     clearThinkingContent();
     clearSystemConsoleContent();
     logSystem('[STATUS] Starting generation pipeline…');
-    logSystem('[webcontainer] Waiting for code generation to finish...');
+    logSystem('[preview] Waiting for code generation to finish…');
     setBrainOpen(false);
     setThinkingStatus('Initializing…');
     streamCharCountRef.current = 0;
@@ -1395,9 +1395,9 @@ Output ONLY the code for these files.
       generationSucceeded = useProjectStore.getState().files.length > 0;
       if (generationSucceeded) {
         if (partialPaths.size > 0) {
-          logSystem(`[webcontainer] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume...`);
+          logSystem(`[preview] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume…`);
         } else {
-          logSystem('[webcontainer] Code Complete. Preview updating...');
+          logSystem('[preview] Code complete. Preview updating…');
           setIsPreviewOpen(true);
         }
       }
@@ -1586,7 +1586,7 @@ Output ONLY the code for these files.
 
     logSystem(`[STATUS] Auto-debugging: ${signature}`);
     const requestText = [
-      'AUTO-DEBUG: The StackBlitz preview failed to run. Fix the code so it starts successfully.',
+      'AUTO-DEBUG: The live preview failed to run in the Preview Runner. Fix the code so it starts successfully.',
       signature ? `Error: ${signature}` : '',
       tail ? `Recent logs:\n${tail}` : ''
     ]

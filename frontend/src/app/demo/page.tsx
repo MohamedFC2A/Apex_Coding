@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
-import { StackBlitzPreview } from '@/components/Preview/StackBlitzPreview';
+import { PreviewRunnerPreview } from '@/components/Preview/PreviewRunnerPreview';
 
 export default function DemoPage() {
   const [isMounted, setIsMounted] = useState(false);
@@ -35,7 +35,7 @@ export default function DemoPage() {
       </header>
       <main className="flex-1 relative p-4 md:p-8">
         <div className="w-full h-[80vh] border border-white/10 rounded-xl overflow-hidden bg-black/40 shadow-2xl">
-          {typeof window !== 'undefined' && <StackBlitzPreview />}
+          {typeof window !== 'undefined' && <PreviewRunnerPreview />}
         </div>
       </main>
     </div>

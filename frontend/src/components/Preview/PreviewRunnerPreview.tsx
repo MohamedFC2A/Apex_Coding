@@ -1,0 +1,174 @@
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+
+import { useAIStore } from '@/stores/aiStore';
+import { usePreviewStore } from '@/stores/previewStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { diffPreviewFileMaps, toPreviewFileMap, type FileMap } from '@/utils/previewFilesUtils';
+
+interface PreviewRunnerPreviewProps {
+  className?: string;
+}
+
+export type PreviewRunnerPreviewHandle = {
+  resetSession: () => void;
+};
+
+export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, PreviewRunnerPreviewProps>(({ className }, ref) => {
+  const { files } = useProjectStore();
+  const { setRuntimeStatus, setPreviewUrl } = usePreviewStore();
+  const { appendSystemConsoleContent, appendThinkingContent } = useAIStore();
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+
+  const sessionIdRef = useRef<string | null>(null);
+  const prevMapRef = useRef<FileMap>({});
+  const patchTimerRef = useRef<number | null>(null);
+
+  const logStatus = (line: string) => {
+    appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [PREVIEW] ${line}\n`);
+  };
+
+  const createSession = async (initialFiles = files) => {
+    setIsLoading(true);
+    setRuntimeStatus('booting');
+    logStatus('Starting preview session…');
+
+    try {
+      const res = await fetch('/api/preview/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: initialFiles })
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `Failed to start preview (${res.status})`);
+      }
+
+      const data: any = await res.json();
+      const id = typeof data?.id === 'string' ? data.id : null;
+      const url = typeof data?.url === 'string' ? data.url : null;
+      if (!id || !url) throw new Error('Invalid preview runner response');
+
+      setSessionId(id);
+      sessionIdRef.current = id;
+      setIframeUrl(url);
+      setPreviewUrl(url);
+      setRuntimeStatus('starting');
+      prevMapRef.current = toPreviewFileMap(initialFiles);
+      logStatus(`Session ready: ${id}`);
+    } catch (err: any) {
+      const msg = String(err?.message || err || 'Preview failed');
+      setRuntimeStatus('error', msg);
+      appendThinkingContent(`[THOUGHT] Preview runner error: ${msg}\n`);
+      logStatus(`ERROR: ${msg}`);
+      setIframeUrl(null);
+      setSessionId(null);
+      sessionIdRef.current = null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetSessionInternal = async () => {
+    const currentId = sessionIdRef.current;
+    if (currentId) {
+      try {
+        await fetch(`/api/preview/sessions/${encodeURIComponent(currentId)}`, { method: 'DELETE' });
+      } catch {}
+    }
+    await createSession(files);
+  };
+
+  useEffect(() => {
+    void createSession(files);
+    return () => {
+      const currentId = sessionIdRef.current;
+      if (currentId) {
+        fetch(`/api/preview/sessions/${encodeURIComponent(currentId)}`, { method: 'DELETE' }).catch(() => {});
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    if (patchTimerRef.current) window.clearTimeout(patchTimerRef.current);
+    patchTimerRef.current = window.setTimeout(async () => {
+      const nextMap = toPreviewFileMap(files);
+      const { create, destroy } = diffPreviewFileMaps(prevMapRef.current, nextMap);
+      if (Object.keys(create).length === 0 && destroy.length === 0) return;
+
+      setRuntimeStatus('starting');
+      logStatus(`Syncing ${Object.keys(create).length} change(s), removing ${destroy.length} file(s)…`);
+
+      try {
+        const res = await fetch(`/api/preview/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ create, destroy })
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(text || `Sync failed (${res.status})`);
+        }
+        prevMapRef.current = nextMap;
+      } catch (err: any) {
+        const msg = String(err?.message || err || 'Sync failed');
+        setRuntimeStatus('error', msg);
+        appendThinkingContent(`[THOUGHT] Preview sync error: ${msg}\n`);
+        logStatus(`ERROR: ${msg}`);
+      }
+    }, 450);
+
+    return () => {
+      if (patchTimerRef.current) window.clearTimeout(patchTimerRef.current);
+    };
+  }, [files, sessionId, setRuntimeStatus, appendThinkingContent, appendSystemConsoleContent]);
+
+  useImperativeHandle(ref, () => ({
+    resetSession: () => {
+      void resetSessionInternal();
+    }
+  }));
+
+  return (
+    <div className={`relative w-full h-full ${className || ''}`}>
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          <span className="ml-2 text-white">Initializing Preview Runner…</span>
+        </div>
+      )}
+
+      {iframeUrl ? (
+        <iframe
+          src={iframeUrl}
+          className="w-full h-full border-0"
+          onLoad={() => {
+            setRuntimeStatus('ready');
+            logStatus('Preview ready.');
+          }}
+          onError={() => {
+            setRuntimeStatus('error', 'preview iframe error');
+            logStatus('ERROR: Preview failed to render.');
+            appendThinkingContent('[THOUGHT] Detected preview iframe error. Resetting…\n');
+            void resetSessionInternal();
+          }}
+          allow="clipboard-read; clipboard-write"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30">
+          Preview is not available. Check preview-runner config.
+        </div>
+      )}
+    </div>
+  );
+});
+
+PreviewRunnerPreview.displayName = 'PreviewRunnerPreview';

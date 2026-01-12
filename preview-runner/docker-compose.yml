@@ -1,0 +1,34 @@
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8080"
+      PREVIEW_DOMAIN: "localhost"
+      PREVIEW_PROTOCOL: "http"
+      DOCKER_NETWORK: "apex_preview"
+      SESSION_PORT: "3000"
+      SANDBOX_IMAGE: "apex-preview-sandbox:latest"
+      SESSION_TTL_MINUTES: "45"
+      MAX_SESSIONS: "50"
+      MAX_TOTAL_BYTES: "26214400"
+      PREVIEW_RUNNER_TOKEN: "replace-me"
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - apex_preview
+
+  sandbox:
+    build:
+      context: .
+      dockerfile: sandbox.Dockerfile
+    image: apex-preview-sandbox:latest
+    command: ["true"]
+
+networks:
+  apex_preview:
+    name: apex_preview
+

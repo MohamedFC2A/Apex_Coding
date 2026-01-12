@@ -68,8 +68,8 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
     }, 10000);
 
     const controller = new AbortController();
-    // Increase timeout to 90s to account for Vercel cold starts + CodeSandbox VM creation
-    const timeoutId = setTimeout(() => controller.abort(), 90000); 
+    // Allow extra time for CodeSandbox VM provisioning + dependency install on cold sandboxes.
+    const timeoutId = setTimeout(() => controller.abort(), 210000);
 
     try {
       const res = await fetch('/api/preview/sessions', {

@@ -40,6 +40,13 @@ const normalizeWorkspacePath = (raw) => {
   return posix;
 };
 
+const normalizePreviewUrl = (raw) => {
+  const s = String(raw || '').trim();
+  if (!s) return s;
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s.replace(/^\/+/, '')}`;
+};
+
 const withCodeSandboxTasksFile = (fileMap, { devCommand, port }) => {
   const next = { ...(fileMap && typeof fileMap === 'object' ? fileMap : {}) };
   if (!next['.codesandbox/tasks.json']) {
@@ -62,13 +69,56 @@ const withCodeSandboxTasksFile = (fileMap, { devCommand, port }) => {
   return next;
 };
 
-const inferDevCommandAndPort = (fileMap) => {
-  const port = 3000;
+const extractPortFromScript = (script) => {
+  const s = String(script || '');
+  if (!s) return null;
 
+  const m =
+    /(?:^|\s)--port=(\d{2,5})(?=\s|$)/.exec(s) ||
+    /(?:^|\s)--port\s+(\d{2,5})(?=\s|$)/.exec(s) ||
+    /(?:^|\s)-p\s+(\d{2,5})(?=\s|$)/.exec(s);
+
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n <= 0 || n > 65535) return null;
+  return n;
+};
+
+const scriptHasPortFlag = (script) => /(?:^|\s)(?:--port(?:=|\s)|-p\s)/.test(String(script || ''));
+
+const scriptHasHostFlag = (script) => {
+  const s = String(script || '');
+  return /(?:^|\s)(?:--host(?:=|\s)|--hostname(?:=|\s)|-H\s)/.test(s);
+};
+
+const scriptLooksComplex = (script) => {
+  const s = String(script || '').trim();
+  if (!s) return false;
+
+  // If the dev script orchestrates other commands, appending args with `npm run dev -- ...`
+  // can break the tool (e.g. `concurrently ... -p 3000`).
+  if (/[;&|]{2,}|[;&]/.test(s)) return true;
+  if (/(\s|^)concurrently(\s|$)/.test(s)) return true;
+  if (/(\s|^)npm-?run-?all(\s|$)/.test(s)) return true;
+  if (/(\s|^)run-p(\s|$)/.test(s)) return true;
+  if (/(\s|^)turbo(\s|$)/.test(s)) return true;
+  if (/(\s|^)lerna(\s|$)/.test(s)) return true;
+  if (/(\s|^)nx(\s|$)/.test(s)) return true;
+  if (/(\s|^)pnpm(\s|$)/.test(s) && /(\s|^)-r(\s|$)|(\s|^)--recursive(\s|$)/.test(s)) return true;
+  if (/npm\s+--workspace\b/.test(s) || /npm\s+--workspaces\b/.test(s)) return true;
+
+  return false;
+};
+
+const inferDevCommandAndPort = (fileMap) => {
   const packageJsonRaw =
     (fileMap && typeof fileMap === 'object' && (fileMap['package.json'] || fileMap['./package.json'])) || '';
 
-  if (!packageJsonRaw) return { devCommand: 'npm run dev', port };
+  if (!packageJsonRaw) {
+    const fallbackPortRaw = Number(process.env.CSB_PREVIEW_PORT || process.env.PREVIEW_PORT || 3000);
+    const fallbackPort = Number.isFinite(fallbackPortRaw) ? fallbackPortRaw : 3000;
+    return { devCommand: 'npm run dev', port: fallbackPort };
+  }
 
   try {
     const pkg = JSON.parse(String(packageJsonRaw));
@@ -80,16 +130,48 @@ const inferDevCommandAndPort = (fileMap) => {
     const hasVite = typeof deps.vite === 'string';
     const hasNext = typeof deps.next === 'string';
 
+    const preferredPortRaw = Number(process.env.CSB_PREVIEW_PORT || process.env.PREVIEW_PORT || NaN);
+    const preferredPort = Number.isFinite(preferredPortRaw) ? preferredPortRaw : null;
+
+    const devScript = hasDev ? scripts.dev : null;
+    const startScript = hasStart ? scripts.start : null;
+    const portFromScript = extractPortFromScript(devScript) || extractPortFromScript(startScript);
+    const port = portFromScript || preferredPort || (hasNext ? 3000 : hasVite ? 5173 : 3000);
+
+    // When the dev script is "complex" (monorepos, runners, concurrently, etc.),
+    // don't append args; just run it as-is and wait for the inferred port.
+    if (hasDev && scriptLooksComplex(devScript)) {
+      return { devCommand: 'npm run dev', port };
+    }
+    if (!hasDev && hasStart && scriptLooksComplex(startScript)) {
+      return { devCommand: 'npm start', port };
+    }
+
     if (hasDev) {
-      if (hasNext) return { devCommand: `npm run dev -- -H 0.0.0.0 -p ${port}`, port };
-      if (hasVite) return { devCommand: `npm run dev -- --host 0.0.0.0 --port ${port}`, port };
+      if (hasNext) {
+        const extra = [];
+        if (!scriptHasHostFlag(devScript)) extra.push('--hostname', '0.0.0.0');
+        if (!scriptHasPortFlag(devScript)) extra.push('--port', String(port));
+        const devCommand = extra.length > 0 ? `npm run dev -- ${extra.join(' ')}` : 'npm run dev';
+        return { devCommand, port };
+      }
+      if (hasVite) {
+        const extra = [];
+        if (!scriptHasHostFlag(devScript)) extra.push('--host', '0.0.0.0');
+        if (!scriptHasPortFlag(devScript)) extra.push('--port', String(port));
+        if (!/\b--strictPort\b/.test(String(devScript || ''))) extra.push('--strictPort');
+        const devCommand = extra.length > 0 ? `npm run dev -- ${extra.join(' ')}` : 'npm run dev';
+        return { devCommand, port };
+      }
       return { devCommand: 'npm run dev', port };
     }
 
     if (hasStart) return { devCommand: 'npm start', port };
     return { devCommand: 'npm run dev', port };
   } catch {
-    return { devCommand: 'npm run dev', port };
+    const fallbackPortRaw = Number(process.env.CSB_PREVIEW_PORT || process.env.PREVIEW_PORT || 3000);
+    const fallbackPort = Number.isFinite(fallbackPortRaw) ? fallbackPortRaw : 3000;
+    return { devCommand: 'npm run dev', port: fallbackPort };
   }
 };
 
@@ -117,14 +199,30 @@ const isDependencyManifest = (p) => {
 };
 
 const ensureDevServerRunning = async ({ client, devCommand, port, timeoutMs }) => {
-  const existing = await client.ports.get(port).catch(() => undefined);
-  if (existing && existing.host) return existing;
+  const candidatePorts = Array.from(new Set([port, 3000, 5000, 5173, 4173, 8080].filter((p) => Number.isFinite(p))));
+
+  for (const p of candidatePorts) {
+    const existing = await client.ports.get(p).catch(() => undefined);
+    if (existing && existing.host) return existing;
+  }
 
   await client.commands.runBackground(devCommand, { name: 'dev-server' });
-  return client.ports.waitForPort(port, { timeoutMs });
+
+  try {
+    return await Promise.any(candidatePorts.map((p) => client.ports.waitForPort(p, { timeoutMs })));
+  } catch (err) {
+    const opened = await client.ports.getAll().catch(() => []);
+    const best = candidatePorts.map((p) => opened.find((o) => o.port === p)).find((o) => o && o.host);
+    if (best && best.host) return best;
+
+    const any = opened.find((o) => o && o.host);
+    if (any && any.host) return any;
+
+    throw err;
+  }
 };
 
-const createSandboxPreview = async ({ fileMap, timeoutMs = 60_000 }) => {
+const createSandboxPreview = async ({ fileMap, timeoutMs = 180_000 }) => {
   const sdk = getSdk();
   const { devCommand, port } = inferDevCommandAndPort(fileMap);
   const effectiveFileMap = withCodeSandboxTasksFile(fileMap, { devCommand, port });
@@ -142,7 +240,7 @@ const createSandboxPreview = async ({ fileMap, timeoutMs = 60_000 }) => {
     await client.commands.run('npm install', { name: 'npm install' }).catch(() => {});
 
     const portInfo = await ensureDevServerRunning({ client, devCommand, port, timeoutMs });
-    const url = portInfo?.host || client.hosts.getUrl(port);
+    const url = normalizePreviewUrl(portInfo?.host || client.hosts.getUrl(port));
 
     return { sandboxId: sandbox.id, url, port };
   } finally {
@@ -155,7 +253,7 @@ const patchSandboxFiles = async ({
   create = {},
   destroy = [],
   files,
-  timeoutMs = 30_000
+  timeoutMs = 90_000
 }) => {
   if (!sandboxId) throw new Error('sandboxId is required');
   const sdk = getSdk();
@@ -198,7 +296,7 @@ const patchSandboxFiles = async ({
     }
 
     const portInfo = await ensureDevServerRunning({ client, devCommand, port, timeoutMs });
-    const url = portInfo?.host || client.hosts.getUrl(port);
+    const url = normalizePreviewUrl(portInfo?.host || client.hosts.getUrl(port));
 
     return { sandboxId, url, port };
   } finally {

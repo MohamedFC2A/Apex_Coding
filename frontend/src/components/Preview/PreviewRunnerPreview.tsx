@@ -60,7 +60,16 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
 
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(text || `Failed to start preview (${res.status})`);
+        let message = text || `Failed to start preview (${res.status})`;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.error) message = String(parsed.error);
+          if (Array.isArray(parsed?.missing) && parsed.missing.length > 0) {
+            message = `${message} (missing: ${parsed.missing.join(', ')})`;
+          }
+          if (parsed?.details) message = `${message} - ${String(parsed.details)}`;
+        } catch {}
+        throw new Error(message);
       }
 
       const data: any = await res.json();

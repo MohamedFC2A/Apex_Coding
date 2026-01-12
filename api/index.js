@@ -174,6 +174,16 @@ const proxyToPreviewRunner = async (req, res, { method, url, body }) => {
     });
 
     const text = await upstream.text().catch(() => '');
+
+    if (upstream.status === 401 || upstream.status === 403) {
+      return res.status(upstream.status).json({
+        error: 'Unauthorized from preview runner',
+        hint:
+          'PREVIEW_RUNNER_TOKEN mismatch. Ensure Vercel env PREVIEW_RUNNER_TOKEN exactly matches the preview-runner env PREVIEW_RUNNER_TOKEN (no quotes/spaces), then redeploy Vercel and restart preview-runner.',
+        requestId: req.requestId
+      });
+    }
+
     res.status(upstream.status);
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
     return res.send(text);
@@ -241,6 +251,15 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
 
     const text = await upstream.text().catch(() => '');
     const contentType = upstream.headers.get('content-type') || 'application/json';
+
+    if (upstream.status === 401 || upstream.status === 403) {
+      return res.status(upstream.status).json({
+        error: 'Unauthorized from preview runner',
+        hint:
+          'PREVIEW_RUNNER_TOKEN mismatch. Ensure Vercel env PREVIEW_RUNNER_TOKEN exactly matches the preview-runner env PREVIEW_RUNNER_TOKEN (no quotes/spaces), then redeploy Vercel and restart preview-runner.',
+        requestId: req.requestId
+      });
+    }
 
     if (!upstream.ok) {
       res.status(upstream.status);

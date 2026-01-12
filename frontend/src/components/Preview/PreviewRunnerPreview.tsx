@@ -20,6 +20,8 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   const files = useProjectStore((s) => s.files);
   const setRuntimeStatus = usePreviewStore((s) => s.setRuntimeStatus);
   const setPreviewUrl = usePreviewStore((s) => s.setPreviewUrl);
+  const runtimeStatus = usePreviewStore((s) => s.runtimeStatus);
+  const runtimeMessage = usePreviewStore((s) => s.runtimeMessage);
   const appendSystemConsoleContent = useAIStore((s) => s.appendSystemConsoleContent);
   const appendThinkingContent = useAIStore((s) => s.appendThinkingContent);
   const isGenerating = useAIStore((s) => s.isGenerating);
@@ -235,9 +237,11 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
-          {Array.isArray(files) && files.length > 0
-            ? 'Preview is not available. Check preview-runner config.'
-            : 'Generate a project first, then open Live Preview.'}
+          {(() => {
+            if (!Array.isArray(files) || files.length === 0) return 'Generate a project first, then open Live Preview.';
+            if (runtimeStatus === 'error' && runtimeMessage) return `Preview error: ${runtimeMessage}`;
+            return 'Preview is not available. Check preview-runner config.';
+          })()}
         </div>
       )}
     </div>

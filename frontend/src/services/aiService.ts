@@ -34,7 +34,7 @@ export const aiService = {
 
       const postOnce = async () => {
         const controller = new AbortController();
-        const timeoutMs = thinkingMode ? 300_000 : 120_000;
+        const timeoutMs = thinkingMode ? 600_000 : 300_000; // Increased timeout for Replit/Vercel
         const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
         
         const planningRules = `

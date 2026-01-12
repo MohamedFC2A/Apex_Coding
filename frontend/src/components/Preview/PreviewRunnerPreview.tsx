@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 
 import { useAIStore } from '@/stores/aiStore';
 import { usePreviewStore } from '@/stores/previewStore';
@@ -28,6 +28,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   const isPlanning = useAIStore((s) => s.isPlanning);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isLongLoading, setIsLongLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
 
@@ -51,20 +52,32 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       setSessionId(null);
       sessionIdRef.current = null;
       setIsLoading(false);
+      setIsLongLoading(false);
       creatingSessionRef.current = false;
       return;
     }
 
     setIsLoading(true);
+    setIsLongLoading(false);
     setRuntimeStatus('booting');
     logStatus('Starting preview session…');
+
+    // Show "taking longer than expected" after 5s
+    const longLoadingTimer = setTimeout(() => {
+        if (creatingSessionRef.current) setIsLongLoading(true);
+    }, 5000);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
 
     try {
       const res = await fetch('/api/preview/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: initialFiles })
+        body: JSON.stringify({ files: initialFiles }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
         if (!res.ok) {
           const text = await res.text().catch(() => '');
@@ -95,7 +108,11 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       prevMapRef.current = toPreviewFileMap(initialFiles);
       logStatus(`Session ready: ${id}`);
     } catch (err: any) {
-      const msg = String(err?.message || err || 'Preview failed');
+      clearTimeout(timeoutId);
+      let msg = String(err?.message || err || 'Preview failed');
+      if (err.name === 'AbortError') {
+        msg = 'Preview timeout: Server took too long to respond. Please check your connection or API Key.';
+      }
       setRuntimeStatus('error', msg);
       appendThinkingContent(`[THOUGHT] Preview runner error: ${msg}\n`);
       logStatus(`ERROR: ${msg}`);
@@ -103,7 +120,9 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       setSessionId(null);
       sessionIdRef.current = null;
     } finally {
+      clearTimeout(longLoadingTimer);
       setIsLoading(false);
+      setIsLongLoading(false);
       creatingSessionRef.current = false;
     }
   };
@@ -245,9 +264,16 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   return (
     <div className={`relative w-full h-full ${className || ''}`}>
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-          <span className="ml-2 text-white">Initializing Preview…</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-10 p-4">
+          <div className="flex items-center mb-2">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            <span className="ml-2 text-white font-medium">Initializing Preview…</span>
+          </div>
+          {isLongLoading && (
+            <p className="text-yellow-400 text-sm mt-2 animate-pulse text-center max-w-md">
+              Connecting to preview environment is taking longer than expected. Please wait...
+            </p>
+          )}
         </div>
       )}
 
@@ -272,7 +298,21 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
         <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
           {(() => {
             if (!Array.isArray(files) || files.length === 0) return 'Generate a project first, then open Live Preview.';
-            if (runtimeStatus === 'error' && runtimeMessage) return `Preview error: ${runtimeMessage}`;
+            if (runtimeStatus === 'error' && runtimeMessage) {
+              return (
+                <div className="flex flex-col items-center gap-3">
+                  <AlertTriangle className="w-8 h-8 text-red-400" />
+                  <div className="text-red-300 max-w-md">{runtimeMessage}</div>
+                  <button
+                    onClick={() => void resetSessionInternal()}
+                    className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Retry Preview
+                  </button>
+                </div>
+              );
+            }
             return 'Preview is not available. Check preview configuration.';
           })()}
         </div>

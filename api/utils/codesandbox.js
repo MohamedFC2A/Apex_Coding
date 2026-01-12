@@ -124,7 +124,7 @@ const ensureDevServerRunning = async ({ client, devCommand, port, timeoutMs }) =
   return client.ports.waitForPort(port, { timeoutMs });
 };
 
-const createSandboxPreview = async ({ fileMap, timeoutMs = 180_000 }) => {
+const createSandboxPreview = async ({ fileMap, timeoutMs = 60_000 }) => {
   const sdk = getSdk();
   const { devCommand, port } = inferDevCommandAndPort(fileMap);
   const effectiveFileMap = withCodeSandboxTasksFile(fileMap, { devCommand, port });
@@ -155,7 +155,7 @@ const patchSandboxFiles = async ({
   create = {},
   destroy = [],
   files,
-  timeoutMs = 90_000
+  timeoutMs = 30_000
 }) => {
   if (!sandboxId) throw new Error('sandboxId is required');
   const sdk = getSdk();

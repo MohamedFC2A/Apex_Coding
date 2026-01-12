@@ -62,13 +62,14 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
     setRuntimeStatus('booting');
     logStatus('Starting preview session…');
 
-    // Show "taking longer than expected" after 5s
+    // Show "taking longer than expected" after 10s (was 5s)
     const longLoadingTimer = setTimeout(() => {
         if (creatingSessionRef.current) setIsLongLoading(true);
-    }, 5000);
+    }, 10000);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+    // Increase timeout to 90s to account for Vercel cold starts + CodeSandbox VM creation
+    const timeoutId = setTimeout(() => controller.abort(), 90000); 
 
     try {
       const res = await fetch('/api/preview/sessions', {

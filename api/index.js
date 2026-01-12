@@ -493,25 +493,29 @@ REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files. WR
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
 // Using regex to reliably match both /ai/plan and /api/ai/plan regardless of Vercel rewrites
-const planRouteRegex = /\/api\/ai\/plan|\/ai\/plan/;
+const planRouteRegex = /^\/api\/ai\/plan|^\/ai\/plan/;
 
 app.options(planRouteRegex, cors(corsOptionsDelegate));
 
 const planLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 
 app.post(planRouteRegex, planLimiter, async (req, res) => {
+  console.log(`[plan] [${req.requestId}] Received request`);
   try {
     const { prompt, thinkingMode } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+      console.log(`[plan] [${req.requestId}] Error: Prompt is required`);
       return res.status(400).json({ error: 'Prompt is required', requestId: req.requestId });
     }
     if (prompt.length > 30_000) {
+      console.log(`[plan] [${req.requestId}] Error: Prompt is too long`);
       return res.status(400).json({ error: 'Prompt is too long', requestId: req.requestId });
     }
     console.log(`[plan] [${req.requestId}] prompt_length=${prompt.length}`);
 
     // Fallback plan when AI provider is not configured (demo mode)
     if (!process.env.DEEPSEEK_API_KEY) {
+      console.log(`[plan] [${req.requestId}] Warning: DEEPSEEK_API_KEY is missing, using fallback`);
       const title = 'Landing Page (React + Vite)';
       const description = 'بناء صفحة هبوط عربية حديثة باستخدام React + Vite مع أقسام Hero و Features و CTA بتصميم متجاوب وبهيكلة واضحة.';
       const stack = 'react-vite';
@@ -554,6 +558,7 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     let completion;
     const provider = getLLMProvider();
     try {
+      console.log(`[plan] [${req.requestId}] Requesting AI completion...`);
       completion = await Promise.race([
         provider.createChatCompletion({
           ...request,
@@ -561,7 +566,8 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
         }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('PLAN_TIMEOUT')), TIMEOUT_MS))
       ]);
-    } catch {
+    } catch (err) {
+      console.log(`[plan] [${req.requestId}] First attempt failed: ${err.message}. Retrying without json_object format...`);
       completion = await Promise.race([
         provider.createChatCompletion(request),
         new Promise((_, reject) => setTimeout(() => reject(new Error('PLAN_TIMEOUT')), TIMEOUT_MS))
@@ -569,6 +575,7 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     }
 
     let content = completion?.choices?.[0]?.message?.content || '';
+    console.log(`[plan] [${req.requestId}] AI response received, content length=${content.length}`);
 
     content = String(content).replace(/```json/gi, '').replace(/```/g, '').trim();
     if (content.length === 0) throw new Error('Empty AI response');
@@ -596,11 +603,15 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
       : [];
 
     const title = typeof parsed?.title === 'string' ? parsed.title : 'Architecture Plan';
-    const description = typeof parsed?.description === 'string' ? parsed.description : '';
-    const stack = typeof parsed?.stack === 'string' ? parsed.stack : '';
-    const fileTree = Array.isArray(parsed?.fileTree) ? parsed.fileTree : [];
-
-    res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
+    console.log(`[plan] [${req.requestId}] Success`);
+    return res.json({
+      title,
+      description: parsed?.description || '',
+      stack: parsed?.stack || '',
+      fileTree: Array.isArray(parsed?.fileTree) ? parsed.fileTree : [],
+      steps,
+      requestId: req.requestId
+    });
   } catch (error) {
     if (String(error?.message || '').includes('PLAN_TIMEOUT')) {
       console.warn(`[plan] [${req.requestId}] timeout - returning demo fallback`);

@@ -326,7 +326,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
           }
         >
           {enabled ? (
-            <PreviewRunnerPreviewOptimized ref={previewRef} enabled />
+            <PreviewRunnerPreview ref={previewRef} enabled />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30">
               <div className="text-center">

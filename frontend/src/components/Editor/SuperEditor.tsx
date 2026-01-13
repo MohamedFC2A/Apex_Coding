@@ -58,7 +58,7 @@ interface FileNode {
 interface EditorTheme {
   name: string;
   base: 'vs-dark' | 'vs' | 'hc-black';
-  colors: Record<string, string>;
+  colors?: Record<string, string>;
 }
 
 interface AIAssistant {
@@ -168,7 +168,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
         let currentPath = '';
         let currentLevel = tree;
 
-        parts.forEach((part, index) => {
+        parts.forEach((part: string, index: number) => {
           currentPath = currentPath ? `${currentPath}/${part}` : part;
           const isLastPart = index === parts.length - 1;
           const isFile = isLastPart && file.content !== undefined;
@@ -221,7 +221,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
       lineNumbersMinChars: 3,
       renderLineHighlight: 'all',
       occurrencesHighlight: true,
-      renderWhitespace: 'selection',
+      renderWhitespace: 'selection' as const,
       guides: {
         indentation: true,
         bracketPairs: true
@@ -287,7 +287,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
       const analysis = await aiCodeGenerator.analyzeCode(code, language);
       
       // Add decorations for issues
-      const decorations: monaco.editor.IModelDeltaDecoration[] = analysis.issues.map(issue => ({
+      const decorations: monaco.editor.IModelDeltaDecoration[] = analysis.issues.map((issue: { line: number, severity: string, message: string }) => ({
         range: new monaco.Range(
           issue.line,
           1,
@@ -315,7 +315,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
     const structure = await smartTemplates.getStructure(type);
     const files = await smartTemplates.generateFiles(structure);
     
-    files.forEach(file => {
+    files.forEach((file: { path: string, content: string }) => {
       addFile(file.path, file.content);
     });
     
@@ -346,7 +346,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
       const optimizations = await fileSystemAI.optimizeProject(files);
       
       // Apply optimizations
-      optimizations.forEach(opt => {
+      optimizations.forEach((opt: any) => {
         if (opt.type === 'file') {
           updateFile(opt.path, opt.content);
         } else if (opt.type === 'delete') {
@@ -376,7 +376,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
     const commands = [
       { id: 'save', name: 'Save File', icon: Save, action: saveCurrentFile },
       { id: 'format', name: 'Format Code', icon: Code2, action: formatCode },
-      { id: 'analyze', name: 'AI Analysis', icon: Brain, action: runAIAnalysis },
+      { id: 'analyze', name: 'AI Analysis', icon: Brain, action: analyzeCurrentCode },
       { id: 'component', name: 'New Component', icon: Plus, action: () => generateFileStructure('component') },
       { id: 'page', name: 'New Page', icon: Layout, action: () => generateFileStructure('page') },
       { id: 'optimize', name: 'Optimize Project', icon: Rocket, action: optimizeProject },
@@ -409,12 +409,12 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
         </div>
       </div>
     );
-  }, [saveCurrentFile, formatCode, runAIAnalysis, generateFileStructure, optimizeProject]);
+  }, [saveCurrentFile, formatCode, analyzeCurrentCode, generateFileStructure, optimizeProject]);
 
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
     saveAll: async () => {
-      openFiles.forEach(file => {
+      openFiles.forEach((file: any) => {
         if (file.content) {
           updateFile(file.id, file.content);
         }
@@ -426,7 +426,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
     optimizeProject
   }), [openFiles, updateFile, formatCode, analyzeCurrentCode, generateFileStructure, optimizeProject]);
 
-  const activeFile = openFiles.find(f => f.id === activeFileId);
+  const activeFile = openFiles.find((f: any) => f.id === activeFileId);
 
   return (
     <div className="flex h-full bg-gray-950">

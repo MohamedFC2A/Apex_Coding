@@ -163,7 +163,7 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
       sessionIdRef.current = null;
       
       // Auto-retry logic
-      if (retryCount < 3 && !err.name === 'AbortError') {
+      if (retryCount < 3 && err.name !== 'AbortError') {
         const retryDelay = Math.min(5000 * (retryCount + 1), 15000); // 5s, 10s, 15s
         logStatus(`Auto-retrying in ${retryDelay / 1000}s...`);
         retryTimeoutRef.current = window.setTimeout(() => {

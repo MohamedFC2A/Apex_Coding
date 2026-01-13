@@ -114,7 +114,7 @@ Preview Performance Insights:
 
   // Generate AI-friendly error messages
   generateErrorMessage(error: any, context: any): string {
-    const messages = {
+    const messages: Record<string, string> = {
       'timeout': 'The preview environment is taking longer than expected. This might be due to complex dependencies or high server load. Consider simplifying the code or try again.',
       'unauthorized': 'The CodeSandbox API key is invalid or missing. Please check your environment configuration.',
       'network': 'Network connection issue. Please check your internet connection and try again.',
@@ -126,7 +126,7 @@ Preview Performance Insights:
     return messages[errorType] || messages.default;
   }
 
-  private detectErrorType(error: any): keyof typeof messages {
+  private detectErrorType(error: any): 'timeout' | 'unauthorized' | 'network' | 'parse' | 'default' {
     const message = error?.message?.toLowerCase() || '';
     
     if (message.includes('timeout') || message.includes('aborted')) return 'timeout';

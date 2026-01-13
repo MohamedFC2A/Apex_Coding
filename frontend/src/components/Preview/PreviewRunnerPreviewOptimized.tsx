@@ -1,10 +1,11 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { Loader2, RefreshCw, AlertTriangle, Wifi, WifiOff } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle, Wifi, WifiOff, Brain } from 'lucide-react';
 
 import { useAIStore } from '@/stores/aiStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { diffPreviewFileMaps, toPreviewFileMap, type FileMap } from '@/utils/previewFilesUtils';
+import { previewAIAssistant } from '@/utils/previewAIAssistant';
 
 interface PreviewRunnerPreviewProps {
   className?: string;
@@ -34,6 +35,8 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [isAIAnalyzing, setIsAIAnalyzing] = useState(false);
 
   const sessionIdRef = useRef<string | null>(null);
   const creatingSessionRef = useRef(false);
@@ -45,6 +48,29 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
   const logStatus = useCallback((line: string) => {
     appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [PREVIEW] ${line}\n`);
   }, [appendSystemConsoleContent]);
+
+  // AI Analysis function
+  const runAIAnalysis = useCallback(async () => {
+    setIsAIAnalyzing(true);
+    try {
+      const analysis = await previewAIAssistant.diagnosePreviewSystem();
+      setAiAnalysis(analysis);
+      
+      // Log AI findings
+      appendThinkingContent(`[AI ANALYSIS] ${analysis.summary}\n`);
+      analysis.problems.forEach((problem: any) => {
+        appendThinkingContent(`[AI] ${problem.severity.toUpperCase()}: ${problem.message}\n`);
+        appendThinkingContent(`[AI] Root cause: ${problem.rootCause}\n`);
+        appendThinkingContent(`[AI] Solution: ${problem.solution}\n`);
+      });
+      
+      return analysis;
+    } catch (error) {
+      console.error('AI Analysis failed:', error);
+    } finally {
+      setIsAIAnalyzing(false);
+    }
+  }, [appendThinkingContent]);
 
   const createSession = useCallback(async (initialFiles = files, isRetry = false) => {
     if (creatingSessionRef.current) return;
@@ -150,6 +176,14 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
       clearTimeout(timeoutId);
       let msg = String(err?.message || err || 'Preview failed');
       
+      // Use AI to generate intelligent error message
+      const context = {
+        fileCount: initialFiles.length,
+        retryCount,
+        hasApiKey: !!process.env.CSB_API_KEY
+      };
+      msg = previewAIAssistant.generateIntelligentErrorMessage(err, context);
+      
       if (err.name === 'AbortError') {
         const timeoutMinutes = Math.round(timeoutMs / 60000);
         msg = `Preview timeout after ${timeoutMinutes} minute${timeoutMinutes > 1 ? 's' : ''}. CodeSandbox is provisioning your environment. This is normal for first-time setup. Please try again.`;
@@ -162,6 +196,11 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
       setIframeUrl(null);
       setSessionId(null);
       sessionIdRef.current = null;
+      
+      // Run AI analysis on errors
+      if (retryCount === 0) {
+        runAIAnalysis();
+      }
       
       // Auto-retry logic
       if (retryCount < 3 && err.name !== 'AbortError') {
@@ -413,13 +452,39 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
               {runtimeStatus === 'error' && runtimeMessage && (
                 <div className="mt-4 flex flex-col items-center gap-3">
                   <div className="text-red-300 text-xs max-w-md">{runtimeMessage}</div>
-                  <button
-                    onClick={retryConnection}
-                    className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    {retryCount > 0 ? 'Retry Again' : 'Retry Preview'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={retryConnection}
+                      className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      {retryCount > 0 ? 'Retry Again' : 'Retry Preview'}
+                    </button>
+                    <button
+                      onClick={runAIAnalysis}
+                      disabled={isAIAnalyzing}
+                      className="flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md text-sm transition-colors disabled:opacity-50"
+                    >
+                      <Brain className="w-4 h-4 mr-2" />
+                      {isAIAnalyzing ? 'Analyzing...' : 'AI Diagnose'}
+                    </button>
+                  </div>
+                  {aiAnalysis && (
+                    <div className="mt-3 text-left bg-gray-800 p-3 rounded max-w-md">
+                      <div className="text-xs font-semibold text-purple-400 mb-2">AI Analysis:</div>
+                      <div className="text-xs text-gray-300">{aiAnalysis.summary}</div>
+                      {aiAnalysis.problems.length > 0 && (
+                        <div className="mt-2">
+                          <div className="text-xs font-semibold text-yellow-400">Issues Found:</div>
+                          {aiAnalysis.problems.slice(0, 3).map((problem: any, i: number) => (
+                            <div key={i} className="text-xs text-gray-400 mt-1">
+                              • {problem.message}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

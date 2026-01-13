@@ -18,7 +18,7 @@ export class AICodeGenerator {
     const cacheKey = `${code.slice(-100)}_${language}_${position.lineNumber}_${position.column}`;
     
     if (this.completionCache.has(cacheKey)) {
-      return this.completionCache.get(cacheKey);
+      return this.completionCache.get(cacheKey) || [];
     }
 
     const { appendThinkingContent } = useAIStore.getState();
@@ -101,9 +101,9 @@ export class AICodeGenerator {
 
   // Smart code refactoring
   async refactorCode(code: string, instructions: string, language: string): Promise<string> {
-    const { appendThinkingContent, generateCode } = useAIStore.getState();
-    
-    appendThinkingContent(`[AI] Refactoring code: ${instructions}\n`);
+    // Import AI service dynamically to avoid circular dependencies
+    const { useAIStore } = await import('@/stores/aiStore');
+    const { generateCode } = useAIStore.getState();
     
     const prompt = `Refactor the following ${language} code based on these instructions: "${instructions}"
 
@@ -132,6 +132,8 @@ Refactored code:`;
     style?: string;
     dependencies?: string[];
   }): Promise<string> {
+    // Import AI service dynamically to avoid circular dependencies
+    const { useAIStore } = await import('@/stores/aiStore');
     const { generateCode } = useAIStore.getState();
     
     const prompt = `Generate ${context.language} code for: ${description}
@@ -156,6 +158,8 @@ Generated code:`;
 
   // Explain code in natural language
   async explainCode(code: string, language: string): Promise<string> {
+    // Import AI service dynamically to avoid circular dependencies
+    const { useAIStore } = await import('@/stores/aiStore');
     const { generateCode } = useAIStore.getState();
     
     const prompt = `Explain the following ${language} code in simple terms:
@@ -178,6 +182,8 @@ Explanation:`;
 
   // Generate unit tests
   async generateTests(code: string, language: string, testFramework: string = 'jest'): Promise<string> {
+    // Import AI service dynamically to avoid circular dependencies
+    const { useAIStore } = await import('@/stores/aiStore');
     const { generateCode } = useAIStore.getState();
     
     const prompt = `Generate comprehensive unit tests for the following ${language} code using ${testFramework}:

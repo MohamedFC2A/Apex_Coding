@@ -652,11 +652,6 @@ export class CodeAnalyzer {
     return Math.round(totalScore / analyses.length);
   }
 
-  private calculateSecurityScore(analyses: Array<{ analysis: any }>): number {
-    const totalScore = analyses.reduce((sum, { analysis }) => sum + analysis.security.score, 0);
-    return Math.round(totalScore / analyses.length);
-  }
-
   private calculateTestCoverage(files: Array<{ path: string; content: string; language: string }>): number {
     const testFiles = files.filter(file => 
       file.path.includes('.test.') || 

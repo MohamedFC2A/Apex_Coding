@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { 
   Code2, 
@@ -21,7 +21,7 @@ import {
 
 // Dynamically import the SuperEditor to avoid SSR issues
 const SuperEditor = dynamic(
-  () => import('@/components/Editor/SuperEditor'),
+  () => import('@/components/Editor/SuperEditor').then(mod => ({ default: mod.SuperEditor })),
   { 
     ssr: false,
     loading: () => (
@@ -36,42 +36,34 @@ const SuperEditor = dynamic(
 );
 
 export default function DemoPage() {
-  const editorRef = useRef<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showStats, setShowStats] = useState(false);
 
   const handleSaveAll = async () => {
-    if (editorRef.current) {
-      await editorRef.current.saveAll();
-    }
+    // Will be implemented with store actions
+    console.log('Save all files');
   };
 
   const handleFormatCode = () => {
-    if (editorRef.current) {
-      editorRef.current.formatCode();
-    }
+    // Will be implemented with store actions
+    console.log('Format code');
   };
 
   const handleRunAIAnalysis = async () => {
-    if (editorRef.current) {
-      setIsAnalyzing(true);
-      await editorRef.current.runAIAnalysis();
-      setIsAnalyzing(false);
-    }
+    setIsAnalyzing(true);
+    // Will be implemented with store actions
+    setTimeout(() => setIsAnalyzing(false), 2000);
   };
 
   const handleGenerateComponent = () => {
-    if (editorRef.current) {
-      editorRef.current.generateComponent('react');
-    }
+    // Will be implemented with store actions
+    console.log('Generate component');
   };
 
   const handleOptimizeProject = async () => {
-    if (editorRef.current) {
-      setIsAnalyzing(true);
-      await editorRef.current.optimizeProject();
-      setIsAnalyzing(false);
-    }
+    setIsAnalyzing(true);
+    // Will be implemented with store actions
+    setTimeout(() => setIsAnalyzing(false), 2000);
   };
 
   return (
@@ -237,7 +229,7 @@ export default function DemoPage() {
 
       {/* Main Editor Area */}
       <div className="flex-1 flex flex-col">
-        <SuperEditor ref={editorRef} />
+        <SuperEditor />
       </div>
     </div>
   );

@@ -59,9 +59,11 @@ const translations: Record<Language, Translations> = {
     'lead.success': 'Saved. We will reach out soon.',
     
     // Demo Section
-    'demo.title': 'Demo',
-    'demo.subtitle': 'Add your demo video embed here.',
-    'demo.comingSoon': 'Coming soon: Interactive walkthrough',
+    'demo.title': 'Interactive Demo',
+    'demo.subtitle': 'Experience the future of graph-based coding.',
+    'demo.back': 'Back to Home',
+    'demo.status': 'Interactive Preview Environment',
+    'demo.loading': 'Initializing Demo Environment...',
     
     // UI Helpers
     'ui.search.placeholder': '✨ Click the search bar or press Enter to start coding',
@@ -70,7 +72,8 @@ const translations: Record<Language, Translations> = {
 
     // Brand
     'brand.name': 'Apex Coding',
-    'brand.tagline': 'Code at the Speed of Thought'
+    'brand.tagline': 'Code at the Speed of Thought',
+    'brand.footer': '© 2026 Apex Coding | AI-Powered Developer Platform'
   },
   ar: {
     // Hero Section
@@ -114,9 +117,11 @@ const translations: Record<Language, Translations> = {
     'lead.success': 'تم الحفظ. سنتواصل معك قريباً.',
     
     // Demo Section
-    'demo.title': 'العرض التوضيحي',
-    'demo.subtitle': 'أضف فيديو العرض التوضيحي الخاص بك هنا.',
-    'demo.comingSoon': 'قريباً: جولة تفاعلية داخل المنتج',
+    'demo.title': 'عرض توضيحي تفاعلي',
+    'demo.subtitle': 'اختبر مستقبل البرمجة القائمة على الرسوم البيانية.',
+    'demo.back': 'العودة للرئيسية',
+    'demo.status': 'بيئة العرض التفاعلية',
+    'demo.loading': 'جاري تهيئة بيئة العرض...',
     
     // UI Helpers
     'ui.search.placeholder': '✨ انقر على شريط البحث أو اضغط Enter لبدء البرمجة',
@@ -125,7 +130,8 @@ const translations: Record<Language, Translations> = {
 
     // Brand
     'brand.name': 'نيكسس أبكس',
-    'brand.tagline': 'طور بسرعة التفكير'
+    'brand.tagline': 'طور بسرعة التفكير',
+    'brand.footer': '© 2026 نيكسس أبكس | منصة تطوير مدعومة بالذكاء الاصطناعي'
   }
 };
 

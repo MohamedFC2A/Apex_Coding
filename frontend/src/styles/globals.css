@@ -3,6 +3,24 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --nexus-deepest: #000000;
+    --nexus-dark: #0A0A0A;
+    --nexus-card: #111111;
+    --silver-primary: #E2E8F0;
+    --silver-shiny: #F8FAFC;
+    --silver-muted: #94A3B8;
+    --silver-border: rgba(226, 232, 240, 0.1);
+    --silver-gradient: linear-gradient(135deg, #E2E8F0 0%, #94A3B8 50%, #E2E8F0 100%);
+    --silver-glow: 0 0 20px rgba(226, 232, 240, 0.15);
+    
+    --glass-blur: 24px;
+    --border-white: rgba(255, 255, 255, 0.08);
+    --border-white-hover: rgba(255, 255, 255, 0.15);
+    --highlight-white: rgba(255, 255, 255, 0.05);
+    --highlight-white-strong: rgba(255, 255, 255, 0.1);
+  }
+
   * { box-sizing: border-box; }
   html, body {
     overflow-y: auto !important;
@@ -70,6 +88,23 @@
 
   .btn-outline {
     @apply btn border border-white/15 bg-transparent text-white/90 backdrop-blur-md hover:bg-white/5;
+  }
+
+  .btn-silver {
+    @apply btn bg-white text-black border border-white/20;
+    @apply shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:bg-gray-100 hover:shadow-[0_0_25px_rgba(255,255,255,0.2)];
+    background: var(--silver-gradient);
+    border-color: var(--silver-primary);
+  }
+
+  .silver-text {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--silver-gradient);
+  }
+
+  .silver-border {
+    border: 1px solid var(--silver-border);
+    box-shadow: var(--silver-glow);
   }
 
   .badge {

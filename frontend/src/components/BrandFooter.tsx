@@ -1,8 +1,11 @@
+import { useLanguage } from '@/context/LanguageContext';
+
 export function BrandFooter() {
+  const { t } = useLanguage();
   return (
-    <footer className="border-t border-white/10 bg-white/5 backdrop-blur-2xl">
-      <div className="page-container flex items-center justify-center py-4 text-center text-xs text-white/60">
-        <span>© 2026 Apex Coding | AI-Powered Developer Platform</span>
+    <footer className="border-t border-white/5 bg-black/50 backdrop-blur-2xl">
+      <div className="page-container flex items-center justify-center py-6 text-center text-[10px] uppercase tracking-[0.2em] text-white/30">
+        <span>{t('brand.footer')}</span>
       </div>
     </footer>
   );

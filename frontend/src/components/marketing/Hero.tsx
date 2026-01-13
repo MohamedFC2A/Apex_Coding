@@ -57,18 +57,19 @@ function TypingSearch({ onClick }: { onClick: () => void }) {
     <div className="mt-6 max-w-2xl">
       <button
         type="button"
-        className="relative group w-full text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/30 rounded-2xl"
+        className="relative group w-full text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 rounded-2xl"
         onClick={onClick}
         onKeyDown={handleKeyDown}
         aria-label={t('hero.cta.start')}
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-fuchsia-500/20 blur-xl group-hover:blur-2xl transition-all duration-300" />
-        <div className="relative rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:border-white/20 hover:shadow-[0_8px_40px_rgba(34,211,238,0.2)] transition-all">
-          <div className="flex items-center gap-3 px-5 py-4">
-            <svg className="h-5 w-5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="absolute inset-0 bg-white/5 blur-xl group-hover:blur-2xl transition-all duration-300" />
+        <div className="relative rounded-2xl border border-white/10 bg-black shadow-[0_8px_32px_rgba(0,0,0,0.8)] hover:border-white/30 transition-all overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+          <div className="flex items-center gap-3 px-5 py-4 relative z-10">
+            <svg className="h-5 w-5 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            <span className="flex-1 bg-transparent text-white/85 outline-none">
+            <span className="flex-1 bg-transparent text-white/90 outline-none font-medium">
               {text}
             </span>
             <span className="h-4 w-0.5 bg-white/40 animate-pulse" />
@@ -88,21 +89,24 @@ export function Hero() {
   };
 
   return (
-    <div className="page-container flex min-h-[calc(100vh-56px)] flex-col justify-center pt-14 pb-12 md:pt-20">
+    <div className="page-container flex min-h-[calc(100vh-56px)] flex-col justify-center pt-14 pb-12 md:pt-20 relative overflow-hidden">
+      {/* Background gradients */}
+      <div className="absolute top-0 left-1/4 w-[50%] h-[50%] bg-white/5 rounded-full blur-[120px] pointer-events-none" />
+      
       <div
-        className={`flex flex-col gap-4 sm:items-center sm:justify-between ${isRTL ? 'sm:flex-row-reverse' : 'sm:flex-row'}`}
+        className={`flex flex-col gap-4 sm:items-center sm:justify-between relative z-10 ${isRTL ? 'sm:flex-row-reverse' : 'sm:flex-row'}`}
       >
         <a href="/" className="inline-flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
-            <span className="h-5 w-5 rounded-full bg-gradient-to-br from-cyan-300/90 via-fuchsia-300/90 to-cyan-300/90" />
+          <span className="grid h-10 w-10 place-items-center rounded-xl border border-white/20 bg-black shadow-lg">
+            <span className="h-5 w-5 rounded-full bg-gradient-to-br from-white via-gray-400 to-white shadow-[0_0_10px_rgba(255,255,255,0.3)]" />
           </span>
-          <span className="text-sm font-semibold tracking-wide text-white/85">{t('brand.name')}</span>
+          <span className="text-sm font-bold tracking-widest text-white uppercase">{t('brand.name')}</span>
         </a>
         <div className={`flex flex-wrap items-center gap-3 ${isRTL ? 'sm:flex-row-reverse' : ''}`}>
           <LanguageSwitcher />
-          <div className="badge">
-            <span className="h-2 w-2 rounded-full bg-cyan-300/90" />
-            {t('hero.badge')}
+          <div className="badge border-white/20 bg-white/5">
+            <span className="h-2 w-2 rounded-full bg-white shadow-[0_0_5px_white]" />
+            <span className="text-white/80">{t('hero.badge')}</span>
           </div>
         </div>
       </div>
@@ -112,19 +116,19 @@ export function Hero() {
         initial="hidden"
         animate="show"
         transition={{ duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
-        className="mt-10"
+        className="mt-10 relative z-10"
       >
-        <h1 className="text-balance text-4xl font-semibold tracking-tight md:text-6xl">
-          <span className="bg-gradient-to-r from-cyan-200 via-fuchsia-200 to-cyan-200 bg-clip-text text-transparent">
+        <h1 className="text-balance text-4xl font-bold tracking-tighter md:text-7xl">
+          <span className="silver-text">
             {t('hero.title')}
           </span>
         </h1>
         <h2 className="sr-only">Graph-Based AI IDE</h2>
-        <p className="mt-4 max-w-2xl text-pretty text-base leading-relaxed text-white/70 md:text-lg">
+        <p className="mt-6 max-w-2xl text-pretty text-base leading-relaxed text-white/50 md:text-xl font-light">
           {t('hero.subtitle')}
         </p>
         <TypingSearch onClick={handleStart} />
-        <p className="mt-3 text-xs text-white/50 max-w-2xl">
+        <p className="mt-4 text-[10px] text-white/30 max-w-2xl uppercase tracking-[0.2em]">
           {t('ui.search.placeholder')}
         </p>
       </motion.div>
@@ -134,15 +138,15 @@ export function Hero() {
         initial="hidden"
         animate="show"
         transition={{ delay: 0.1, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
-        className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center"
+        className="mt-10 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center relative z-10"
       >
-        <a href="/app" className="btn-primary w-full sm:w-auto">
+        <a href="/app" className="btn-silver px-8 py-4 text-base">
           {t('hero.cta.start')}
         </a>
-        <a href="/pricing" className="btn-secondary w-full sm:w-auto">
+        <a href="/pricing" className="btn-outline px-8 py-4 border-white/10 hover:border-white/40">
           {t('ui.viewPricing')}
         </a>
-        <Link href="/demo" className="btn-outline w-full sm:w-auto">
+        <Link href="/demo" className="btn-outline px-8 py-4 border-white/10 hover:border-white/40">
           {t('hero.cta.demo')}
         </Link>
       </motion.div>
@@ -152,17 +156,17 @@ export function Hero() {
         initial="hidden"
         animate="show"
         transition={{ delay: 0.2, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
-        className="mt-10"
+        className="mt-16 relative z-10"
       >
-        <div className="inline-flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/75 backdrop-blur-md">
-          <span className="text-white/55">{t('hero.powered')}</span>
-          <span className="rounded-full bg-gradient-to-r from-cyan-400/20 to-fuchsia-500/20 px-3 py-1 ring-1 ring-white/10">
+        <div className="inline-flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-black/50 px-5 py-3 text-[10px] font-bold text-white/40 backdrop-blur-md uppercase tracking-widest">
+          <span className="text-white/20">{t('hero.powered')}</span>
+          <span className="px-3 py-1 border border-white/10 rounded-lg">
             DeepSeek
           </span>
-          <span className="rounded-full bg-gradient-to-r from-fuchsia-500/20 to-cyan-400/20 px-3 py-1 ring-1 ring-white/10">
+          <span className="px-3 py-1 border border-white/10 rounded-lg">
             Convex
           </span>
-          <span className="text-white/55">{t('ui.techStack')}</span>
+          <span className="text-white/20">{t('ui.techStack')}</span>
         </div>
       </motion.div>
     </div>

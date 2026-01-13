@@ -21,7 +21,7 @@ import {
 
 // Dynamically import the SuperEditor to avoid SSR issues
 const SuperEditor = dynamic(
-  () => import('@/components/Editor/SuperEditor'),
+  () => import('@/components/Editor').then(mod => ({ default: mod.SuperEditor })),
   { 
     ssr: false,
     loading: () => (

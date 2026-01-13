@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { Copy, ExternalLink, Info, RefreshCw, AlertTriangle, MonitorPlay } from 'lucide-react';
-import { PreviewRunnerPreviewOptimized, type PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreviewOptimized';
+import { PreviewRunnerPreview, type PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreview';
 import { ErrorBoundary } from './ErrorBoundary';
 import { usePreviewStore } from '@/stores/previewStore';
 import { Content as PopoverContent, Description, Heading, Popover, Trigger } from './InstructionPopover';

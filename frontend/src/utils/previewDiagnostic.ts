@@ -118,9 +118,14 @@ export class PreviewDiagnostic {
     
     // Check if backend URL is accessible
     try {
-      const backendUrl = new URL(import.meta.env.VITE_BACKEND_URL || '');
-      if (backendUrl.hostname === 'localhost' && window.location.hostname !== 'localhost') {
-        issues.push('Using localhost backend URL from non-localhost frontend');
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      if (!backendUrl) {
+        issues.push('VITE_BACKEND_URL is not set');
+      } else {
+        const url = new URL(backendUrl);
+        if (url.hostname === 'localhost' && window.location.hostname !== 'localhost') {
+          issues.push('Using localhost backend URL from non-localhost frontend');
+        }
       }
     } catch {
       issues.push('VITE_BACKEND_URL is not a valid URL');

@@ -124,10 +124,14 @@ Refactored code:`;
     let fullResponse = '';
     await aiService.generateCodeStream(
       prompt,
-      (token) => { fullResponse += token; },
-      () => {},
-      () => {},
-      () => {}
+      (token) => { fullResponse += token; }, // onToken
+      () => {}, // onStatus
+      () => {}, // onMeta
+      () => {}, // onJSON
+      () => {}, // onError
+      () => {}, // onReasoning
+      () => {}, // onComplete
+      { thinkingMode: false } // options
     );
     
     return this.extractCodeFromResponse(fullResponse);
@@ -163,10 +167,14 @@ Generated code:`;
     let fullResponse = '';
     await aiService.generateCodeStream(
       prompt,
-      (token) => { fullResponse += token; },
-      () => {},
-      () => {},
-      () => {}
+      (token) => { fullResponse += token; }, // onToken
+      () => {}, // onStatus
+      () => {}, // onMeta
+      () => {}, // onJSON
+      () => {}, // onError
+      () => {}, // onReasoning
+      () => {}, // onComplete
+      { thinkingMode: false } // options
     );
     
     return this.extractCodeFromResponse(fullResponse);
@@ -196,10 +204,14 @@ Explanation:`;
     let fullResponse = '';
     await aiService.generateCodeStream(
       prompt,
-      (token) => { fullResponse += token; },
-      () => {},
-      () => {},
-      () => {}
+      (token) => { fullResponse += token; }, // onToken
+      () => {}, // onStatus
+      () => {}, // onMeta
+      () => {}, // onJSON
+      () => {}, // onError
+      () => {}, // onReasoning
+      () => {}, // onComplete
+      { thinkingMode: false } // options
     );
     
     return fullResponse;
@@ -229,10 +241,14 @@ Tests:`;
     let fullResponse = '';
     await aiService.generateCodeStream(
       prompt,
-      (token) => { fullResponse += token; },
-      () => {},
-      () => {},
-      () => {}
+      (token) => { fullResponse += token; }, // onToken
+      () => {}, // onStatus
+      () => {}, // onMeta
+      () => {}, // onJSON
+      () => {}, // onError
+      () => {}, // onReasoning
+      () => {}, // onComplete
+      { thinkingMode: false } // options
     );
     
     return this.extractCodeFromResponse(fullResponse);

@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { Copy, ExternalLink, Info, RefreshCw } from 'lucide-react';
+import { Copy, ExternalLink, Info, RefreshCw, AlertTriangle, MonitorPlay } from 'lucide-react';
 import { PreviewRunnerPreview, PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreview';
 import { ErrorBoundary } from './ErrorBoundary';
 import { usePreviewStore } from '@/stores/previewStore';
@@ -12,21 +12,18 @@ const Window = styled.div`
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(24px);
-  box-shadow:
-    0 28px 80px rgba(0, 0, 0, 0.60),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  border: 1px solid var(--nexus-border);
+  background: var(--nexus-surface);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
   overflow: hidden;
-  transition: all 300ms ease;
+  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.18);
-    box-shadow:
-      0 32px 90px rgba(0, 0, 0, 0.65),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    border-color: var(--nexus-border-hover);
+    box-shadow: var(--glass-shadow-hover);
+    transform: translateY(-2px);
   }
 `;
 
@@ -36,9 +33,9 @@ const Titlebar = styled.div`
   align-items: center;
   padding: 0 16px;
   gap: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(13, 17, 23, 0.40);
-  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--nexus-border);
+  background: rgba(10, 10, 10, 0.85);
+  backdrop-filter: blur(var(--glass-blur-strong));
 `;
 
 const Dots = styled.div`
@@ -62,7 +59,7 @@ const Dot = styled.span<{ $color: string }>`
 
 const Title = styled.div`
   flex: 1;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--nexus-text);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.10em;
@@ -109,23 +106,25 @@ const StatusDot = styled.span<{ $tone: 'idle' | 'busy' | 'ready' | 'error' }>`
 `;
 
 const IconButton = styled.button`
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.78);
+  border-radius: 10px;
+  border: 1px solid var(--nexus-border);
+  background: var(--nexus-surface);
+  color: var(--nexus-text);
   cursor: pointer;
-  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(20px);
 
   &:hover {
     transform: translateY(-1px);
-    background: rgba(255, 255, 255, 0.09);
-    border-color: rgba(255, 255, 255, 0.18);
-    color: rgba(255, 255, 255, 0.92);
+    background: var(--nexus-surface-hover);
+    border-color: var(--nexus-border-hover);
+    color: var(--nexus-cyan);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 
   &:active {
@@ -140,15 +139,16 @@ const IconButton = styled.button`
 
   &:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.16);
-    border-color: rgba(34, 211, 238, 0.35);
+    box-shadow: 0 0 0 3px var(--nexus-cyan-glow);
+    border-color: var(--nexus-cyan);
   }
 `;
 
 const Content = styled.div`
   position: relative;
   flex: 1;
-  background: #0b0f14;
+  background: var(--nexus-darker);
+  overflow: hidden;
 `;
 
 interface PreviewWindowProps {
@@ -305,20 +305,37 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
         </Right>
       </Titlebar>
       <Content>
-        <ErrorBoundary onReset={() => previewRef.current?.resetSession()} fallback={
-            <div style={{ padding: 20, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
-                <div style={{ marginBottom: 10, fontWeight: 'bold', color: '#ef4444' }}>Preview Failed to Load</div>
-                <div>This might be due to ad-blockers or network restrictions.</div>
-                <div style={{ marginTop: 5, fontSize: 12 }}>Please disable ad-blockers for Live Preview to work.</div>
-            </div>
-        }>
-            {enabled ? (
-              <PreviewRunnerPreview ref={previewRef} enabled />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
-                Live Preview is closed.
+        <ErrorBoundary 
+          onReset={() => previewRef.current?.resetSession()} 
+          fallback={
+            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+              <div className="mb-4">
+                <AlertTriangle size={48} className="text-red-400 mx-auto" />
               </div>
-            )}
+              <div className="mb-2 font-bold text-white">Preview Failed to Load</div>
+              <div className="text-sm text-white/60 mb-2 max-w-md">
+                This might be due to ad-blockers, network restrictions, or missing CodeSandbox configuration.
+              </div>
+              <button
+                onClick={() => previewRef.current?.resetSession()}
+                className="mt-4 px-4 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          }
+        >
+          {enabled ? (
+            <PreviewRunnerPreview ref={previewRef} enabled />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30">
+              <div className="text-center">
+                <MonitorPlay size={48} className="mx-auto mb-4 opacity-50" />
+                <div className="text-sm">Live Preview is closed</div>
+                <div className="text-xs mt-2 opacity-70">Generate some code to enable preview</div>
+              </div>
+            </div>
+          )}
         </ErrorBoundary>
       </Content>
     </Window>

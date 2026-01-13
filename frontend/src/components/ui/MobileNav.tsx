@@ -10,11 +10,12 @@ const NavContainer = styled.div`
   right: 0;
   height: var(--mobile-nav-height);
   background: rgba(10, 12, 16, 0.95);
-  backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  border-top: 1px solid var(--nexus-border);
   z-index: 50;
   padding-bottom: env(safe-area-inset-bottom);
   box-sizing: border-box;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
 
   @media (max-width: 768px) {
     display: flex;
@@ -33,9 +34,23 @@ const NavItem = styled.button<{ $active?: boolean }>`
   gap: 4px;
   background: none;
   border: none;
-  color: ${(p) => (p.$active ? 'rgba(34, 211, 238, 1)' : 'rgba(255, 255, 255, 0.5)')};
-  transition: all 0.2s ease;
+  color: ${(p) => (p.$active ? 'var(--nexus-cyan)' : 'var(--nexus-text-muted)')};
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%) scaleX(${(p) => (p.$active ? 1 : 0)});
+    width: 20px;
+    height: 2px;
+    background: var(--nexus-cyan);
+    border-radius: 2px;
+    transition: transform 0.2s ease;
+  }
 
   &:active {
     transform: scale(0.95);
@@ -44,7 +59,8 @@ const NavItem = styled.button<{ $active?: boolean }>`
   svg {
     width: 20px;
     height: 20px;
-    filter: ${(p) => (p.$active ? 'drop-shadow(0 0 8px rgba(34, 211, 238, 0.5))' : 'none')};
+    transition: all 0.2s ease;
+    filter: ${(p) => (p.$active ? 'drop-shadow(0 0 8px var(--nexus-cyan-glow))' : 'none')};
   }
 
   span {

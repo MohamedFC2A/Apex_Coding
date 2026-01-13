@@ -63,8 +63,8 @@ const Root = styled.div`
   background: 
     radial-gradient(ellipse 1200px 600px at 15% 5%, rgba(245, 158, 11, 0.06), transparent 60%),
     radial-gradient(ellipse 1000px 500px at 85% 90%, rgba(255, 255, 255, 0.05), transparent 60%),
-    linear-gradient(180deg, #0d1117 0%, #080a0e 100%);
-  color: rgba(255, 255, 255, 0.94);
+    var(--nexus-deepest);
+  color: var(--nexus-text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -97,15 +97,15 @@ const Container = styled.div`
 
 const HeaderArea = styled.div`
   flex-shrink: 0;
-  min-height: 72px;
+  min-height: var(--header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--nexus-surface);
   backdrop-filter: blur(20px);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  border: 1px solid var(--nexus-border);
   padding: 0 20px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   flex-wrap: nowrap;
@@ -162,14 +162,15 @@ const HeaderIconButton = styled.button`
   height: 44px;
   display: grid;
   place-items: center;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.88);
+  border-radius: 12px;
+  border: 1px solid var(--nexus-border);
+  background: var(--nexus-surface);
+  color: var(--nexus-text);
   cursor: pointer;
   transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+  backdrop-filter: blur(20px);
 
   &::before {
     content: '';
@@ -181,11 +182,11 @@ const HeaderIconButton = styled.button`
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.10);
-    border-color: rgba(255, 255, 255, 0.20);
+    background: var(--nexus-surface-hover);
+    border-color: var(--nexus-border-hover);
     transform: translateY(-2px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    color: rgba(255, 255, 255, 1);
+    color: var(--nexus-cyan);
 
     &::before {
       opacity: 1;

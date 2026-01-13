@@ -4,7 +4,7 @@ import tsParser from '@typescript-eslint/parser';
 
 export default [
   {
-    ignores: ['.next/**', 'node_modules/**', 'dist/**', 'build/**', 'out/**', 'coverage/**']
+    ignores: ['.next/**', 'node_modules/**', 'dist/**', 'build/**', 'out/**', 'coverage/**', '*.css', '*.scss', '*.less']
   },
   ...nextCoreWebVitals,
   {

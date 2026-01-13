@@ -189,14 +189,20 @@ const toPreviewFileMapFromArray = (files) => {
 
 app.get(['/preview/config', '/api/preview/config'], (req, res) => {
   const { apiKey: csbApiKey } = getCodeSandboxConfig();
+  const isPlaceholder = csbApiKey && (
+    csbApiKey.includes('REPLACE_ME') || 
+    csbApiKey.length < 20 || 
+    /placeholder|invalid|example/i.test(csbApiKey)
+  );
 
   return res.json({
     provider: 'codesandbox',
-    configured: Boolean(csbApiKey),
-    missing: csbApiKey ? [] : ['CSB_API_KEY'],
+    configured: Boolean(csbApiKey) && !isPlaceholder,
+    missing: (!csbApiKey || isPlaceholder) ? ['CSB_API_KEY'] : [],
     baseUrl: 'https://codesandbox.io',
     tokenPresent: Boolean(csbApiKey),
     tokenLast4: csbApiKey ? csbApiKey.slice(-4) : null,
+    tokenValid: !isPlaceholder,
     requestId: req.requestId
   });
 });
@@ -324,6 +330,10 @@ app.get(['/preview/mock', '/api/preview/mock'], (req, res) => {
 
 app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
   const provider = 'codesandbox';
+  const controller = new AbortController();
+  const timeoutMs = 240000; // 4 minutes for cold starts
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
   try {
     const { apiKey: csbApiKey } = getCodeSandboxConfig();
     
@@ -336,26 +346,65 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
     );
 
     if (isMissing || isPlaceholder) {
+      clearTimeout(timeoutId);
       // Return a Mock Session instead of erroring
       return res.json({
         id: 'mock-session',
         url: `${req.protocol}://${req.get('host')}/api/preview/mock`,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        provider: 'mock'
+        provider: 'mock',
+        message: isMissing ? 'CodeSandbox API key not configured' : 'Invalid CodeSandbox API key'
       });
     }
 
     const fileMap = toPreviewFileMapFromArray(req.body?.files);
     const fileCount = Object.keys(fileMap).length;
-    if (fileCount === 0) return res.status(400).json({ error: 'files is required' });
+    if (fileCount === 0) {
+      clearTimeout(timeoutId);
+      return res.status(400).json({ error: 'files is required', requestId: req.requestId });
+    }
 
-    const { sandboxId, url } = await createSandboxPreview({ fileMap });
-
-    const now = Date.now();
-    return res.json({ id: sandboxId, url, createdAt: now, updatedAt: now, provider });
-  } catch (err) {
-    const message = String(err?.message || err || 'CodeSandbox preview error');
+    // Add retry logic for better reliability
+    let retryCount = 0;
+    const maxRetries = 2;
+    let lastError;
+    
+    while (retryCount <= maxRetries) {
+      try {
+        const { sandboxId, url } = await createSandboxPreview({ 
+          fileMap, 
+          timeoutMs: timeoutMs - (retryCount * 30000) // Reduce timeout on retries
+        });
+        
+        clearTimeout(timeoutId);
+        const now = Date.now();
+        return res.json({ 
+          id: sandboxId, 
+          url, 
+          createdAt: now, 
+          updatedAt: now, 
+          provider,
+          retryCount
+        });
+      } catch (err) {
+        lastError = err;
+        retryCount++;
+        
+        // Don't retry on authentication errors
+        if (/unauthorized|invalid token|401|403/i.test(err.message)) {
+          break;
+        }
+        
+        if (retryCount <= maxRetries) {
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+        }
+      }
+    }
+    
+    clearTimeout(timeoutId);
+    const message = String(lastError?.message || lastError || 'CodeSandbox preview error');
     if (/unauthorized|invalid token|401|403/i.test(message)) {
       return res.status(401).json({
         error: 'CodeSandbox unauthorized',
@@ -363,7 +412,22 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
         requestId: req.requestId
       });
     }
-    return res.status(502).json({ error: message, requestId: req.requestId });
+    return res.status(502).json({ 
+      error: message, 
+      requestId: req.requestId,
+      retryAttempt: maxRetries
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      return res.status(408).json({
+        error: 'Request timeout',
+        hint: 'CodeSandbox is taking too long to respond. Please try again.',
+        requestId: req.requestId
+      });
+    }
+    const message = String(err?.message || err || 'CodeSandbox preview error');
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
 

@@ -265,15 +265,20 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   return (
     <div className={`relative w-full h-full ${className || ''}`}>
       {isLoading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-10 p-4">
-          <div className="flex items-center mb-2">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            <span className="ml-2 text-white font-medium">Initializing Preview…</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 backdrop-blur-sm z-10 p-4">
+          <div className="flex items-center mb-4">
+            <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+            <span className="ml-3 text-white font-medium">Initializing Preview…</span>
           </div>
           {isLongLoading && (
-            <p className="text-yellow-400 text-sm mt-2 animate-pulse text-center max-w-md">
-              Connecting to preview environment is taking longer than expected. Please wait...
-            </p>
+            <div className="text-center max-w-md">
+              <p className="text-yellow-400 text-sm animate-pulse mb-2">
+                Connecting to preview environment is taking longer than expected
+              </p>
+              <p className="text-white/60 text-xs">
+                CodeSandbox is provisioning your environment. This may take up to 2 minutes on first load.
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -296,14 +301,17 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           referrerPolicy="no-referrer"
         />
       ) : (
-        <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
-          {(() => {
-            if (!Array.isArray(files) || files.length === 0) return 'Generate a project first, then open Live Preview.';
-            if (runtimeStatus === 'error' && runtimeMessage) {
-              return (
-                <div className="flex flex-col items-center gap-3">
-                  <AlertTriangle className="w-8 h-8 text-red-400" />
-                  <div className="text-red-300 max-w-md">{runtimeMessage}</div>
+        !isLoading && (
+          <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
+            <div className="max-w-sm">
+              <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-yellow-400 opacity-50" />
+              <p className="text-sm font-medium mb-1">Preview Not Available</p>
+              <p className="text-xs opacity-70">
+                Generate some code to see the live preview
+              </p>
+              {runtimeStatus === 'error' && runtimeMessage && (
+                <div className="mt-4 flex flex-col items-center gap-3">
+                  <div className="text-red-300 text-xs max-w-md">{runtimeMessage}</div>
                   <button
                     onClick={() => void resetSessionInternal()}
                     className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
@@ -312,11 +320,10 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
                     Retry Preview
                   </button>
                 </div>
-              );
-            }
-            return 'Preview is not available. Check preview configuration.';
-          })()}
-        </div>
+              )}
+            </div>
+          </div>
+        )
       )}
     </div>
   );

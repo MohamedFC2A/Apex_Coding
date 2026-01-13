@@ -1,0 +1,305 @@
+/* Responsive Design Utilities for Apex Coding */
+
+/* ==================== MOBILE FIRST APPROACH ==================== */
+
+/* Small Mobile (320px - 480px) */
+@media (max-width: 479px) {
+  .mobile-only {
+    display: block !important;
+  }
+  
+  .mobile-hidden {
+    display: none !important;
+  }
+  
+  .mobile-full-width {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+  
+  .mobile-center {
+    text-align: center !important;
+    justify-content: center !important;
+    align-items: center !important;
+  }
+  
+  .mobile-text-sm {
+    font-size: 0.875rem !important;
+  }
+  
+  .mobile-padded {
+    padding: 8px !important;
+  }
+  
+  .mobile-margined {
+    margin: 4px !important;
+  }
+}
+
+/* Mobile (480px - 768px) */
+@media (min-width: 480px) and (max-width: 767px) {
+  .sm-mobile-only {
+    display: block !important;
+  }
+  
+  .sm-mobile-hidden {
+    display: none !important;
+  }
+}
+
+/* Tablet (768px - 1024px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .tablet-only {
+    display: block !important;
+  }
+  
+  .tablet-hidden {
+    display: none !important;
+  }
+  
+  .tablet-two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+}
+
+/* Desktop (1024px - 1440px) */
+@media (min-width: 1024px) and (max-width: 1439px) {
+  .desktop-only {
+    display: block !important;
+  }
+  
+  .desktop-hidden {
+    display: none !important;
+  }
+}
+
+/* Large Desktop (1440px+) */
+@media (min-width: 1440px) {
+  .large-desktop-only {
+    display: block !important;
+  }
+  
+  .large-desktop-hidden {
+    display: none !important;
+  }
+  
+  .large-desktop-container {
+    max-width: 1440px;
+    margin: 0 auto;
+  }
+}
+
+/* ==================== RESPONSIVE COMPONENTS ==================== */
+
+/* Responsive Grid System */
+.responsive-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .responsive-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1440px) {
+  .responsive-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Responsive Flex Container */
+.responsive-flex {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .responsive-flex {
+    flex-direction: row;
+    gap: 16px;
+  }
+}
+
+/* Responsive Text */
+.responsive-text-xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+@media (min-width: 768px) {
+  .responsive-text-xs {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+}
+
+.responsive-text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .responsive-text-sm {
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+}
+
+.responsive-text-base {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .responsive-text-base {
+    font-size: 1.125rem;
+    line-height: 1.75rem;
+  }
+}
+
+.responsive-text-lg {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+
+@media (min-width: 768px) {
+  .responsive-text-lg {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-text-lg {
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+}
+
+/* Responsive Spacing */
+.responsive-padded {
+  padding: 12px;
+}
+
+@media (min-width: 768px) {
+  .responsive-padded {
+    padding: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-padded {
+    padding: 20px;
+  }
+}
+
+.responsive-margined {
+  margin: 8px;
+}
+
+@media (min-width: 768px) {
+  .responsive-margined {
+    margin: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-margined {
+    margin: 16px;
+  }
+}
+
+/* ==================== SAFE AREA SUPPORT ==================== */
+
+/* iOS Notch Support */
+@supports (padding: max(0px)) {
+  .safe-area-top {
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  
+  .safe-area-bottom {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  
+  .safe-area-left {
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
+  
+  .safe-area-right {
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+  
+  .safe-area-all {
+    padding: max(12px, env(safe-area-inset-top)) 
+             max(12px, env(safe-area-inset-right)) 
+             max(12px, env(safe-area-inset-bottom)) 
+             max(12px, env(safe-area-inset-left));
+  }
+}
+
+/* ==================== ORIENTATION SUPPORT ==================== */
+
+/* Landscape Orientation */
+@media screen and (orientation: landscape) and (max-height: 600px) {
+  .landscape-compact {
+    padding: 8px !important;
+    gap: 8px !important;
+  }
+  
+  .landscape-hidden {
+    display: none !important;
+  }
+  
+  .landscape-text-sm {
+    font-size: 0.875rem !important;
+  }
+}
+
+/* ==================== REDUCED MOTION ==================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .responsive-animation {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ==================== HIGH CONTRAST MODE ==================== */
+
+@media (prefers-contrast: high) {
+  .high-contrast-border {
+    border-width: 2px !important;
+  }
+  
+  .high-contrast-text {
+    color: #FFFFFF !important;
+  }
+}
+
+/* ==================== PRINT STYLES ==================== */
+
+@media print {
+  .print-hidden {
+    display: none !important;
+  }
+  
+  .print-only {
+    display: block !important;
+  }
+}

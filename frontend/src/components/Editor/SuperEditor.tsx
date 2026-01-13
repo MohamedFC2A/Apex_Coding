@@ -89,7 +89,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
   const { 
     openFiles, 
     activeFileId, 
-    setOpenFile, 
+    openFile,
     closeFile, 
     fontSize, 
     theme, 
@@ -316,7 +316,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
     const files = await smartTemplates.generateFiles(structure);
     
     files.forEach((file: { path: string, content: string }) => {
-      addFile(file.path, file.content);
+      addFile(file.path, file.content || '');
     });
     
     appendThinkingContent(`[AI] Generated ${type} structure with ${files.length} files\n`);
@@ -353,8 +353,8 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
           deleteFile(opt.path);
         } else if (opt.type === 'move') {
           // Handle file move
-          addFile(opt.newPath, opt.content);
-          deleteFile(opt.oldPath);
+          addFile(opt.newPath || '', opt.content || '');
+          deleteFile(opt.oldPath || '');
         }
       });
       
@@ -477,7 +477,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
               expandedFolders={expandedFolders}
               setExpandedFolders={setExpandedFolders}
               activeFileId={activeFileId}
-              onFileSelect={setOpenFile}
+              onFileSelect={openFile}
             />
           ))}
         </div>
@@ -533,13 +533,13 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
       <div className="flex-1 flex flex-col">
         {/* Tabs */}
         <div className="flex bg-gray-900 border-b border-gray-800 overflow-x-auto">
-          {openFiles.map(file => (
+          {openFiles.map((file: any) => (
             <div
               key={file.id}
               className={`flex items-center px-3 py-2 border-r border-gray-800 cursor-pointer group ${
                 file.id === activeFileId ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
               }`}
-              onClick={() => setOpenFile(file.id)}
+              onClick={() => openFile(file.id)}
             >
               <File className="w-4 h-4 mr-2" style={{ color: getLanguageColor(file.language) }} />
               <span className="text-sm">{file.name}</span>

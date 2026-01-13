@@ -112,7 +112,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       clearTimeout(timeoutId);
       let msg = String(err?.message || err || 'Preview failed');
       if (err.name === 'AbortError') {
-        msg = 'Preview timeout: Server took too long to respond. Please check your connection or API Key.';
+        msg = 'Preview timeout after 3.5 minutes. CodeSandbox is provisioning your environment. This is normal for first-time setup. Please try again.';
       }
       setRuntimeStatus('error', msg);
       appendThinkingContent(`[THOUGHT] Preview runner error: ${msg}\n`);

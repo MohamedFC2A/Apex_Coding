@@ -69,9 +69,9 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
     logStatus(isRetry ? `Retrying preview session... (attempt ${retryCount + 1})` : 'Starting preview session…');
 
     // Progressive timeout based on retry count
-    const baseTimeout = 60000; // 1 minute base
+    const baseTimeout = 180000; // 3 minutes base (CodeSandbox needs time)
     const retryPenalty = retryCount * 30000; // Add 30s per retry
-    const timeoutMs = Math.min(baseTimeout + retryPenalty, 240000); // Max 4 minutes
+    const timeoutMs = Math.min(baseTimeout + retryPenalty, 300000); // Max 5 minutes
 
     // Show "taking longer than expected" after 15s for first try, 30s for retries
     const longLoadingDelay = isRetry ? 30000 : 15000;
@@ -151,7 +151,8 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
       let msg = String(err?.message || err || 'Preview failed');
       
       if (err.name === 'AbortError') {
-        msg = `Preview timeout after ${Math.round(timeoutMs / 1000)}s. The server is taking too long to respond.`;
+        const timeoutMinutes = Math.round(timeoutMs / 60000);
+        msg = `Preview timeout after ${timeoutMinutes} minute${timeoutMinutes > 1 ? 's' : ''}. CodeSandbox is provisioning your environment. This is normal for first-time setup. Please try again.`;
       }
       
       setRuntimeStatus('error', msg);
@@ -367,12 +368,12 @@ export const PreviewRunnerPreviewOptimized = forwardRef<PreviewRunnerPreviewHand
           {isLongLoading && (
             <div className="text-center max-w-md">
               <p className="text-yellow-400 text-sm animate-pulse mb-2">
-                {retryCount > 0 ? `Retrying... (attempt ${retryCount})` : 'Connecting to preview environment...'}
+                {retryCount > 0 ? `Retrying... (attempt ${retryCount})` : 'CodeSandbox is preparing your environment...'}
               </p>
               <p className="text-white/60 text-xs">
                 {retryCount > 0 
-                  ? 'The server is experiencing high load. Retrying with exponential backoff.'
-                  : 'CodeSandbox is provisioning your environment. This may take up to 2 minutes on first load.'
+                  ? 'The server is experiencing high load. Please wait...'
+                  : 'First-time setup can take 2-3 minutes. Subsequent loads will be faster.'
                 }
               </p>
             </div>

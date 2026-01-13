@@ -152,6 +152,14 @@ export class PreviewDiagnostic {
     const backendUrl = import.meta.env.VITE_BACKEND_URL;
     
     try {
+      if (!backendUrl) {
+        return {
+          status: 'error',
+          message: 'Backend URL is not configured',
+          fix: 'Check VITE_BACKEND_URL in your .env file'
+        };
+      }
+      
       const backend = new URL(backendUrl);
       const isSameOrigin = currentOrigin === backend.origin;
       const isLocalhost = currentOrigin.includes('localhost') && backend.hostname.includes('localhost');

@@ -112,13 +112,13 @@ export class PreviewDiagnostic {
     const issues: string[] = [];
     
     // Check frontend env vars
-    if (!import.meta.env.VITE_BACKEND_URL) {
+    if (!import.meta.env?.VITE_BACKEND_URL) {
       issues.push('VITE_BACKEND_URL is not set');
     }
     
     // Check if backend URL is accessible
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      const backendUrl = import.meta.env?.VITE_BACKEND_URL;
       if (!backendUrl) {
         issues.push('VITE_BACKEND_URL is not set');
       } else {

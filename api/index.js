@@ -111,6 +111,17 @@ app.all(['/test', '/api/test'], (req, res) => {
   res.json({ message: 'Backend is working', method: req.method, url: req.url });
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    requestId: req.requestId
+  });
+});
+
 // /download/zip (mapped from /api/download/zip by the middleware above)
 app.post(['/download/zip', '/api/download/zip'], async (req, res) => {
   try {

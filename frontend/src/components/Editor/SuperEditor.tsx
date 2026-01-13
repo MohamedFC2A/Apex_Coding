@@ -217,7 +217,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
       folding: true,
       lineNumbersMinChars: 3,
       renderLineHighlight: 'all',
-      occurrencesHighlight: true,
+      occurrencesHighlight: false,
       renderWhitespace: 'selection' as const,
       guides: {
         indentation: true,
@@ -572,10 +572,10 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
               onMount={handleEditorDidMount}
               options={{
                 readOnly: false,
-                minimap: { enabled: minimap },
-                fontSize,
-                wordWrap,
-                lineNumbers,
+                minimap: { enabled: settings.minimap },
+                fontSize: settings.fontSize,
+                wordWrap: settings.wordWrap,
+                lineNumbers: settings.lineNumbers,
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
               }}
@@ -602,29 +602,9 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
               )}
             </div>
             <div className="flex items-center gap-4">
-              <button
-                onClick={() => setShowCommandPalette(true)}
-                className="hover:text-white transition-colors"
-              >
-                Commands (Ctrl+P)
-              </button>
-              <select
-                value={selectedTheme}
-                onChange={(e) => setSelectedTheme(e.target.value)}
-                className="bg-transparent border-none text-gray-400 focus:text-white"
-              >
-                <option value="vs-dark">Dark</option>
-                <option value="apex-dark">Apex Dark</option>
-                <option value="cyberpunk">Cyberpunk</option>
-                <option value="matrix">Matrix</option>
-              </select>
-            </div>
           </div>
-        </div>
+        )}
       </div>
-
-      {/* Command Palette */}
-      {showCommandPalette && (
         <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCommandPalette(false)}>
           {CommandPalette}
         </div>

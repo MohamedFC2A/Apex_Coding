@@ -120,8 +120,17 @@ Requirements:
 
 Refactored code:`;
 
-    const refactoredCode = await aiService.generateCode(prompt);
-    return this.extractCodeFromResponse(refactoredCode);
+    // Use streaming API to get the response
+    let fullResponse = '';
+    await aiService.generateCodeStream(
+      prompt,
+      (token) => { fullResponse += token; },
+      () => {},
+      () => {},
+      () => {}
+    );
+    
+    return this.extractCodeFromResponse(fullResponse);
   }
 
   // Generate code from natural language
@@ -150,8 +159,17 @@ Requirements:
 
 Generated code:`;
 
-    const generatedCode = await aiService.generateCode(prompt);
-    return this.extractCodeFromResponse(generatedCode);
+    // Use streaming API to get the response
+    let fullResponse = '';
+    await aiService.generateCodeStream(
+      prompt,
+      (token) => { fullResponse += token; },
+      () => {},
+      () => {},
+      () => {}
+    );
+    
+    return this.extractCodeFromResponse(fullResponse);
   }
 
   // Explain code in natural language
@@ -174,7 +192,17 @@ Provide:
 
 Explanation:`;
 
-    return await aiService.generateCode(prompt);
+    // Use streaming API to get the response
+    let fullResponse = '';
+    await aiService.generateCodeStream(
+      prompt,
+      (token) => { fullResponse += token; },
+      () => {},
+      () => {},
+      () => {}
+    );
+    
+    return fullResponse;
   }
 
   // Generate unit tests
@@ -197,8 +225,17 @@ Requirements:
 
 Tests:`;
 
-    const tests = await aiService.generateCode(prompt);
-    return this.extractCodeFromResponse(tests);
+    // Use streaming API to get the response
+    let fullResponse = '';
+    await aiService.generateCodeStream(
+      prompt,
+      (token) => { fullResponse += token; },
+      () => {},
+      () => {},
+      () => {}
+    );
+    
+    return this.extractCodeFromResponse(fullResponse);
   }
 
   // Private helper methods

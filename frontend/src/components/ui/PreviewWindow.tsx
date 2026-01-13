@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { Copy, ExternalLink, Info, RefreshCw, AlertTriangle, MonitorPlay } from 'lucide-react';
-import { PreviewRunnerPreview, PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreview';
+import { PreviewRunnerPreviewOptimized, type PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreviewOptimized';
 import { ErrorBoundary } from './ErrorBoundary';
 import { usePreviewStore } from '@/stores/previewStore';
 import { Content as PopoverContent, Description, Heading, Popover, Trigger } from './InstructionPopover';
@@ -326,7 +326,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
           }
         >
           {enabled ? (
-            <PreviewRunnerPreview ref={previewRef} enabled />
+            <PreviewRunnerPreviewOptimized ref={previewRef} enabled />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30">
               <div className="text-center">

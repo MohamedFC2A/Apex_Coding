@@ -3,6 +3,7 @@ import { apiUrl, getApiBaseUrl } from '@/services/apiBase';
 import { useSubscriptionStore } from '@/stores/subscriptionStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAIStore } from '@/stores/aiStore';
+import { getPreviewOptimizationContext } from '@/utils/previewOptimization';
 
 interface AIResponse {
   plan: string;
@@ -202,6 +203,9 @@ STRICT PLANNING RULES:
       const projectState = useProjectStore.getState();
       const aiState = useAIStore.getState();
       
+      // Get preview optimization context
+      const previewContext = getPreviewOptimizationContext(projectState.files);
+      
       const context = {
         files: projectState.files.map((f: ProjectFile) => f.path || f.name),
         stack: projectState.stack,
@@ -211,7 +215,8 @@ STRICT PLANNING RULES:
           completed: s.completed,
           category: s.category
         })),
-        activeFile: projectState.activeFile
+        activeFile: projectState.activeFile,
+        previewOptimization: previewContext
       };
 
       let completedFiles = new Set<string>();
@@ -280,6 +285,20 @@ ${context.files.slice(0, 100).join('\n')}${context.files.length > 100 ? '\n...(t
 
 [COMPLETED FILES]
 ${Array.from(completedFiles).join('\n')}
+
+[PREVIEW OPTIMIZATION]
+Performance Insights: ${previewContext.insights}
+Recommended Settings: 
+- Debounce: ${previewContext.optimization.debounceMs}ms
+- Timeout: ${previewContext.optimization.timeoutMs / 1000}s
+- Max Retries: ${previewContext.optimization.maxRetries}
+- Auto Retry: ${previewContext.optimization.autoRetry ? 'Enabled' : 'Disabled'}
+
+Optimization Suggestions:
+${previewContext.suggestions.map(s => `- ${s}`).join('\n')}
+
+AI Recommendations:
+${previewContext.recommendations.map(r => `- ${r}`).join('\n')}
 
 [USER REQUEST]
 ${prompt}

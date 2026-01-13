@@ -15,7 +15,10 @@
           "apply",
           "variants",
           "responsive",
-          "screen"
+          "screen",
+          "layer",
+          "config",
+          "theme"
         ]
       }
     ],
@@ -31,7 +34,25 @@
     "selector-pseudo-class-no-unknown": [
       true,
       {
-        "ignorePseudoClasses": ["global", "local", "export"]
+        "ignorePseudoClasses": ["global", "local", "export", "import", "deep"]
+      }
+    ],
+    "function-no-unknown": [
+      true,
+      {
+        "ignoreFunctions": [
+          "theme",
+          "screen",
+          "layer"
+        ]
+      }
+    ],
+    "unit-no-unknown": [
+      true,
+      {
+        "ignoreUnits": [
+          "rpx"
+        ]
       }
     ]
   },
@@ -39,6 +60,7 @@
     "node_modules/**/*",
     ".next/**/*",
     "dist/**/*",
-    "build/**/*"
+    "build/**/*",
+    "out/**/*"
   ]
 }

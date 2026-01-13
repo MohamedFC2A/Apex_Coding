@@ -1,8 +1,10 @@
 /* Consolidated & Consistent UI Styles for Apex Coding */
 
+/* stylelint-disable at-rule-no-unknown */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* stylelint-enable at-rule-no-unknown */
 
 /* Import responsive utilities */
 @import './responsive.css';
@@ -217,6 +219,7 @@ html[dir='rtl'] body {
 }
 
 /* ==================== BUTTON VARIANTS ==================== */
+/* stylelint-disable at-rule-no-unknown */
 .btn {
   @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold;
   @apply transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
@@ -242,8 +245,10 @@ html[dir='rtl'] body {
   background: linear-gradient(135deg, #fde68a 0%, #f59e0b 50%, #b45309 100%);
   @apply shadow-lg shadow-amber-500/25 hover:shadow-xl hover:shadow-amber-500/30;
 }
+/* stylelint-enable at-rule-no-unknown */
 
 /* ==================== BADGES & STATUS ==================== */
+/* stylelint-disable at-rule-no-unknown */
 .badge {
   @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold;
   @apply backdrop-blur-sm text-white/80;
@@ -269,6 +274,7 @@ html[dir='rtl'] body {
 .status-idle {
   @apply status-badge bg-white/10 text-white/60 border-white/20;
 }
+/* stylelint-enable at-rule-no-unknown */
 
 /* ==================== GLOW EFFECTS ==================== */
 .glow-cyan {
@@ -284,6 +290,7 @@ html[dir='rtl'] body {
 }
 
 /* ==================== TEXT STYLES ==================== */
+/* stylelint-disable at-rule-no-unknown */
 .text-gradient {
   @apply bg-clip-text text-transparent;
 }
@@ -299,6 +306,7 @@ html[dir='rtl'] body {
 .text-gold-gradient {
   background: linear-gradient(135deg, #fde68a 0%, #f59e0b 50%, #b45309 100%);
 }
+/* stylelint-enable at-rule-no-unknown */
 
 /* ==================== ANIMATIONS ==================== */
 @keyframes pulse {

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Sparkles, Zap, ArrowRight, Crown, Shield, Rocket } from 'lucide-react';
+import { Check, Sparkles, Zap, ArrowLeft, ArrowRight, Crown, Shield, Rocket } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { useSubscriptionStore } from '@/stores/subscriptionStore';
@@ -15,7 +15,7 @@ const fadeUp = {
 };
 
 export default function PlansPage() {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const router = useRouter();
   const { tier, applyPromoCode } = useSubscriptionStore();
   const [promoInput, setPromoInput] = useState('');
@@ -119,22 +119,24 @@ export default function PlansPage() {
 
       {/* Header */}
       <header className="relative z-10 border-b border-white/10">
-        <div className="mx-auto max-w-7xl px-6 py-4">
-          <div className="flex items-center justify-between">
+        <div className="page-container py-4">
+          <div
+            className={`flex flex-col gap-4 sm:items-center sm:justify-between ${isRTL ? 'sm:flex-row-reverse' : 'sm:flex-row'}`}
+          >
             <Link href="/" className="inline-flex items-center gap-3">
               <span className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
                 <span className="h-5 w-5 rounded-full bg-gradient-to-br from-cyan-300/90 via-fuchsia-300/90 to-cyan-300/90" />
               </span>
               <span className="text-sm font-semibold tracking-wide text-white/85">{t('brand.name')}</span>
             </Link>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <LanguageSwitcher />
               <Link
                 href="/app"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-transparent px-4 py-2 text-sm font-semibold text-white/85 backdrop-blur-md transition hover:bg-white/5"
+                className="btn-outline px-4 py-2 text-sm"
               >
                 Open IDE
-                <ArrowRight className="h-4 w-4" />
+                {isRTL ? <ArrowLeft className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
               </Link>
             </div>
           </div>
@@ -142,7 +144,7 @@ export default function PlansPage() {
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 mx-auto max-w-7xl px-6 py-20">
+      <main className="relative z-10 page-container py-16 sm:py-20">
         <motion.div
           initial="hidden"
           animate="show"
@@ -160,18 +162,18 @@ export default function PlansPage() {
             <span className="text-sm font-semibold text-cyan-300">Choose Your Path</span>
           </motion.div>
           
-          <h1 className="text-6xl font-bold mb-6">
+          <h1 className="text-4xl sm:text-6xl font-bold mb-6">
             <span className="bg-gradient-to-r from-cyan-200 via-fuchsia-200 to-cyan-200 bg-clip-text text-transparent">
               Plans & Pricing
             </span>
           </h1>
-          <p className="text-xl text-white/70 max-w-3xl mx-auto">
+          <p className="text-base sm:text-xl text-white/70 max-w-3xl mx-auto">
             Start building with our graph-based AI IDE. Scale as you grow with advanced features and unlimited possibilities.
           </p>
         </motion.div>
 
         {/* Pricing Cards */}
-        <div className="grid lg:grid-cols-3 gap-8 max-w-7xl mx-auto mb-20">
+        <div className="grid gap-6 lg:grid-cols-3 max-w-7xl mx-auto mb-20">
           {plans.map((plan, index) => {
             const Icon = plan.icon;
             return (
@@ -180,10 +182,10 @@ export default function PlansPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.15, duration: 0.6 }}
-                className={`relative rounded-3xl border p-8 backdrop-blur-md ${
+                className={`relative glass-surface p-8 ${
                   plan.popular
                     ? 'border-purple-400/40 bg-gradient-to-b from-purple-400/15 to-fuchsia-500/15 shadow-[0_0_80px_rgba(168,85,247,0.3)]'
-                    : 'border-white/10 bg-white/5'
+                    : ''
                 }`}
               >
                 {plan.popular && (
@@ -241,11 +243,7 @@ export default function PlansPage() {
 
                 <Link
                   href={plan.id === 'enterprise' ? '#contact' : '/app'}
-                  className={`block w-full rounded-2xl px-6 py-3 text-center text-sm font-semibold transition ${
-                    plan.popular
-                      ? 'bg-gradient-to-r from-purple-400 to-fuchsia-500 text-white shadow-[0_10px_40px_rgba(168,85,247,0.3)] hover:shadow-[0_10px_50px_rgba(168,85,247,0.4)]'
-                      : 'border border-white/20 bg-white/5 text-white/90 hover:bg-white/10'
-                  }`}
+                  className={`${plan.popular ? 'btn-primary' : 'btn-outline'} w-full`}
                 >
                   {plan.cta}
                 </Link>
@@ -261,7 +259,7 @@ export default function PlansPage() {
           transition={{ delay: 0.6, duration: 0.6 }}
           className="max-w-md mx-auto mb-20"
         >
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-md">
+          <div className="glass-surface p-8">
             <h3 className="text-xl font-bold mb-4 text-center">Have a Promo Code?</h3>
             <form onSubmit={handlePromoSubmit} className="space-y-4">
               <div>
@@ -270,7 +268,7 @@ export default function PlansPage() {
                   value={promoInput}
                   onChange={(e) => setPromoInput(e.target.value)}
                   placeholder="Enter promo code"
-                  className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-white placeholder-white/50 outline-none focus:border-cyan-400/50 focus:bg-white/10"
+                  className="glass-input h-12"
                 />
                 {promoError && (
                   <p className="mt-2 text-sm text-red-400">{promoError}</p>
@@ -281,7 +279,7 @@ export default function PlansPage() {
               </div>
               <button
                 type="submit"
-                className="w-full rounded-xl bg-gradient-to-r from-cyan-400 to-fuchsia-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:shadow-xl"
+                className="btn-primary w-full h-12 px-6"
               >
                 Apply Code
               </button>
@@ -319,7 +317,7 @@ export default function PlansPage() {
                 a: 'Enter your promo code in the field above. Valid codes unlock PRO features instantly. Contact support if you have issues applying a code.'
               }
             ].map((faq, i) => (
-              <div key={i} className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
+              <div key={i} className="glass-card glass-card-hover p-6 text-start">
                 <h3 className="font-semibold mb-2">{faq.q}</h3>
                 <p className="text-sm text-white/70">{faq.a}</p>
               </div>

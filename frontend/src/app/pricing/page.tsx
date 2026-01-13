@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Sparkles, Zap, ArrowRight } from 'lucide-react';
+import { Check, Sparkles, Zap, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { useSubscriptionStore } from '@/stores/subscriptionStore';
@@ -15,7 +15,7 @@ const fadeUp = {
 };
 
 export default function PricingPage() {
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const router = useRouter();
   const { tier, applyPromoCode } = useSubscriptionStore();
   const [promoInput, setPromoInput] = useState('');
@@ -85,22 +85,24 @@ export default function PricingPage() {
 
       {/* Header */}
       <header className="relative z-10 border-b border-white/10">
-        <div className="mx-auto max-w-6xl px-6 py-4">
-          <div className="flex items-center justify-between">
+        <div className="page-container py-4">
+          <div
+            className={`flex flex-col gap-4 sm:items-center sm:justify-between ${isRTL ? 'sm:flex-row-reverse' : 'sm:flex-row'}`}
+          >
             <Link href="/" className="inline-flex items-center gap-3">
               <span className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
                 <span className="h-5 w-5 rounded-full bg-gradient-to-br from-cyan-300/90 via-fuchsia-300/90 to-cyan-300/90" />
               </span>
               <span className="text-sm font-semibold tracking-wide text-white/85">{t('brand.name')}</span>
             </Link>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <LanguageSwitcher />
               <Link
                 href="/app"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-transparent px-4 py-2 text-sm font-semibold text-white/85 backdrop-blur-md transition hover:bg-white/5"
+                className="btn-outline px-4 py-2 text-sm"
               >
                 Open IDE
-                <ArrowRight className="h-4 w-4" />
+                {isRTL ? <ArrowLeft className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
               </Link>
             </div>
           </div>
@@ -108,7 +110,7 @@ export default function PricingPage() {
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 mx-auto max-w-6xl px-6 py-20">
+      <main className="relative z-10 page-container py-16 sm:py-20">
         <motion.div
           initial="hidden"
           animate="show"
@@ -127,17 +129,17 @@ export default function PricingPage() {
         </motion.div>
 
         {/* Pricing Cards */}
-        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto mb-16">
+        <div className="grid gap-6 md:grid-cols-2 max-w-4xl mx-auto mb-16">
           {tiers.map((plan, index) => (
             <motion.div
               key={plan.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1, duration: 0.6 }}
-              className={`relative rounded-3xl border p-8 backdrop-blur-md ${
+              className={`relative glass-surface p-8 ${
                 plan.popular
                   ? 'border-cyan-400/30 bg-gradient-to-b from-cyan-400/10 to-fuchsia-500/10'
-                  : 'border-white/10 bg-white/5'
+                  : ''
               }`}
             >
               {plan.popular && (
@@ -178,11 +180,7 @@ export default function PricingPage() {
 
               <Link
                 href="/app"
-                className={`block w-full rounded-2xl px-6 py-3 text-center text-sm font-semibold transition ${
-                  plan.popular
-                    ? 'bg-gradient-to-r from-cyan-400 to-fuchsia-500 text-white shadow-[0_10px_40px_rgba(34,211,238,0.3)] hover:shadow-[0_10px_50px_rgba(34,211,238,0.4)]'
-                    : 'border border-white/20 bg-white/5 text-white/90 hover:bg-white/10'
-                }`}
+                className={`${plan.popular ? 'btn-primary' : 'btn-outline'} w-full`}
               >
                 {plan.cta}
               </Link>
@@ -197,7 +195,7 @@ export default function PricingPage() {
           transition={{ delay: 0.3, duration: 0.6 }}
           className="max-w-2xl mx-auto"
         >
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-md">
+          <div className="glass-surface p-8">
             <div className="flex items-center gap-3 mb-4">
               <Zap className="h-6 w-6 text-fuchsia-400" />
               <h3 className="text-xl font-bold">Have a Promo Code?</h3>
@@ -212,11 +210,11 @@ export default function PricingPage() {
                 value={promoInput}
                 onChange={(e) => setPromoInput(e.target.value)}
                 placeholder="Enter promo code (88776655443322)"
-                className="flex-1 h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-white/40 backdrop-blur-md outline-none focus:ring-2 focus:ring-cyan-400/30"
+                className="glass-input flex-1 h-12"
               />
               <button
                 type="submit"
-                className="h-12 rounded-2xl bg-white/10 px-6 text-sm font-semibold text-white ring-1 ring-white/10 backdrop-blur-md transition hover:bg-white/15"
+                className="btn-secondary h-12 px-6"
               >
                 Apply Code
               </button>
@@ -255,26 +253,26 @@ export default function PricingPage() {
           className="mt-20 text-center"
         >
           <h3 className="text-2xl font-bold mb-8">Frequently Asked Questions</h3>
-          <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto text-left">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
+          <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto text-start">
+            <div className="glass-card p-6">
               <h4 className="font-semibold mb-2">What happens when I reach my daily limit?</h4>
               <p className="text-sm text-white/60">
                 Your limit resets daily at midnight UTC. You can upgrade to PRO for 10x more requests.
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
+            <div className="glass-card p-6">
               <h4 className="font-semibold mb-2">Can I cancel anytime?</h4>
               <p className="text-sm text-white/60">
                 Yes! There are no contracts. Switch between plans or cancel anytime.
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
+            <div className="glass-card p-6">
               <h4 className="font-semibold mb-2">What&apos;s included in Priority Support?</h4>
               <p className="text-sm text-white/60">
                 PRO users get 24-hour email response time and access to our dedicated support channel.
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
+            <div className="glass-card p-6">
               <h4 className="font-semibold mb-2">Is my code private?</h4>
               <p className="text-sm text-white/60">
                 Absolutely. All projects are private and never used to train AI models.

@@ -61,6 +61,7 @@ const translations: Record<Language, Translations> = {
     // Demo Section
     'demo.title': 'Demo',
     'demo.subtitle': 'Add your demo video embed here.',
+    'demo.comingSoon': 'Coming soon: Interactive walkthrough',
     
     // UI Helpers
     'ui.search.placeholder': '✨ Click the search bar or press Enter to start coding',
@@ -115,6 +116,7 @@ const translations: Record<Language, Translations> = {
     // Demo Section
     'demo.title': 'العرض التوضيحي',
     'demo.subtitle': 'أضف فيديو العرض التوضيحي الخاص بك هنا.',
+    'demo.comingSoon': 'قريباً: جولة تفاعلية داخل المنتج',
     
     // UI Helpers
     'ui.search.placeholder': '✨ انقر على شريط البحث أو اضغط Enter لبدء البرمجة',

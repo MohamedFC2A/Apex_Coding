@@ -20,16 +20,16 @@ export default function HomePage() {
       </header>
 
       <main className="relative">
-        <section className="mx-auto max-w-6xl px-6 pb-16">
+        <section className="page-container pb-14 sm:pb-16">
           <FeatureCards />
         </section>
-        <section className="mx-auto max-w-6xl px-6 pb-14">
+        <section className="page-container pb-12 sm:pb-14">
           <ValueProp />
         </section>
-        <section className="mx-auto max-w-6xl px-6 pb-20">
+        <section className="page-container pb-16 sm:pb-20">
           <LeadCapture />
         </section>
-        <section id="demo" className="mx-auto max-w-6xl px-6 pb-20">
+        <section id="demo" className="page-container pb-16 sm:pb-20">
           <DemoSection />
         </section>
       </main>

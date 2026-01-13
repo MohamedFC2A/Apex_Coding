@@ -14,6 +14,7 @@ describe('aiService (API mode)', () => {
   it('generatePlan calls backend endpoint', async () => {
     vi.resetModules();
     const { aiService } = await import('./aiService');
+    const { apiUrl } = await import('@/services/apiBase');
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -25,7 +26,7 @@ describe('aiService (API mode)', () => {
     const res = await aiService.generatePlan('test prompt', false);
 
     const call = fetchMock.mock.calls[0];
-    expect(call[0]).toBe('/api/ai/plan');
+    expect(call[0]).toBe(apiUrl('/ai/plan'));
     const options = call[1];
     expect(options.method).toBe('POST');
     expect(options.headers).toEqual({ 'Content-Type': 'application/json' });

@@ -44,8 +44,7 @@ export function ValueProp() {
             show: { opacity: 1, y: 0, filter: 'blur(0px)' }
           }}
           transition={{ duration: 0.65, ease: [0.2, 0.8, 0.2, 1] }}
-          whileHover={{ scale: 1.02, y: -4 }}
-          className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md hover:bg-white/8 transition-colors cursor-pointer"
+          className="glass-card glass-card-hover"
         >
           <div className="text-sm font-semibold tracking-wide text-white/90">{item.title}</div>
           <div className="mt-2 text-sm leading-relaxed text-white/65">{item.body}</div>
@@ -54,4 +53,3 @@ export function ValueProp() {
     </motion.section>
   );
 }
-

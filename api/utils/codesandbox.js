@@ -1,3 +1,6 @@
+// Load environment variables
+require('dotenv').config();
+
 const path = require('path');
 
 const { CodeSandbox } = require('@codesandbox/sdk');

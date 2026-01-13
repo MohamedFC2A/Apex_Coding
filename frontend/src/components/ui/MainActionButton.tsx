@@ -48,19 +48,19 @@ const ButtonRoot = styled(motion.button)<{ $state: MainActionState }>`
     inset: -1px;
     background: ${(p) => {
       if (p.$state === 'planning') {
-        return `radial-gradient(160px 70px at 16% 38%, rgba(168, 85, 247, 0.35), transparent 70%),
-          radial-gradient(160px 70px at 84% 62%, rgba(34, 211, 238, 0.26), transparent 70%)`;
+        return `radial-gradient(160px 70px at 16% 38%, rgba(245, 158, 11, 0.40), transparent 70%),
+          radial-gradient(160px 70px at 84% 62%, rgba(255, 255, 255, 0.22), transparent 70%)`;
       }
       if (p.$state === 'coding') {
-        return `radial-gradient(160px 70px at 16% 38%, rgba(34, 211, 238, 0.35), transparent 70%),
-          radial-gradient(160px 70px at 84% 62%, rgba(250, 204, 21, 0.22), transparent 70%)`;
+        return `radial-gradient(160px 70px at 16% 38%, rgba(255, 255, 255, 0.35), transparent 70%),
+          radial-gradient(160px 70px at 84% 62%, rgba(245, 158, 11, 0.32), transparent 70%)`;
       }
       if (p.$state === 'done') {
-        return `radial-gradient(160px 70px at 16% 38%, rgba(34, 197, 94, 0.30), transparent 70%),
-          radial-gradient(160px 70px at 84% 62%, rgba(168, 85, 247, 0.22), transparent 70%)`;
+        return `radial-gradient(160px 70px at 16% 38%, rgba(34, 197, 94, 0.35), transparent 70%),
+          radial-gradient(160px 70px at 84% 62%, rgba(245, 158, 11, 0.22), transparent 70%)`;
       }
-      return `radial-gradient(160px 70px at 16% 38%, rgba(34, 211, 238, 0.30), transparent 70%),
-        radial-gradient(160px 70px at 84% 62%, rgba(168, 85, 247, 0.26), transparent 70%)`;
+      return `radial-gradient(160px 70px at 16% 38%, rgba(245, 158, 11, 0.35), transparent 70%),
+        radial-gradient(160px 70px at 84% 62%, rgba(255, 255, 255, 0.22), transparent 70%)`;
     }};
     opacity: 0.98;
     filter: blur(14px);

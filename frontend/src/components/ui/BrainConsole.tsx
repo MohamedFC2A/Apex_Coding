@@ -3,6 +3,7 @@ import styled, { css, keyframes } from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, ChevronUp, Terminal } from 'lucide-react';
 import { stripAnsi } from '@/utils/ansi';
+import { useLanguage } from '@/context/LanguageContext';
 
 const Sheet = styled(motion.div)<{ $open: boolean }>`
   position: fixed;
@@ -11,9 +12,9 @@ const Sheet = styled(motion.div)<{ $open: boolean }>`
   bottom: 0;
   --console-open-height: 35vh;
   height: ${(p) => (p.$open ? 'var(--console-open-height)' : '48px')};
-  border-top: 1px solid rgba(34, 211, 238, 0.15);
+  border-top: 1px solid rgba(245, 158, 11, 0.15);
   background: linear-gradient(180deg, rgba(3, 7, 18, 0.98) 0%, rgba(0, 0, 0, 0.98) 100%);
-  box-shadow: 0 -24px 80px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(34, 211, 238, 0.08);
+  box-shadow: 0 -24px 80px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(245, 158, 11, 0.08);
   overflow: hidden;
   z-index: 50;
   backdrop-filter: blur(20px);
@@ -38,8 +39,8 @@ const Header = styled.button`
   border: 0;
   cursor: pointer;
   background: rgba(3, 7, 18, 0.95);
-  border-bottom: 1px solid rgba(34, 211, 238, 0.15);
-  color: rgba(34, 211, 238, 0.95);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+  color: #F59E0B;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   font-size: 11px;
@@ -48,7 +49,7 @@ const Header = styled.button`
   
   &:hover {
     background: rgba(3, 7, 18, 1);
-    border-bottom-color: rgba(34, 211, 238, 0.3);
+    border-bottom-color: rgba(245, 158, 11, 0.3);
   }
 `;
 
@@ -75,12 +76,12 @@ const Body = styled.div`
   }
   
   &::-webkit-scrollbar-thumb {
-    background: rgba(34, 211, 238, 0.3);
+    background: rgba(245, 158, 11, 0.3);
     border-radius: 4px;
   }
   
   &::-webkit-scrollbar-thumb:hover {
-    background: rgba(34, 211, 238, 0.5);
+    background: rgba(245, 158, 11, 0.5);
   }
 `;
 
@@ -96,14 +97,14 @@ const Cursor = styled.span`
   display: inline-block;
   width: 9px;
   height: 14px;
-  background: var(--primary-color);
+  background: #F59E0B;
   margin-left: 6px;
   transform: translateY(2px);
   ${cursorAnimation}
 `;
 
 const Empty = styled.div`
-  color: var(--primary-color);
+  color: #F59E0B;
   opacity: 0.55;
 `;
 
@@ -115,7 +116,7 @@ const Prefix = styled.span<{ $type?: 'health' | 'status' | 'error' | 'thought' }
       case 'status': return 'rgba(251, 191, 36, 1)';
       case 'error': return 'rgba(239, 68, 68, 1)';
       case 'thought': return 'rgba(168, 85, 247, 0.95)';
-      default: return 'rgba(34, 211, 238, 0.95)';
+      default: return '#F59E0B';
     }
   }};
 `;
@@ -190,6 +191,7 @@ interface BrainConsoleProps {
 }
 
 export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onToggle, health, thought, status, error, logs, canFixResume, onFixResume }) => {
+  const { t, isRTL } = useLanguage();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -218,15 +220,20 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onTog
           exit={{ opacity: 0, y: 24 }}
           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
         >
-          <Header type="button" onClick={onToggle} aria-expanded={open}>
+          <Header 
+            type="button" 
+            onClick={onToggle} 
+            aria-expanded={open}
+            style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
+          >
             <Terminal size={16} />
-            System Console
-            <span style={{ marginLeft: 'auto', opacity: 0.8 }}>
+            <span style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>{t('app.console.title')}</span>
+            <span style={{ opacity: 0.8 }}>
               {open ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </span>
           </Header>
           {open && (
-            <Body>
+            <Body style={{ direction: isRTL ? 'rtl' : 'ltr', textAlign: isRTL ? 'right' : 'left' }}>
               {cleanedHealth.length > 0 && (
                 <StatusLine $type="health">
                   <Prefix $type="health">[HEALTH]</Prefix>
@@ -268,7 +275,7 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({ visible, open, onTog
                 </summary>
                 <ThoughtContent>
                   {cleanedThought.length === 0 ? (
-                    <Empty>Waiting for AI response...</Empty>
+                    <Empty>{t('app.console.empty')}</Empty>
                   ) : (
                     <>
                       {cleanedThought}

@@ -15,51 +15,57 @@ export function LeadCapture() {
       whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ duration: 0.65, ease: [0.2, 0.8, 0.2, 1] }}
-      className="relative p-8 rounded-3xl border border-white/10 bg-black/50 backdrop-blur-xl"
+      className="relative p-10 rounded-3xl border border-white/20 bg-black/60 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden"
       aria-label="Lead capture"
     >
-      <div className="text-xl font-bold tracking-tight text-white silver-text">{t('lead.title')}</div>
-      <div className="mt-2 text-sm leading-relaxed text-white/40 font-light">
-        {t('lead.subtitle')}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(245,158,11,0.05),transparent_70%)] pointer-events-none" />
+      
+      <div className="relative z-10">
+        <div className="text-2xl font-bold tracking-tight gold-text">{t('lead.title')}</div>
+        <div className="mt-3 text-base leading-relaxed text-white/70 font-light max-w-xl">
+          {t('lead.subtitle')}
+        </div>
+
+        <form
+          className={`mt-8 flex flex-col gap-4 ${isRTL ? 'sm:flex-row-reverse' : 'sm:flex-row'}`}
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSubmitted(true);
+          }}
+        >
+          <label className="sr-only" htmlFor="email">
+            {t('lead.email.label')}
+          </label>
+          <input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder={t('lead.email.placeholder')}
+            className="flex-1 h-14 rounded-xl border border-white/20 bg-white/5 px-6 text-base text-white placeholder:text-white/30 outline-none focus:border-gold-primary/50 focus:bg-white/10 transition-all"
+            inputMode="email"
+            autoComplete="email"
+          />
+          <button
+            type="submit"
+            className="btn-gold h-14 px-10 text-base"
+          >
+            {t('lead.cta')}
+          </button>
+        </form>
+
+        {submitted && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-6 text-sm text-gold-shiny flex items-center gap-2 font-medium"
+          >
+            <span className="h-2 w-2 rounded-full bg-gold-primary animate-pulse" />
+            {t('lead.success')}
+          </motion.div>
+        )}
       </div>
-
-      <form
-        className={`mt-6 flex flex-col gap-3 ${isRTL ? 'sm:flex-row-reverse' : 'sm:flex-row'}`}
-        onSubmit={(e) => {
-          e.preventDefault();
-          setSubmitted(true);
-        }}
-      >
-        <label className="sr-only" htmlFor="email">
-          {t('lead.email.label')}
-        </label>
-        <input
-          id="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder={t('lead.email.placeholder')}
-          className="flex-1 h-12 rounded-xl border border-white/10 bg-black px-4 text-sm text-white placeholder:text-white/20 outline-none focus:border-white/30 transition-all"
-          inputMode="email"
-          autoComplete="email"
-        />
-        <button
-          type="submit"
-          className="btn-silver h-12 px-8"
-        >
-          {t('lead.cta')}
-        </button>
-      </form>
-
-      {submitted && (
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-4 text-sm text-white/60 flex items-center gap-2"
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-          {t('lead.success')}
-        </motion.div>
-      )}
     </motion.section>
   );
 }

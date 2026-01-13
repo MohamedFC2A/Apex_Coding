@@ -7,9 +7,11 @@ import { usePreviewStore } from '@/stores/previewStore';
 import { aiService } from '@/services/aiService';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 import { ProjectFile } from '@/types';
-import { Sparkles, Loader2, Clock, ChevronDown, ChevronRight, Settings, Zap, Brain, AlertCircle, X } from 'lucide-react';
+import { Sparkles, Loader2, Clock, ChevronDown, ChevronRight, ChevronLeft, Settings, Zap, Brain, AlertCircle, X } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
 
 export const PromptPanel: React.FC = () => {
+  const { t, isRTL } = useLanguage();
   const [localPrompt, setLocalPrompt] = useState('');
   const [thinkingStatus, setThinkingStatus] = useState('');
   const [showModelSettings, setShowModelSettings] = useState(false);
@@ -49,9 +51,9 @@ export const PromptPanel: React.FC = () => {
     const interval = setInterval(() => {
       const gap = Date.now() - lastTokenAt;
       if (gap > 5000 && lastTokenAt > 0) {
-        setThinkingStatus('Still thinking...');
+        setThinkingStatus(t('app.plan.status.thinking'));
       } else if (lastTokenAt > 0 && !thinkingStatus.includes('Generating')) {
-        setThinkingStatus('Generating code...');
+        setThinkingStatus(t('app.plan.status.working'));
       }
     }, 2000);
 
@@ -68,7 +70,7 @@ export const PromptPanel: React.FC = () => {
     setSections({});
     setValidationStatus(null);
     setActualMode('');
-    setThinkingStatus('Initializing...');
+    setThinkingStatus(t('app.plan.status.initializing'));
 
     try {
       let reasoningContent = ''; // Track accumulated reasoning
@@ -112,13 +114,13 @@ export const PromptPanel: React.FC = () => {
         (phase, message) => {
           // Use phase to determine consistent status text
           if (phase === 'thinking') {
-            setThinkingStatus('Thinking...');
+            setThinkingStatus(t('app.plan.status.thinking'));
           } else if (phase === 'streaming') {
-            setThinkingStatus('Generating code...');
+            setThinkingStatus(t('app.plan.status.working'));
           } else if (phase === 'validating') {
-            setThinkingStatus('Validating response...');
+            setThinkingStatus(t('app.plan.status.validating'));
           } else if (phase === 'done') {
-            setThinkingStatus('Complete!');
+            setThinkingStatus(t('app.plan.status.complete'));
           } else {
             // Fallback to server message
             setThinkingStatus(message);
@@ -221,11 +223,11 @@ export const PromptPanel: React.FC = () => {
           // Update status to show thinking is in progress with visual feedback
           const charCount = reasoningContent.length;
           if (charCount < 500) {
-            setThinkingStatus('Thinking...');
+            setThinkingStatus(t('app.plan.status.thinking'));
           } else if (charCount < 2000) {
-            setThinkingStatus('Deep thinking...');
+            setThinkingStatus(t('app.plan.status.deepThinking'));
           } else {
-            setThinkingStatus('Reasoning...');
+            setThinkingStatus(t('app.plan.status.reasoning'));
           }
         },
         // onComplete - ensure loading state is ALWAYS reset when stream ends
@@ -250,17 +252,17 @@ export const PromptPanel: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
       {/* Liquid Glass Header */}
-      <div className="liquid-panel p-4 border-b border-white/10 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="liquid-glass p-2 rounded-lg glow-blue">
-            <Sparkles className="w-5 h-5 text-white/70" />
+      <div className={`liquid-panel p-4 border-b border-white/10 flex items-center justify-between ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+        <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+          <div className="liquid-glass p-2 rounded-lg glow-amber">
+            <Sparkles className="w-5 h-5 text-amber-400" />
           </div>
-          <h2 className="text-lg font-bold enterprise-text">AI Workspace</h2>
+          <h2 className="text-lg font-bold enterprise-text">{t('app.workspace.title')}</h2>
         </div>
-        <div className="liquid-panel px-3 py-1.5 rounded-lg flex items-center gap-2">
-          <Zap className="w-4 h-4 text-yellow-400" />
+        <div className={`liquid-panel px-3 py-1.5 rounded-lg flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+          <Zap className="w-4 h-4 text-amber-400" />
           <span className="text-xs text-white/70">{actualMode || 'DeepSeek'}</span>
         </div>
       </div>
@@ -269,12 +271,14 @@ export const PromptPanel: React.FC = () => {
       <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
         {/* User Prompt Section */}
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-white/80">Your Prompt</label>
+          <label className={`text-sm font-semibold text-white/80 block ${isRTL ? 'text-right' : 'text-left'}`}>
+            {t('app.workspace.promptLabel')}
+          </label>
           <textarea
             value={localPrompt}
             onChange={(e) => setLocalPrompt(e.target.value)}
-            placeholder="Describe your software idea in detail...&#x0a;&#x0a;Examples:&#x0a;• Create a todo app with React and TypeScript&#x0a;• Build a REST API with Node.js, Express, and MongoDB&#x0a;• Make a portfolio website with HTML, CSS, and JavaScript&#x0a;• Develop a chat application using Python Flask and WebSockets&#x0a;&#x0a;Be specific about features, design, and functionality."
-            className="w-full liquid-input p-4 text-white placeholder-gray-400 resize-none scrollbar-thin font-mono text-sm leading-relaxed"
+            placeholder={t('app.workspace.promptPlaceholder')}
+            className={`w-full liquid-input p-4 text-white placeholder-gray-400 resize-none scrollbar-thin font-mono text-sm leading-relaxed ${isRTL ? 'text-right' : 'text-left'}`}
             style={{ height: 'calc(50vh - 8rem)', minHeight: '240px' }}
             disabled={isGenerating}
           />
@@ -284,16 +288,16 @@ export const PromptPanel: React.FC = () => {
         <div className="liquid-panel rounded-lg overflow-hidden">
           <button
             onClick={() => setShowModelSettings(!showModelSettings)}
-            className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+            className={`w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
           >
-            <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
               <Settings className="w-4 h-4 text-white/60" />
-              <span className="text-sm font-semibold text-white/80">Model Settings</span>
+              <span className="text-sm font-semibold text-white/80">{t('app.workspace.settings')}</span>
             </div>
             {showModelSettings ? (
               <ChevronDown className="w-4 h-4 text-white/60" />
             ) : (
-              <ChevronRight className="w-4 h-4 text-white/60" />
+              isRTL ? <ChevronLeft className="w-4 h-4 text-white/60" /> : <ChevronRight className="w-4 h-4 text-white/60" />
             )}
           </button>
 
@@ -301,56 +305,58 @@ export const PromptPanel: React.FC = () => {
             <div className="p-4 pt-0 space-y-4 border-t border-white/5">
               {/* Thinking Mode Toggle */}
               <div className="space-y-2">
-                <label className="text-xs text-white/60">Thinking Mode</label>
-                <div className="flex items-center gap-3">
+                <label className={`text-xs text-white/60 block ${isRTL ? 'text-right' : 'text-left'}`}>
+                  {t('app.workspace.thinkingMode')}
+                </label>
+                <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
                   <button
                     onClick={() => setModelMode('fast')}
                     className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${!isThinkingMode && !isSuperMode
-                        ? 'liquid-glass border-green-500/50 text-white'
+                        ? 'liquid-glass border-amber-500/50 text-white glow-amber'
                         : 'liquid-panel hover:bg-white/5 text-white/60'
                       }`}
                   >
-                    <div className="flex items-center justify-center gap-2">
-                      <Zap className="w-4 h-4 text-yellow-400" />
-                      <span>Fast</span>
+                    <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <Zap className={`w-4 h-4 ${!isThinkingMode && !isSuperMode ? 'text-amber-400' : 'text-white/40'}`} />
+                      <span>{t('app.workspace.modeFast')}</span>
                     </div>
                   </button>
                   <button
                     onClick={() => setModelMode('thinking')}
                     className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${isThinkingMode
-                        ? 'liquid-glass border-purple-500/50 text-white'
+                        ? 'liquid-glass border-amber-500/50 text-white glow-amber'
                         : 'liquid-panel hover:bg-white/5 text-white/60'
                       }`}
                   >
-                    <div className="flex items-center justify-center gap-2">
-                      <Brain className="w-4 h-4 text-purple-400" />
-                      <span>Thinking</span>
+                    <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <Brain className={`w-4 h-4 ${isThinkingMode ? 'text-amber-400' : 'text-white/40'}`} />
+                      <span>{t('app.workspace.modeThinking')}</span>
                     </div>
                   </button>
                   <button
                     onClick={() => setModelMode('super')}
                     className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${isSuperMode
-                        ? 'liquid-glass border-yellow-500/50 text-white'
+                        ? 'liquid-glass border-amber-500/50 text-white glow-amber'
                         : 'liquid-panel hover:bg-white/5 text-white/60'
                       }`}
                   >
-                    <div className="flex items-center justify-center gap-2">
-                      <Sparkles className="w-4 h-4 text-yellow-400" />
-                      <span>Super-Thinking (Beta)</span>
+                    <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <Sparkles className={`w-4 h-4 ${isSuperMode ? 'text-amber-400' : 'text-white/40'}`} />
+                      <span>{t('app.workspace.modeSuper')}</span>
                     </div>
                   </button>
                 </div>
-                <p className="text-xs text-white/30">
+                <p className={`text-xs text-white/30 ${isRTL ? 'text-right' : 'text-left'}`}>
                   {isSuperMode
-                    ? 'Hybrid engine: fast blueprint + deep reasoning'
+                    ? t('app.workspace.modeDescriptionSuper')
                     : isThinkingMode
-                      ? 'Uses DeepSeek Reasoner (slower but more detailed)'
-                      : 'Uses configured DeepSeek model (fast response)'}
+                      ? t('app.workspace.modeDescriptionThinking')
+                      : t('app.workspace.modeDescriptionFast')}
                 </p>
               </div>
 
-              <div className="liquid-panel p-3 rounded-lg text-xs text-white/40 space-y-1">
-                <p><strong className="text-white/60">Provider:</strong> DeepSeek</p>
+              <div className={`liquid-panel p-3 rounded-lg text-xs text-white/40 space-y-1 ${isRTL ? 'text-right' : 'text-left'}`}>
+                <p><strong className="text-white/60">{t('app.workspace.provider')}:</strong> DeepSeek</p>
                 <p className="text-white/30 mt-2">Note: API credentials are configured server-side</p>
               </div>
             </div>
@@ -366,15 +372,15 @@ export const PromptPanel: React.FC = () => {
           className="w-full"
         >
           {isGenerating && executionPhase !== 'interrupted' ? (
-            <>
+            <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>{thinkingStatus || 'Generating...'}</span>
-            </>
+              <span>{thinkingStatus || t('app.workspace.generating')}</span>
+            </div>
           ) : (
-            <>
+            <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
               <Sparkles className="w-5 h-5" />
-              <span>{executionPhase === 'interrupted' ? 'Resume Generation' : 'Generate Full Code'}</span>
-            </>
+              <span>{executionPhase === 'interrupted' ? t('app.workspace.resume') : t('app.workspace.generate')}</span>
+            </div>
           )}
         </LiquidButton>
       </div>
@@ -382,31 +388,31 @@ export const PromptPanel: React.FC = () => {
       {/* Status Footer */}
       <div className="liquid-panel p-4 space-y-3 border-t border-white/10">
         {isGenerating && thinkingStatus && (
-          <div className="liquid-glass p-3 rounded-lg flex items-center gap-2 glow-blue">
-            {thinkingStatus.includes('Thinking') ? (
-              <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
-            ) : thinkingStatus.includes('Generating') ? (
-              <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-            ) : thinkingStatus.includes('Validating') ? (
-              <Clock className="w-4 h-4 text-green-400 animate-pulse" />
+          <div className={`liquid-glass p-3 rounded-lg flex items-center gap-2 glow-amber ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+            {thinkingStatus.includes(t('app.plan.status.thinking')) ? (
+              <Brain className="w-4 h-4 text-amber-400 animate-pulse" />
+            ) : thinkingStatus.includes(t('app.plan.status.working')) ? (
+              <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+            ) : thinkingStatus.includes(t('app.plan.status.validating')) ? (
+              <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
             ) : (
-              <Clock className="w-4 h-4 text-blue-400 animate-pulse" />
+              <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
             )}
             <p className="text-xs text-white/60">{thinkingStatus}</p>
             {actualMode && (
-              <span className="text-xs text-white/40 ml-auto">({actualMode})</span>
+              <span className={`text-xs text-white/40 ${isRTL ? 'mr-auto' : 'ml-auto'}`}>({actualMode})</span>
             )}
           </div>
         )}
 
         {error && (
-          <div className="liquid-glass p-3 rounded-lg flex items-center justify-between gap-2 border border-red-500/30">
-            <div className="flex items-center gap-2">
+          <div className={`liquid-glass p-3 rounded-lg flex items-center justify-between gap-2 border border-red-500/30 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
               <AlertCircle className="w-4 h-4 text-red-400" />
-              <div className="flex flex-col">
-                <p className="text-xs text-white/80 mb-1">{error}</p>
-                <p className="text-xs text-white/60">
-                  The browser never sees your key. Configure <code>DEEPSEEK_API_KEY</code> on the backend (Vercel env vars or <code>backend/.env</code>).
+              <div className={`flex flex-col ${isRTL ? 'items-end' : 'items-start'}`}>
+                <p className={`text-xs text-white/80 mb-1 ${isRTL ? 'text-right' : 'text-left'}`}>{error}</p>
+                <p className={`text-xs text-white/60 ${isRTL ? 'text-right' : 'text-left'}`}>
+                  {t('app.workspace.errorConfig')}
                 </p>
               </div>
             </div>
@@ -421,8 +427,10 @@ export const PromptPanel: React.FC = () => {
 
         {sections.trace && !isGenerating && (
           <div className="liquid-glass p-3 rounded-lg">
-            <p className="font-semibold text-white/80 mb-2 text-xs">Decision Trace</p>
-            <pre className="text-xs text-white/60 whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto scrollbar-thin">
+            <p className={`font-semibold text-white/80 mb-2 text-xs ${isRTL ? 'text-right' : 'text-left'}`}>
+              {t('app.workspace.trace')}
+            </p>
+            <pre className={`text-xs text-white/60 whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto scrollbar-thin ${isRTL ? 'text-right' : 'text-left'}`}>
               {sections.trace}
             </pre>
           </div>
@@ -436,7 +444,7 @@ export const PromptPanel: React.FC = () => {
         )}
 
         {sections.interpretation && !isGenerating && (
-          <div className="text-xs text-white/50">
+          <div className={`text-xs text-white/50 ${isRTL ? 'text-right' : 'text-left'}`}>
             {sections.interpretation}
           </div>
         )}

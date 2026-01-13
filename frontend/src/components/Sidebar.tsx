@@ -1,9 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import styled, { keyframes } from 'styled-components';
-import { ChevronDown, ChevronRight, Database, FileText, Folder, Settings } from 'lucide-react';
+import { ChevronDown, ChevronRight, Database, FileText, Folder, Settings, User } from 'lucide-react';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePreviewStore } from '@/stores/previewStore';
+import { useLanguage } from '@/context/LanguageContext';
 import { FileSystem } from '@/types';
 
 type SidebarTab = 'files' | 'database';
@@ -52,7 +53,7 @@ const HeaderTitle = styled.div`
   letter-spacing: 0.14em;
   text-transform: uppercase;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.84);
+  color: #F59E0B;
 `;
 
 const Tabs = styled.div`
@@ -64,22 +65,22 @@ const Tabs = styled.div`
 const TabButton = styled.button<{ $active?: boolean }>`
   height: 32px;
   border-radius: 14px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.28)' : 'rgba(255, 255, 255, 0.10)')};
-  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.10)' : 'rgba(255, 255, 255, 0.03)')};
-  color: ${(p) => (p.$active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.70)')};
+  border: 1px solid ${(p) => (p.$active ? 'rgba(245, 158, 11, 0.35)' : 'rgba(255, 255, 255, 0.10)')};
+  background: ${(p) => (p.$active ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.03)')};
+  color: ${(p) => (p.$active ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.70)')};
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: all 200ms ease;
 
   &:hover {
-    border-color: rgba(168, 85, 247, 0.22);
+    border-color: rgba(245, 158, 11, 0.30);
     background: rgba(255, 255, 255, 0.05);
     transform: translateY(-1px);
   }
@@ -279,6 +280,7 @@ interface FileTreeItemProps {
   onSelectFile: (path: string) => void;
   activeFile: string | null;
   getStatus: (path: string) => NodeStatus;
+  isRTL?: boolean;
 }
 
 const FileTreeItem: React.FC<FileTreeItemProps> = ({
@@ -288,7 +290,8 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   onToggle,
   onSelectFile,
   activeFile,
-  getStatus
+  getStatus,
+  isRTL
 }) => {
   const isFolder = node.type === 'folder';
   const isActive = node.type === 'file' && activeFile === node.path;
@@ -310,20 +313,24 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
         type="button"
         $active={isActive}
         onClick={handleClick}
-        style={{ paddingLeft: `${depth * 14 + 10}px` }}
+        style={{
+          paddingLeft: isRTL ? '10px' : `${depth * 14 + 10}px`,
+          paddingRight: isRTL ? `${depth * 14 + 10}px` : '10px',
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+        }}
         aria-expanded={isFolder ? isOpen : undefined}
       >
         {isFolder ? (
           <>
-            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} style={{ transform: isRTL ? 'rotate(180deg)' : 'none' }} />}
             <Folder size={16} />
           </>
         ) : (
           <FileText size={16} />
         )}
-        <TreeLabel>{node.name}</TreeLabel>
+        <TreeLabel style={{ textAlign: isRTL ? 'right' : 'left' }}>{node.name}</TreeLabel>
         {node.type === 'file' && (
-          <StatusGroup>
+          <StatusGroup style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
             {status === 'writing' && <StatusText>Writing</StatusText>}
             <StatusDot $color={statusColor} />
           </StatusGroup>
@@ -341,6 +348,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
               onSelectFile={onSelectFile}
               activeFile={activeFile}
               getStatus={getStatus}
+              isRTL={isRTL}
             />
           ))}
         </div>
@@ -355,6 +363,7 @@ export interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) => {
+  const { t, isRTL } = useLanguage();
   const [tab, setTab] = useState<SidebarTab>('files');
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({});
   const { files, fileStatuses, writingFilePath } = useAIStore();
@@ -442,6 +451,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
         onSelectFile={setActiveFile}
         activeFile={activeFile}
         getStatus={getStatus}
+        isRTL={isRTL}
       />
     ));
   };
@@ -449,21 +459,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
   return (
     <Shell className={className}>
       <Header>
-        <HeaderRow>
-          <HeaderTitle>SIDEBAR</HeaderTitle>
+        <HeaderRow style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
+          <HeaderTitle>{t('app.sidebar.files')}</HeaderTitle>
         </HeaderRow>
-        <Tabs>
-          <TabButton type="button" $active={tab === 'files'} onClick={() => setTab('files')} aria-label="Files">
-            Files
+        <Tabs style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+          <TabButton
+            type="button"
+            $active={tab === 'files'}
+            onClick={() => setTab('files')}
+            aria-label="Files"
+            style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
+          >
+            {t('app.sidebar.files')}
           </TabButton>
-          <TabButton type="button" $active={tab === 'database'} onClick={() => setTab('database')} aria-label="Database">
-            Database
+          <TabButton
+            type="button"
+            $active={tab === 'database'}
+            onClick={() => setTab('database')}
+            aria-label="Database"
+            style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
+          >
+            {t('app.sidebar.history')}
           </TabButton>
         </Tabs>
       </Header>
       <Body>
         {tab === 'files' ? (
-          <TreeContainer className="scrollbar-thin scrollbar-glass">{renderTree()}</TreeContainer>
+          <TreeContainer className="scrollbar-thin scrollbar-glass" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>{renderTree()}</TreeContainer>
         ) : (
           <TreeContainer className="scrollbar-thin scrollbar-glass">
             <div style={{ display: 'grid', gap: 10 }}>
@@ -520,13 +542,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
           </TreeContainer>
         )}
       </Body>
-      <Footer>
-        <FooterMeta>
-          <FooterMetaLine>Stack: {stack ? stack : 'Auto'}</FooterMetaLine>
-          <FooterMetaLine>Build: {runtimeStatus}</FooterMetaLine>
+      <Footer style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
+        <FooterMeta style={{ textAlign: isRTL ? 'right' : 'left' }}>
+          <FooterMetaLine>{t('brand.name')}</FooterMetaLine>
+          <FooterMetaLine style={{ opacity: 0.4 }}>v1.0.4-alpha</FooterMetaLine>
         </FooterMeta>
         <FooterButton type="button" aria-label="Settings" title="Settings" onClick={onOpenSettings}>
-          <Settings size={16} />
+          <User size={16} />
         </FooterButton>
       </Footer>
     </Shell>

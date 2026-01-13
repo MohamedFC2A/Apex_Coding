@@ -35,7 +35,7 @@ export function FeatureCards() {
       }}
       className="grid gap-6 md:grid-cols-3"
     >
-      {cards.map((card) => (
+      {cards.map((card, index) => (
         <motion.div
           key={card.key}
           variants={{
@@ -43,12 +43,16 @@ export function FeatureCards() {
             show: { opacity: 1, y: 0, filter: 'blur(0px)' }
           }}
           transition={{ duration: 0.65, ease: [0.2, 0.8, 0.2, 1] }}
-          className="relative group p-6 rounded-2xl border border-white/5 bg-[#050505] transition-all hover:border-white/20 hover:shadow-[0_0_30px_rgba(255,255,255,0.05)]"
+          className={`relative group p-8 rounded-3xl border transition-all duration-300 hover:translate-y-[-4px] ${
+            index === 0 
+              ? 'border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-transparent shadow-[0_0_40px_rgba(245,158,11,0.05)] hover:border-amber-500/40' 
+              : 'border-white/5 bg-white/5 hover:border-white/20 hover:shadow-[0_0_30px_rgba(255,255,255,0.05)]'
+          }`}
         >
-          <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none rounded-2xl" />
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none rounded-3xl" />
           <div className="relative z-10">
-            <div className="text-lg font-bold tracking-tight text-white mb-3 silver-text">{card.title}</div>
-            <div className="text-sm leading-relaxed text-white/40 font-light">{card.body}</div>
+            <div className={`text-xl font-bold tracking-tight mb-4 ${index === 0 ? 'gold-text' : 'silver-text'}`}>{card.title}</div>
+            <div className="text-sm leading-relaxed text-white/50 font-light">{card.body}</div>
           </div>
         </motion.div>
       ))}

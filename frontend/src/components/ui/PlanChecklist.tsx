@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import styled, { css, keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Circle, Zap } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
 
 export interface PlanChecklistItem {
   id: string;
@@ -16,13 +17,13 @@ export interface PlanChecklistItem {
 
 const pulse = keyframes`
   0% {
-    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.45), 0 0 18px rgba(59, 130, 246, 0.18);
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.45), 0 0 18px rgba(245, 158, 11, 0.18);
   }
   50% {
-    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.75), 0 0 26px rgba(59, 130, 246, 0.35);
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.75), 0 0 26px rgba(245, 158, 11, 0.35);
   }
   100% {
-    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.45), 0 0 18px rgba(59, 130, 246, 0.18);
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.45), 0 0 18px rgba(245, 158, 11, 0.18);
   }
 `;
 
@@ -44,12 +45,12 @@ const mercuryPulse = keyframes`
 `;
 
 const pendingStyles = css`
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.08);
   opacity: 0.6;
 `;
 
 const activeStyles = css`
-  border-color: rgba(59, 130, 246, 0.6);
+  border-color: rgba(245, 158, 11, 0.6);
   animation: ${pulse} 1.6s ease-in-out infinite;
 `;
 
@@ -79,11 +80,11 @@ const Header = styled.div`
   gap: 10px;
   padding: 0 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.78);
+  color: #F59E0B;
   letter-spacing: 0.10em;
   text-transform: uppercase;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 900;
 `;
 
 const Body = styled.div`
@@ -124,9 +125,9 @@ const ProgressFill = styled.div<{ $pct: number }>`
   position: relative;
   background: linear-gradient(
     90deg,
-    rgba(34, 211, 238, 0.92),
-    rgba(168, 85, 247, 0.88),
-    rgba(34, 211, 238, 0.92)
+    #F59E0B,
+    #FFFFFF,
+    #F59E0B
   );
   background-size: 220% 100%;
   animation: ${liquidFlow} 2.2s linear infinite, ${mercuryPulse} 2.6s ease-in-out infinite;
@@ -170,9 +171,6 @@ const SectionTitle = styled.div`
   color: rgba(255, 255, 255, 0.6);
 `;
 
-// SectionEmpty removed - not currently used but kept for reference
-// Can be used for empty state display if needed
-
 const ItemCard = styled(motion.div)<{ $status: 'pending' | 'active' | 'done' }>`
   display: grid;
   grid-template-columns: 24px 1fr auto;
@@ -203,7 +201,7 @@ const ItemStatus = styled.div<{ $status: 'pending' | 'active' | 'done' }>`
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: ${(p) => {
-    if (p.$status === 'active') return 'rgba(59, 130, 246, 0.95)';
+    if (p.$status === 'active') return '#F59E0B';
     if (p.$status === 'done') return 'rgba(34, 197, 94, 0.95)';
     return 'rgba(255, 255, 255, 0.45)';
   }};
@@ -216,11 +214,11 @@ const StatusStack = styled.div`
 
 const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   config: { bg: 'rgba(251, 191, 36, 0.12)', border: 'rgba(251, 191, 36, 0.4)', text: 'rgba(251, 191, 36, 0.95)' },
-  frontend: { bg: 'rgba(34, 211, 238, 0.12)', border: 'rgba(34, 211, 238, 0.4)', text: 'rgba(34, 211, 238, 0.95)' },
-  backend: { bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.4)', text: 'rgba(168, 85, 247, 0.95)' },
+  frontend: { bg: 'rgba(255, 255, 255, 0.08)', border: 'rgba(255, 255, 255, 0.2)', text: 'rgba(255, 255, 255, 0.95)' },
+  backend: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.4)', text: 'rgba(245, 158, 11, 0.95)' },
   integration: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.4)', text: 'rgba(34, 197, 94, 0.95)' },
   testing: { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.4)', text: 'rgba(239, 68, 68, 0.95)' },
-  deployment: { bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.4)', text: 'rgba(59, 130, 246, 0.95)' }
+  deployment: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.4)', text: 'rgba(245, 158, 11, 0.95)' }
 };
 
 const getCategoryFromItem = (item: PlanChecklistItem): string => {
@@ -247,6 +245,7 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
   embedded = false,
   className
 }) => {
+  const { t, isRTL } = useLanguage();
   const total = items.length;
   const completed = items.filter((item) => item.completed).length;
   const pct = total > 0 ? completed / total : 0;
@@ -277,7 +276,11 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
   const renderItem = (item: PlanChecklistItem) => {
     const isActive = currentStepId === item.id && !item.completed;
     const status = item.completed ? 'done' : isActive ? 'active' : 'pending';
-    const statusLabel = status === 'pending' ? 'Pending' : status === 'active' ? 'Working' : 'Done';
+    const statusLabel = status === 'pending' 
+      ? t('app.plan.status.pending') 
+      : status === 'active' 
+        ? t('app.plan.status.working') 
+        : t('app.plan.status.done');
     const category = getCategoryFromItem(item);
     const categoryColors = CATEGORY_COLORS[category] || CATEGORY_COLORS.frontend;
 
@@ -285,18 +288,25 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
       <ItemCard
         key={item.id}
         $status={status}
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0, x: isRTL ? 6 : -6 }}
+        animate={{ opacity: 1, x: 0 }}
+        style={{
+          gridTemplateColumns: isRTL ? 'auto 1fr 24px' : '24px 1fr auto',
+          textAlign: isRTL ? 'right' : 'left'
+        }}
       >
-        {status === 'done' ? (
+        {isRTL && <ItemStatus $status={status}>{statusLabel}</ItemStatus>}
+        
+        {!isRTL && (status === 'done' ? (
           <CheckCircle2 size={20} color="rgba(34, 197, 94, 0.95)" />
         ) : status === 'active' ? (
-          <Zap size={20} color="rgba(59, 130, 246, 0.95)" />
+          <Zap size={20} color="#F59E0B" />
         ) : (
           <Circle size={20} color="rgba(255, 255, 255, 0.4)" />
-        )}
-        <StatusStack>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        ))}
+
+        <StatusStack style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexDirection: isRTL ? 'row-reverse' : 'row' }}>
             <span style={{
               fontSize: 9,
               fontWeight: 700,
@@ -318,20 +328,29 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
             </div>
           )}
           {item.files && item.files.length > 0 && (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4, flexDirection: isRTL ? 'row-reverse' : 'row' }}>
               {item.files.slice(0, 5).map((file, idx) => (
                 <span key={idx} style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}>
                   📄 {file.split('/').pop()}
                 </span>
               ))}
               {item.files.length > 5 && (
-                <span style={{ opacity: 0.6 }}>+{item.files.length - 5} more</span>
+                <span style={{ opacity: 0.6 }}>+{item.files.length - 5} {t('app.plan.more')}</span>
               )}
             </div>
           )}
-          {status === 'active' && <ItemStatus $status={status}>Working...</ItemStatus>}
+          {status === 'active' && <ItemStatus $status={status}>{t('app.plan.status.working')}...</ItemStatus>}
         </StatusStack>
-        <ItemStatus $status={status}>{statusLabel}</ItemStatus>
+
+        {isRTL ? (status === 'done' ? (
+          <CheckCircle2 size={20} color="rgba(34, 197, 94, 0.95)" />
+        ) : status === 'active' ? (
+          <Zap size={20} color="#F59E0B" />
+        ) : (
+          <Circle size={20} color="rgba(255, 255, 255, 0.4)" />
+        )) : (
+          <ItemStatus $status={status}>{statusLabel}</ItemStatus>
+        )}
       </ItemCard>
     );
   };
@@ -339,59 +358,59 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
   const content = (
     <>
       {total > 0 && (
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ display: 'grid', gap: 8, direction: isRTL ? 'rtl' : 'ltr' }}>
           <ProgressMeta>
-            <span>Mission Progress</span>
+            <span>{t('app.plan.progress')}</span>
             <span>{completed}/{total}</span>
           </ProgressMeta>
           <ProgressRail aria-hidden="true">
-            <ProgressFill $pct={pct} />
+            <ProgressFill $pct={pct} style={{ transformOrigin: isRTL ? 'right' : 'left' }} />
           </ProgressRail>
         </div>
       )}
       {total === 0 ? (
-        <Empty>Click “Plan” to generate a step-by-step mission.</Empty>
+        <Empty>{t('app.plan.empty')}</Empty>
       ) : (
-        <ListContainer className="scrollbar-thin scrollbar-glass plan-container">
+        <ListContainer className="scrollbar-thin scrollbar-glass plan-container" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
           {grouped.config.length > 0 && (
             <Section>
-              <SectionTitle>⚙️ Configuration</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>⚙️ {t('app.plan.category.config')}</SectionTitle>
               {grouped.config.map(renderItem)}
             </Section>
           )}
           {grouped.frontend.length > 0 && (
             <Section>
-              <SectionTitle>🎨 Frontend</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🎨 {t('app.plan.category.frontend')}</SectionTitle>
               {grouped.frontend.map(renderItem)}
             </Section>
           )}
           {grouped.backend.length > 0 && (
             <Section>
-              <SectionTitle>🔧 Backend</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🔧 {t('app.plan.category.backend')}</SectionTitle>
               {grouped.backend.map(renderItem)}
             </Section>
           )}
           {grouped.integration.length > 0 && (
             <Section>
-              <SectionTitle>🔗 Integration</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🔗 {t('app.plan.category.integration')}</SectionTitle>
               {grouped.integration.map(renderItem)}
             </Section>
           )}
           {grouped.testing.length > 0 && (
             <Section>
-              <SectionTitle>🧪 Testing</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🧪 {t('app.plan.category.testing')}</SectionTitle>
               {grouped.testing.map(renderItem)}
             </Section>
           )}
           {grouped.deployment.length > 0 && (
             <Section>
-              <SectionTitle>🚀 Deployment</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🚀 {t('app.plan.category.deployment')}</SectionTitle>
               {grouped.deployment.map(renderItem)}
             </Section>
           )}
           {items.length > 0 && grouped.config.length === 0 && grouped.frontend.length === 0 && grouped.backend.length === 0 && (
             <Section>
-              <SectionTitle>📋 Tasks</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>📋 {t('app.plan.category.tasks')}</SectionTitle>
               {items.map(renderItem)}
             </Section>
           )}
@@ -410,7 +429,10 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
 
   return (
     <Panel className={className}>
-      <Header>Mission Control</Header>
+      <Header style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
+        <Zap size={14} />
+        {t('app.plan.title')}
+      </Header>
       <Body>{content}</Body>
     </Panel>
   );

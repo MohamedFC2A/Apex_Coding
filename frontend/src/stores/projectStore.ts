@@ -1,6 +1,6 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import { persist } from 'zustand/middleware';
-import { ProjectFile, FileStructure } from '@/types';
+import { ProjectFile, FileStructure, FileSystem } from '@/types';
 import { applyWorkspaceDelta, clearWorkspace, loadWorkspace } from '@/utils/workspaceDb';
 
 interface ProjectState {
@@ -8,6 +8,7 @@ interface ProjectState {
   projectName: string;
   files: ProjectFile[];
   fileStructure: FileStructure[];
+  fileSystem?: FileSystem;
   activeFile: string | null;
   stack: string;
   description: string;
@@ -37,6 +38,7 @@ const initialState = {
   projectName: '',
   files: [],
   fileStructure: [],
+  fileSystem: {},
   activeFile: null,
   stack: '',
   description: '',

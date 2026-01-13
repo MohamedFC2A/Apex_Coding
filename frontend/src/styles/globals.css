@@ -6,13 +6,19 @@
   :root {
     --nexus-deepest: #000000;
     --nexus-dark: #0A0A0A;
-    --nexus-card: #111111;
+    --nexus-card: #121212;
     --silver-primary: #E2E8F0;
-    --silver-shiny: #F8FAFC;
+    --silver-shiny: #FFFFFF;
     --silver-muted: #94A3B8;
-    --silver-border: rgba(226, 232, 240, 0.1);
-    --silver-gradient: linear-gradient(135deg, #E2E8F0 0%, #94A3B8 50%, #E2E8F0 100%);
-    --silver-glow: 0 0 20px rgba(226, 232, 240, 0.15);
+    --silver-border: rgba(255, 255, 255, 0.1);
+    --silver-gradient: linear-gradient(135deg, #FFFFFF 0%, #CBD5E1 50%, #FFFFFF 100%);
+    --silver-glow: 0 0 20px rgba(255, 255, 255, 0.1);
+    
+    --gold-primary: #F59E0B;
+    --gold-shiny: #FDE68A;
+    --gold-muted: #D97706;
+    --gold-gradient: linear-gradient(135deg, #FDE68A 0%, #F59E0B 50%, #B45309 100%);
+    --gold-glow: 0 0 25px rgba(245, 158, 11, 0.2);
     
     --glass-blur: 24px;
     --border-white: rgba(255, 255, 255, 0.08);
@@ -102,7 +108,23 @@
     background-image: var(--silver-gradient);
   }
 
-  .silver-border {
+  .gold-text {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gold-gradient);
+  }
+
+  .gold-border {
+    border-color: var(--gold-primary);
+    box-shadow: var(--gold-glow);
+  }
+
+  .btn-gold {
+    @apply btn text-black font-bold;
+    background: var(--gold-gradient);
+    @apply shadow-[0_0_15px_rgba(245,158,11,0.2)] hover:shadow-[0_0_25px_rgba(245,158,11,0.4)] transition-all;
+  }
+
+  .btn-silver {
     border: 1px solid var(--silver-border);
     box-shadow: var(--silver-glow);
   }

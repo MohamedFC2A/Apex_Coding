@@ -22,7 +22,7 @@ const Shell = styled.div<{ $mode: 'create' | 'edit' }>`
   flex-shrink: 0;
   position: relative;
   border-radius: 24px;
-  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(168, 85, 247, 0.40)' : 'rgba(255, 255, 255, 0.16)')};
+  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.45)' : 'rgba(255, 255, 255, 0.18)')};
   background: rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(24px);
   box-shadow:
@@ -57,8 +57,8 @@ const Glow = styled.div<{ $mode: 'create' | 'edit' }>`
   inset: -12px;
   border-radius: 20px;
   background:
-    radial-gradient(300px 160px at 12% 22%, rgba(34, 211, 238, 0.28), transparent 60%),
-    radial-gradient(300px 160px at 88% 78%, rgba(168, 85, 247, ${(p) => (p.$mode === 'edit' ? 0.38 : 0.26)}), transparent 60%);
+    radial-gradient(300px 160px at 12% 22%, rgba(245, 158, 11, 0.32), transparent 60%),
+    radial-gradient(300px 160px at 88% 78%, rgba(255, 255, 255, ${(p) => (p.$mode === 'edit' ? 0.22 : 0.14)}), transparent 60%);
   filter: blur(22px);
   opacity: 0.95;
   pointer-events: none;
@@ -102,7 +102,7 @@ const Cursor = styled.span`
   margin-left: 2px;
   opacity: 0.70;
   animation: nexus-blink 900ms steps(1, end) infinite;
-  color: rgba(34, 211, 238, 0.8);
+  color: rgba(245, 158, 11, 0.8);
 `;
 
 const Input = styled.textarea<{ $mode: 'create' | 'edit' }>`
@@ -131,7 +131,7 @@ const Input = styled.textarea<{ $mode: 'create' | 'edit' }>`
   }
 
   &::selection {
-    background: rgba(34, 211, 238, 0.30);
+    background: rgba(245, 158, 11, 0.35);
   }
 
   @keyframes nexus-typing {

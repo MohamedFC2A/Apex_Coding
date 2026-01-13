@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { AlertCircle, History, ListTodo, Menu, X, Eye, EyeOff } from 'lucide-react';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { SubscriptionIndicator } from './components/SubscriptionIndicator';
+import { useLanguage } from './context/LanguageContext';
 
 import { useAIStore } from './stores/aiStore';
 import { useProjectStore } from './stores/projectStore';
@@ -60,9 +61,9 @@ const Root = styled.div`
   overflow: hidden;
   position: relative;
   background: 
-    radial-gradient(ellipse 1200px 600px at 15% 5%, rgba(34, 211, 238, 0.08), transparent 60%),
-    radial-gradient(ellipse 1000px 500px at 85% 90%, rgba(168, 85, 247, 0.08), transparent 60%),
-    linear-gradient(180deg, #0d1117 0%, #0a0d12 100%);
+    radial-gradient(ellipse 1200px 600px at 15% 5%, rgba(245, 158, 11, 0.06), transparent 60%),
+    radial-gradient(ellipse 1000px 500px at 85% 90%, rgba(255, 255, 255, 0.05), transparent 60%),
+    linear-gradient(180deg, #0d1117 0%, #080a0e 100%);
   color: rgba(255, 255, 255, 0.94);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -174,7 +175,7 @@ const HeaderIconButton = styled.button`
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(168, 85, 247, 0.15));
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(255, 255, 255, 0.15));
     opacity: 0;
     transition: opacity 200ms ease;
   }
@@ -380,7 +381,7 @@ const BrandTitle = styled.div`
   letter-spacing: 0.18em;
   text-transform: uppercase;
   font-size: 13px;
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(168, 85, 247, 0.95));
+  background: linear-gradient(135deg, #F59E0B 0%, #FDE68A 50%, #B45309 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -645,6 +646,7 @@ const ErrorToast = styled.div`
 `;
 
 function App() {
+  const { t, isRTL } = useLanguage();
   const {
     prompt,
     architectMode,
@@ -1814,19 +1816,19 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       )}
 
       <Container>
-        <HeaderArea>
-          <HeaderLeft>
-            <BrandStack>
-              <BrandTitle>APEX CODING</BrandTitle>
-              <BrandSubtitle>{projectName?.trim() || 'Untitled Project'}</BrandSubtitle>
+        <HeaderArea style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
+          <HeaderLeft style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
+            <BrandStack style={{ alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+              <BrandTitle>{t('brand.name')}</BrandTitle>
+              <BrandSubtitle>{projectName?.trim() || t('app.header.untitled')}</BrandSubtitle>
             </BrandStack>
             <StatusPill $active={isGenerating}>
-              {isGenerating ? thinkingStatus || 'Working…' : executionPhase === 'interrupted' ? 'Stopped' : 'Ready'}
+              {isGenerating ? thinkingStatus || t('app.header.status.working') : executionPhase === 'interrupted' ? t('app.header.status.stopped') : t('app.header.status.ready')}
             </StatusPill>
           </HeaderLeft>
-          <HeaderRight>
+          <HeaderRight style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
             <SubscriptionIndicator />
-            <div style={{ marginRight: '4px' }}>
+            <div style={{ marginLeft: isRTL ? '0' : '4px', marginRight: isRTL ? '4px' : '0' }}>
               <LanguageSwitcher />
             </div>
             <HeaderIconButton
@@ -1835,11 +1837,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                 const shouldOpen = !isPreviewOpen;
                 setIsPreviewOpen(shouldOpen);
               }}
-              aria-label={isPreviewOpen ? 'Close preview' : 'Open preview'}
-              title={isPreviewOpen ? 'Close preview' : 'Open preview'}
+              aria-label={isPreviewOpen ? t('app.header.preview.close') : t('app.header.preview.open')}
+              title={isPreviewOpen ? t('app.header.preview.close') : t('app.header.preview.open')}
               style={{
-                borderColor: isPreviewOpen ? 'rgba(34, 211, 238, 0.30)' : undefined,
-                background: isPreviewOpen ? 'rgba(34, 211, 238, 0.12)' : undefined,
+                borderColor: isPreviewOpen ? 'rgba(245, 158, 11, 0.30)' : undefined,
+                background: isPreviewOpen ? 'rgba(245, 158, 11, 0.12)' : undefined,
               }}
             >
               {isPreviewOpen ? <EyeOff size={18} /> : <Eye size={18} />}

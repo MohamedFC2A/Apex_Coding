@@ -5,17 +5,19 @@ import { useAIStore } from '@/stores/aiStore';
 import { shallow } from 'zustand/shallow';
 import { GlassCard } from './GlassCard';
 import { FileTree } from './FileTree';
-import { X, Play, Download } from 'lucide-react';
+import { X, Play, Download, Sparkles } from 'lucide-react';
 import { downloadService } from '@/services/downloadService';
 import { usePreviewStore } from '@/stores/previewStore';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 import type * as monaco from 'monaco-editor';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface CodeEditorProps {
   showFileTree?: boolean;
 }
 
 export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) => {
+  const { t, isRTL } = useLanguage();
   const { 
     files, 
     activeFile, 
@@ -32,7 +34,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
   
   const { addLog } = usePreviewStore();
   const [openTabs, setOpenTabs] = React.useState<string[]>([]);
-  const [editorTheme, setEditorTheme] = React.useState<'vs-dark' | 'nord' | 'dracula'>('vs-dark');
+  const [editorTheme, setEditorTheme] = React.useState<'vs-dark' | 'nord' | 'dracula' | 'apex-gold'>('apex-gold');
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
@@ -63,6 +65,35 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     editorRef.current = editor;
     monacoRef.current = monaco;
 
+    // Define Apex Gold theme (User's request)
+    monaco.editor.defineTheme('apex-gold', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '71717a', fontStyle: 'italic' },
+        { token: 'keyword', foreground: 'F59E0B', fontStyle: 'bold' },
+        { token: 'string', foreground: 'FFFFFF' },
+        { token: 'number', foreground: 'FCD34D' },
+        { token: 'type', foreground: 'F59E0B' },
+        { token: 'function', foreground: 'FFFFFF', fontStyle: 'bold' },
+        { token: 'variable', foreground: 'E5E7EB' },
+        { token: 'operator', foreground: 'F59E0B' }
+      ],
+      colors: {
+        'editor.background': '#0D1117',
+        'editor.foreground': '#E5E7EB',
+        'editor.lineHighlightBackground': '#1F2937',
+        'editor.selectionBackground': '#F59E0B33',
+        'editorCursor.foreground': '#F59E0B',
+        'editorLineNumber.foreground': '#4B5563', 
+        'editorLineNumber.activeForeground': '#F59E0B',
+        'editor.selectionHighlightBackground': '#F59E0B11',
+        'scrollbarSlider.background': '#F59E0B22',
+        'scrollbarSlider.hoverBackground': '#F59E0B44',
+        'scrollbarSlider.activeBackground': '#F59E0B66'
+      },
+    });
+
     // Define Nord theme
     monaco.editor.defineTheme('nord', {
       base: 'vs-dark',
@@ -84,35 +115,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
       },
     });
 
-    // Define Apex Midnight theme (better contrast)
-    monaco.editor.defineTheme('apex-midnight', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: 'comment', foreground: '5c6370', fontStyle: 'italic' },
-        { token: 'keyword', foreground: 'c678dd', fontStyle: 'bold' },
-        { token: 'string', foreground: '98c379' },
-        { token: 'number', foreground: 'd19a66' },
-        { token: 'type', foreground: 'e5c07b' },
-        { token: 'function', foreground: '61afef' },
-        { token: 'variable', foreground: 'e06c75' },
-        { token: 'operator', foreground: '56b6c2' }
-      ],
-      colors: {
-        'editor.background': '#0B0F14',
-        'editor.foreground': '#abb2bf',
-        'editor.lineHighlightBackground': '#1b2028',
-        'editor.selectionBackground': '#264f78',
-        'editorCursor.foreground': '#528bff',
-        'editorLineNumber.foreground': '#4b5263',
-        'editor.selectionHighlightBackground': '#3a404a',
-        'scrollbarSlider.background': '#1f2430',
-        'scrollbarSlider.hoverBackground': '#2a303e',
-        'scrollbarSlider.activeBackground': '#353b4b'
-      },
-    });
-
-    monaco.editor.setTheme('apex-midnight');
+    monaco.editor.setTheme('apex-gold');
 
     // Configure TypeScript
     monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
@@ -132,7 +135,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
 
   useEffect(() => {
     if (monacoRef.current) {
-      monacoRef.current.editor.setTheme('apex-midnight');
+      monacoRef.current.editor.setTheme('apex-gold');
     }
   }, []);
 
@@ -344,27 +347,33 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     return (
       <GlassCard className="h-full flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 p-4">
-          <div className="h-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-2xl animate-pulse" />
+          <div className="h-full rounded-xl border border-amber-500/10 bg-amber-500/5 backdrop-blur-2xl animate-pulse flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
+              <p className="text-amber-500/60 font-medium">{t('app.editor.loading')}</p>
+            </div>
+          </div>
         </div>
       </GlassCard>
     );
   }
 
   return (
-    <GlassCard className="h-full flex flex-col overflow-hidden">
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+    <GlassCard className={`h-full flex flex-col overflow-hidden ${isRTL ? 'rtl' : 'ltr'}`}>
+      <div className={`flex-1 min-h-0 flex ${isRTL ? 'flex-col md:flex-row-reverse' : 'flex-col md:flex-row'}`}>
         {showFileTree && (
-          <div className="w-full md:w-64 min-h-0 border-b md:border-b-0 md:border-r border-white/10 glass-panel">
-            <div className="p-3 border-b border-white/10">
-              <h3 className="text-sm font-semibold text-white/80">Files</h3>
+          <div className={`w-full md:w-64 min-h-0 border-b md:border-b-0 ${isRTL ? 'md:border-l' : 'md:border-r'} border-white/10 glass-panel`}>
+            <div className={`p-3 border-b border-white/10 ${isRTL ? 'text-right' : 'text-left'}`}>
+              <h3 className="text-sm font-semibold text-white/80">{t('app.sidebar.files')}</h3>
             </div>
             <FileTree />
           </div>
         )}
         
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex items-center border-b border-white/10 glass-panel">
-            <div className="flex items-center gap-2 px-3 flex-shrink-0">
+          <div className={`flex items-center border-b border-white/10 glass-panel ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className={`flex items-center gap-2 px-3 flex-shrink-0 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+
               <button
                 onClick={() => setEditorTheme(t => t === 'vs-dark' ? 'nord' : t === 'nord' ? 'dracula' : 'vs-dark')}
                 className="glass-button px-3 py-1.5 rounded text-xs font-medium"
@@ -377,31 +386,34 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
                 className="glass-button px-3 py-1.5 rounded flex items-center justify-center gap-2 text-sm font-semibold"
                 disabled={files.length === 0 || isGenerating || Boolean(writingFilePath)}
                 title="Run project (Ctrl/Cmd + R)"
+                style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
               >
                 <Play className="w-4 h-4" />
-                <span className="hidden sm:inline">Run</span>
+                <span className="hidden sm:inline">{t('app.editor.run')}</span>
               </button>
               <button
                 onClick={handleDownload}
                 className="glass-button px-3 py-1.5 rounded flex items-center justify-center gap-2 text-sm font-semibold"
                 disabled={files.length === 0}
                 title="Download as ZIP"
+                style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
               >
                 <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">ZIP</span>
+                <span className="hidden sm:inline">{t('app.editor.download')}</span>
               </button>
             </div>
             
-            <div className="flex-1 flex overflow-x-auto scrollbar-thin min-w-0">
+            <div className={`flex-1 flex overflow-x-auto scrollbar-thin min-w-0 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
               {openTabs.map(path => (
                 <div
                   key={path}
                   className={`flex items-center gap-2 px-3 py-2 border-r border-white/10 cursor-pointer transition-colors whitespace-nowrap min-w-0 ${
                     activeFile === path
-                      ? 'bg-white/5 text-white/90'
-                      : 'hover:bg-white/5'
+                      ? 'bg-white/5 text-amber-500 border-b-2 border-b-amber-500'
+                      : 'hover:bg-white/5 text-white/40'
                   }`}
                   onClick={() => setActiveFile(path)}
+                  style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
                 >
                   <span className="text-sm truncate max-w-[120px]">
                     {path.split('/').pop()}
@@ -427,27 +439,37 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
                 options={editorOptions}
                 loading={
                   <div className="flex items-center justify-center h-full">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400" />
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" />
                   </div>
                 }
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
-                <p>Select a file to edit</p>
+              <div className="flex flex-col items-center justify-center h-full text-white/20 gap-6 text-center px-6">
+                <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.1)]">
+                  <Sparkles size={32} className="text-amber-500" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-bold text-white/60">{t('app.editor.welcome')}</h3>
+                  <p className="text-sm leading-relaxed max-w-xs">
+                    {t('app.editor.welcomeDesc')}
+                  </p>
+                </div>
               </div>
             )}
           </div>
 
-          <div className="h-9 flex items-center justify-between px-3 border-t border-white/10 glass-panel">
+          <div className={`h-9 flex items-center justify-between px-3 border-t border-white/10 glass-panel ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
             <div className="text-xs text-white/70">
               {isPlanning
-                ? 'Creating plan…'
+                ? t('app.plan.status.working') + '...'
                 : isGenerating
-                  ? 'Generating…'
-                  : 'Ready'}
+                  ? t('app.plan.status.working') + '...'
+                  : t('app.editor.ready')}
             </div>
-            <div className="text-xs text-white/50">
-              {modelMode === 'thinking' ? '🧠 Thinking' : '⚡ Fast'} • {editorTheme}
+            <div className={`text-xs text-white/50 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+              <span className="text-amber-500/80">{modelMode === 'thinking' ? t('app.mode.thinking') : t('app.mode.fast')}</span>
+              <span className="opacity-30">•</span>
+              <span>{editorTheme}</span>
             </div>
           </div>
         </div>

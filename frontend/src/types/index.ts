@@ -14,6 +14,7 @@ export interface GenerationStatus {
 }
 
 export interface FileStructure {
+  name?: string;
   path: string;
   type: 'file' | 'directory';
   children?: FileStructure[];

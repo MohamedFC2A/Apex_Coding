@@ -1,6 +1,7 @@
 import React from 'react';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAIStore } from '@/stores/aiStore';
+import { useLanguage } from '@/context/LanguageContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   File,
@@ -19,6 +20,7 @@ import { FileStructure } from '@/types';
 interface FileTreeNodeProps {
   node: FileStructure;
   depth: number;
+  isRTL?: boolean;
 }
 
 type NodeStatus = 'ready' | 'queued' | 'writing';
@@ -35,12 +37,12 @@ const getFileIcon = (path: string) => {
 };
 
 const getStatusColor = (status: NodeStatus) => {
-  if (status === 'writing') return 'rgba(250, 204, 21, 0.95)';
+  if (status === 'writing') return 'rgba(245, 158, 11, 0.95)';
   if (status === 'queued') return 'rgba(59, 130, 246, 0.95)';
   return 'rgba(34, 197, 94, 0.95)';
 };
 
-const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth }) => {
+const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth, isRTL }) => {
   const [isOpen, setIsOpen] = React.useState(true);
   const { activeFile, setActiveFile } = useProjectStore();
   const { fileStatuses, writingFilePath } = useAIStore();
@@ -84,13 +86,17 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth }) => {
       <motion.div
         className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded-md transition-colors ${
           isActive
-            ? 'bg-[#1f2428] text-white ring-1 ring-cyan-500/20 shadow-[0_0_18px_rgba(34,211,238,0.10)]'
+            ? 'bg-[#1f2428] text-white ring-1 ring-amber-500/30 shadow-[0_0_18px_rgba(245,158,11,0.12)]'
             : 'hover:bg-[#161b22] text-white/80'
         }`}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        style={{ 
+          paddingLeft: isRTL ? '8px' : `${depth * 12 + 8}px`,
+          paddingRight: isRTL ? `${depth * 12 + 8}px` : '8px',
+          flexDirection: isRTL ? 'row-reverse' : 'row'
+        }}
         onClick={handleClick}
         layout
-        initial={{ opacity: 0, x: -6 }}
+        initial={{ opacity: 0, x: isRTL ? 6 : -6 }}
         animate={{ opacity: 1, x: 0 }}
       >
         {node.type === 'directory' ? (
@@ -98,51 +104,80 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth }) => {
             {isOpen ? (
               <ChevronDown className="w-4 h-4" />
             ) : (
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className={`w-4 h-4 ${isRTL ? 'rotate-180' : ''}`} />
             )}
-            <FileIcon className="w-4 h-4 text-white/60" />
+            <Folder className={`w-4 h-4 ${isActive ? 'text-amber-500' : 'text-gray-400'}`} />
           </>
         ) : (
           <>
-            <FileIcon className="w-4 h-4 text-gray-300 ml-4" />
+            <div className="w-4" />
+            <FileIcon className={`w-4 h-4 ${isActive ? 'text-amber-500' : 'text-gray-400'}`} />
           </>
         )}
-        <span className="text-sm truncate">{node.path.split('/').pop()}</span>
-        {node.type === 'file' && (
-          <span className="ml-auto flex items-center gap-1.5 pr-1">
-            <AnimatePresence>
-              {status === 'writing' && (
-                <motion.span
-                  initial={{ opacity: 0, y: -2 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -2 }}
-                  className="text-[10px] font-semibold tracking-wide text-yellow-200/90"
-                >
-                  Writing…
-                </motion.span>
-              )}
-            </AnimatePresence>
-            <StatusIcon
-              className={status === 'writing' ? 'w-4 h-4 animate-pulse' : 'w-4 h-4'}
-              style={{ color: statusColor }}
-            />
-          </span>
+        <span className={`text-sm truncate ${isRTL ? 'text-right' : 'text-left'} flex-1`}>
+          {node.name || node.path.split('/').pop()}
+        </span>
+        {status !== 'ready' && (
+          <StatusIcon className="w-3 h-3 animate-pulse" style={{ color: statusColor }} />
         )}
       </motion.div>
-      
-      {node.type === 'directory' && isOpen && node.children && (
-        <div>
-          {node.children.map((child) => (
-            <FileTreeNode key={child.path} node={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
+
+      <AnimatePresence>
+        {node.type === 'directory' && isOpen && node.children && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            {node.children.map((child) => (
+              <FileTreeNode key={child.path} node={child} depth={depth + 1} isRTL={isRTL} />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 export const FileTree: React.FC = () => {
-  const { files, fileStructure } = useProjectStore();
+  const { files, fileStructure, fileSystem } = useProjectStore();
+  const { isRTL } = useLanguage();
+
+  if (fileSystem && Object.keys(fileSystem).length > 0) {
+    const buildTree = (fs: any, path = ''): FileStructure[] => {
+      return Object.entries(fs).map(([name, entry]: [string, any]) => {
+        const currentPath = path ? `${path}/${name}` : name;
+        if (entry.directory) {
+          return {
+            name,
+            path: currentPath,
+            type: 'directory' as const,
+            children: buildTree(entry.directory, currentPath)
+          };
+        }
+        return {
+          name,
+          path: currentPath,
+          type: 'file' as const
+        };
+      }).sort((a, b) => {
+        if (a.type === b.type) return (a.name || '').localeCompare(b.name || '');
+        return a.type === 'directory' ? -1 : 1;
+      });
+    };
+
+    const tree = buildTree(fileSystem);
+
+    return (
+      <div className="py-2" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+        {tree.map((node) => (
+          <FileTreeNode key={node.path} node={node} depth={0} isRTL={isRTL} />
+        ))}
+      </div>
+    );
+  }
 
   if (files.length === 0) {
     return (
@@ -152,15 +187,14 @@ export const FileTree: React.FC = () => {
     );
   }
 
-  // Build tree structure if not provided
   const tree = fileStructure.length > 0 
     ? fileStructure 
     : files.filter(f => f.path).map(f => ({ path: f.path!, type: 'file' as const }));
 
   return (
-    <div className="p-2 scrollbar-thin overflow-y-auto">
+    <div className="p-2 scrollbar-thin overflow-y-auto" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
       {tree.map((node) => (
-        <FileTreeNode key={node.path} node={node} depth={0} />
+        <FileTreeNode key={node.path} node={node} depth={0} isRTL={isRTL} />
       ))}
     </div>
   );

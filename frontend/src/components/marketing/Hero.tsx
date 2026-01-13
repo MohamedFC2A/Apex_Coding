@@ -120,15 +120,18 @@ export function Hero() {
       >
         <h1 className="text-balance text-4xl font-bold tracking-tighter md:text-7xl">
           <span className="silver-text">
-            {t('hero.title')}
+            {t('hero.title').split(' ').slice(0, -2).join(' ')}{' '}
+          </span>
+          <span className="gold-text">
+            {t('hero.title').split(' ').slice(-2).join(' ')}
           </span>
         </h1>
         <h2 className="sr-only">Graph-Based AI IDE</h2>
-        <p className="mt-6 max-w-2xl text-pretty text-base leading-relaxed text-white/50 md:text-xl font-light">
+        <p className="mt-6 max-w-2xl text-pretty text-base leading-relaxed text-white/60 md:text-xl font-light">
           {t('hero.subtitle')}
         </p>
         <TypingSearch onClick={handleStart} />
-        <p className="mt-4 text-[10px] text-white/30 max-w-2xl uppercase tracking-[0.2em]">
+        <p className="mt-4 text-[10px] text-white/40 max-w-2xl uppercase tracking-[0.2em]">
           {t('ui.search.placeholder')}
         </p>
       </motion.div>
@@ -140,13 +143,13 @@ export function Hero() {
         transition={{ delay: 0.1, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
         className="mt-10 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center relative z-10"
       >
-        <a href="/app" className="btn-silver px-8 py-4 text-base">
+        <a href="/app" className="btn-gold px-10 py-4 text-base">
           {t('hero.cta.start')}
         </a>
-        <a href="/pricing" className="btn-outline px-8 py-4 border-white/10 hover:border-white/40">
+        <a href="/pricing" className="btn-silver px-8 py-4 text-base">
           {t('ui.viewPricing')}
         </a>
-        <Link href="/demo" className="btn-outline px-8 py-4 border-white/10 hover:border-white/40">
+        <Link href="/demo" className="btn-outline px-8 py-4 border-white/10 hover:border-white/40 text-white/80">
           {t('hero.cta.demo')}
         </Link>
       </motion.div>

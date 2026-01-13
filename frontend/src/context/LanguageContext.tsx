@@ -73,11 +73,74 @@ const translations: Record<Language, Translations> = {
     // Brand
     'brand.name': 'Apex Coding',
     'brand.tagline': 'Code at the Speed of Thought',
-    'brand.footer': '© 2026 Apex Coding | AI-Powered Developer Platform'
+    'brand.footer': '© 2026 Apex Coding | AI-Powered Developer Platform',
+
+    // Pricing & Plans
+    'pricing.title': 'Choose Your Plan',
+    'pricing.subtitle': 'Start building with our graph-based AI IDE. Upgrade anytime for more power.',
+    'pricing.free.name': 'FREE',
+    'pricing.free.desc': 'Perfect for trying out Apex Coding',
+    'pricing.pro.name': 'PRO',
+    'pricing.pro.desc': 'For serious developers building at scale',
+    'pricing.enterprise.name': 'ENTERPRISE',
+    'pricing.enterprise.desc': 'For teams and organizations',
+    'pricing.popular': 'MOST POPULAR',
+    'pricing.current': 'Current Plan',
+    'pricing.cta.free': 'Start Free',
+    'pricing.cta.pro': 'Upgrade to Pro',
+    'pricing.cta.enterprise': 'Contact Sales',
+    'pricing.promo.title': 'Have a promo code?',
+    'pricing.promo.placeholder': 'Enter code',
+    'pricing.promo.apply': 'Apply',
+    'pricing.promo.success': 'Promo code applied!',
+    'pricing.promo.error': 'Invalid promo code',
+    'pricing.openIde': 'Open IDE',
+
+    // IDE Sidebar & Panels
+    'app.sidebar.files': 'Files',
+    'app.sidebar.history': 'History',
+    'app.sidebar.settings': 'Settings',
+    'app.chat.placeholder': 'Type a message...',
+    'app.chat.send': 'Send',
+    'app.plan.title': 'Implementation Plan',
+    'app.plan.step': 'Step',
+    'app.plan.working': 'Working on it...',
+    'app.plan.done': 'Completed',
+    'app.plan.pending': 'Pending',
+    'app.terminal.title': 'Terminal',
+    'app.editor.title': 'Editor',
+
+    // Workspace & Prompt Panel
+    'app.workspace.title': 'AI Workspace',
+    'app.workspace.promptLabel': 'Your Prompt',
+    'app.workspace.promptPlaceholder': 'Describe your software idea in detail...\n\nExamples:\n• Create a todo app with React and TypeScript\n• Build a REST API with Node.js, Express, and MongoDB\n• Make a portfolio website with HTML, CSS, and JavaScript\n• Develop a chat application using Python Flask and WebSockets\n\nBe specific about features, design, and functionality.',
+    'app.workspace.settings': 'Model Settings',
+    'app.workspace.thinkingMode': 'Thinking Mode',
+    'app.workspace.modeFast': 'Fast',
+    'app.workspace.modeThinking': 'Thinking',
+    'app.workspace.modeSuper': 'Super-Thinking (Beta)',
+    'app.workspace.modeDescriptionFast': 'Uses configured DeepSeek model (fast response)',
+    'app.workspace.modeDescriptionThinking': 'Uses DeepSeek Reasoner (slower but more detailed)',
+    'app.workspace.modeDescriptionSuper': 'Hybrid engine: fast blueprint + deep reasoning',
+    'app.workspace.provider': 'Provider',
+    'app.workspace.generate': 'Generate Full Code',
+    'app.workspace.resume': 'Resume Generation',
+    'app.workspace.generating': 'Generating...',
+    'app.workspace.trace': 'Decision Trace',
+    'app.workspace.errorConfig': 'The browser never sees your key. Configure DEEPSEEK_API_KEY on the backend (Vercel env vars or backend/.env).',
+
+    // Generation Statuses
+    'app.plan.status.initializing': 'Initializing...',
+    'app.plan.status.thinking': 'Thinking...',
+    'app.plan.status.working': 'Generating code...',
+    'app.plan.status.validating': 'Validating output...',
+    'app.plan.status.complete': 'Generation Complete',
+    'app.plan.status.deepThinking': 'Thinking deeply...',
+    'app.plan.status.reasoning': 'Reasoning...'
   },
   ar: {
     // Hero Section
-    'hero.title': 'طور بسرعة التفكير مع نيكسس أبكس.',
+    'hero.title': 'طور بسرعة التفكير مع أبيكس كودينج.',
     'hero.subtitle': 'أول بيئة تطوير ذكاء اصطناعي قائمة على الرسوم البيانية تفهم بنية مشروعك، وليس فقط ملفاتك.',
     'hero.cta.start': 'ابدأ البرمجة مجاناً',
     'hero.cta.demo': 'شاهد العرض التوضيحي',
@@ -94,7 +157,7 @@ const translations: Record<Language, Translations> = {
     
     // Feature Cards
     'feature.graph.title': 'فهم قائم على الرسوم البيانية',
-    'feature.graph.body': 'يقوم نيكسس أبكس بتخطيط المستودع الخاص بك في رسم بياني قابل للتصفح حتى يتمكن الذكاء الاصطناعي من الاستدلال حول البنية والتبعيات والغرض.',
+    'feature.graph.body': 'يقوم أبيكس كودينج بتخطيط المستودع الخاص بك في رسم بياني قابل للتصفح حتى يتمكن الذكاء الاصطناعي من الاستدلال حول البنية والتبعيات والغرض.',
     'feature.persistence.title': 'استمرارية فورية',
     'feature.persistence.body': 'يتم التقاط كل تعديل في الوقت الفعلي - قم بالتحديث دون خوف. حالة المشروع المدعومة من Convex تبقيك في التقدم.',
     'feature.feedback.title': 'ردود فعل فورية',
@@ -110,7 +173,7 @@ const translations: Record<Language, Translations> = {
     
     // Lead Capture
     'lead.title': 'احصل على وصول مبكر',
-    'lead.subtitle': 'انضم إلى قائمة الانتظار للحصول على تحديثات نيكسس أبكس والوصول عند الإطلاق.',
+    'lead.subtitle': 'انضم إلى قائمة الانتظار للحصول على تحديثات أبيكس كودينج والوصول عند الإطلاق.',
     'lead.email.label': 'البريد الإلكتروني',
     'lead.email.placeholder': 'you@company.com',
     'lead.cta': 'انضم لقائمة الانتظار',
@@ -129,9 +192,80 @@ const translations: Record<Language, Translations> = {
     'ui.techStack': '+ Next.js, Tailwind, Framer Motion',
 
     // Brand
-    'brand.name': 'نيكسس أبكس',
+    'brand.name': 'أبيكس كودينج',
     'brand.tagline': 'طور بسرعة التفكير',
-    'brand.footer': '© 2026 نيكسس أبكس | منصة تطوير مدعومة بالذكاء الاصطناعي'
+    'brand.footer': '© 2026 أبيكس كودينج | منصة تطوير مدعومة بالذكاء الاصطناعي',
+
+    // Pricing & Plans
+    'pricing.title': 'اختر خطتك',
+    'pricing.subtitle': 'ابدأ البناء باستخدام بيئة التطوير القائمة على الرسوم البيانية. قم بالترقية في أي وقت لمزيد من القوة.',
+    'pricing.free.name': 'مجاني',
+    'pricing.free.desc': 'مثالي لتجربة أبيكس كودينج',
+    'pricing.pro.name': 'برو',
+    'pricing.pro.desc': 'للمطورين الجادين الذين يبنون بمقياس واسع',
+    'pricing.enterprise.name': 'مؤسسات',
+    'pricing.enterprise.desc': 'للفرق والمنظمات',
+    'pricing.popular': 'الأكثر شيوعاً',
+    'pricing.current': 'الخطة الحالية',
+    'pricing.cta.free': 'ابدأ مجاناً',
+    'pricing.cta.pro': 'ترقية إلى برو',
+    'pricing.cta.enterprise': 'اتصل بالمبيعات',
+    'pricing.promo.title': 'لديك كود خصم؟',
+    'pricing.promo.placeholder': 'أدخل الكود',
+    'pricing.promo.apply': 'تطبيق',
+    'pricing.promo.success': 'تم تطبيق كود الخصم!',
+    'pricing.promo.error': 'كود خصم غير صالح',
+    'pricing.openIde': 'افتح بيئة التطوير',
+
+    // IDE / App
+    'app.header.status.working': 'جاري العمل…',
+    'app.header.status.stopped': 'متوقف',
+    'app.header.status.ready': 'جاهز',
+    'app.header.untitled': 'مشروع بدون عنوان',
+    'app.header.preview.open': 'فتح العرض',
+    'app.header.preview.close': 'إغلاق العرض',
+
+    // IDE Sidebar & Panels
+    'app.sidebar.files': 'الملفات',
+    'app.sidebar.history': 'السجل',
+    'app.sidebar.settings': 'الإعدادات',
+    'app.chat.placeholder': 'اكتب رسالة...',
+    'app.chat.send': 'إرسال',
+    'app.plan.title': 'خطة التنفيذ',
+    'app.plan.step': 'خطوة',
+    'app.plan.working': 'جاري العمل عليها...',
+    'app.plan.done': 'مكتمل',
+    'app.plan.pending': 'قيد الانتظار',
+    'app.terminal.title': 'الطرفية',
+    'app.editor.title': 'المحرر',
+
+    // Workspace & Prompt Panel
+    'app.workspace.title': 'بيئة عمل الذكاء الاصطناعي',
+    'app.workspace.promptLabel': 'طلبك',
+    'app.workspace.promptPlaceholder': 'صف فكرة برنامجك بالتفصيل...\n\nأمثلة:\n• إنشاء تطبيق مهام باستخدام React و TypeScript\n• بناء واجهة برمجة تطبيقات REST باستخدام Node.js و Express و MongoDB\n• إنشاء موقع محفظة أعمال باستخدام HTML و CSS و JavaScript\n• تطوير تطبيق دردشة باستخدام Python Flask و WebSockets\n\nكن محددًا بشأن الميزات والتصميم والوظائف.',
+    'app.workspace.settings': 'إعدادات النموذج',
+    'app.workspace.thinkingMode': 'وضع التفكير',
+    'app.workspace.modeFast': 'سريع',
+    'app.workspace.modeThinking': 'تفكير',
+    'app.workspace.modeSuper': 'تفكير فائق (بيتا)',
+    'app.workspace.modeDescriptionFast': 'يستخدم نموذج DeepSeek المكون (استجابة سريعة)',
+    'app.workspace.modeDescriptionThinking': 'يستخدم DeepSeek Reasoner (أبطأ ولكن أكثر تفصيلاً)',
+    'app.workspace.modeDescriptionSuper': 'محرك هجين: مخطط سريع + تفكير عميق',
+    'app.workspace.provider': 'المزود',
+    'app.workspace.generate': 'إنشاء الكود بالكامل',
+    'app.workspace.resume': 'استئناف الإنشاء',
+    'app.workspace.generating': 'جاري الإنشاء...',
+    'app.workspace.trace': 'تتبع القرار',
+    'app.workspace.errorConfig': 'المتصفح لا يرى مفتاحك أبدًا. قم بتكوين DEEPSEEK_API_KEY في الخلفية (متغيرات بيئة Vercel أو backend/.env).',
+
+    // Generation Statuses
+    'app.plan.status.initializing': 'جاري التهيئة...',
+    'app.plan.status.thinking': 'جاري التفكير...',
+    'app.plan.status.working': 'جاري إنشاء الكود...',
+    'app.plan.status.validating': 'جاري التحقق من المخرجات...',
+    'app.plan.status.complete': 'اكتمل الإنشاء',
+    'app.plan.status.deepThinking': 'جاري التفكير بعمق...',
+    'app.plan.status.reasoning': 'جاري الاستنتاج...'
   }
 };
 

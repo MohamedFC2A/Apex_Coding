@@ -102,8 +102,7 @@ export class AICodeGenerator {
   // Smart code refactoring
   async refactorCode(code: string, instructions: string, language: string): Promise<string> {
     // Import AI service dynamically to avoid circular dependencies
-    const { useAIStore } = await import('@/stores/aiStore');
-    const { generateCode } = useAIStore.getState();
+    const { aiService } = await import('@/services/aiService');
     
     const prompt = `Refactor the following ${language} code based on these instructions: "${instructions}"
 
@@ -121,7 +120,7 @@ Requirements:
 
 Refactored code:`;
 
-    const refactoredCode = await generateCode(prompt);
+    const refactoredCode = await aiService.generateCode(prompt);
     return this.extractCodeFromResponse(refactoredCode);
   }
 
@@ -133,8 +132,7 @@ Refactored code:`;
     dependencies?: string[];
   }): Promise<string> {
     // Import AI service dynamically to avoid circular dependencies
-    const { useAIStore } = await import('@/stores/aiStore');
-    const { generateCode } = useAIStore.getState();
+    const { aiService } = await import('@/services/aiService');
     
     const prompt = `Generate ${context.language} code for: ${description}
 
@@ -152,15 +150,14 @@ Requirements:
 
 Generated code:`;
 
-    const generatedCode = await generateCode(prompt);
+    const generatedCode = await aiService.generateCode(prompt);
     return this.extractCodeFromResponse(generatedCode);
   }
 
   // Explain code in natural language
   async explainCode(code: string, language: string): Promise<string> {
     // Import AI service dynamically to avoid circular dependencies
-    const { useAIStore } = await import('@/stores/aiStore');
-    const { generateCode } = useAIStore.getState();
+    const { aiService } = await import('@/services/aiService');
     
     const prompt = `Explain the following ${language} code in simple terms:
 
@@ -177,14 +174,13 @@ Provide:
 
 Explanation:`;
 
-    return await generateCode(prompt);
+    return await aiService.generateCode(prompt);
   }
 
   // Generate unit tests
   async generateTests(code: string, language: string, testFramework: string = 'jest'): Promise<string> {
     // Import AI service dynamically to avoid circular dependencies
-    const { useAIStore } = await import('@/stores/aiStore');
-    const { generateCode } = useAIStore.getState();
+    const { aiService } = await import('@/services/aiService');
     
     const prompt = `Generate comprehensive unit tests for the following ${language} code using ${testFramework}:
 
@@ -201,7 +197,7 @@ Requirements:
 
 Tests:`;
 
-    const tests = await generateCode(prompt);
+    const tests = await aiService.generateCode(prompt);
     return this.extractCodeFromResponse(tests);
   }
 

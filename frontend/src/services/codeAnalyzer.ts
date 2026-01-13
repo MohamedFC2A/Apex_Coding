@@ -73,7 +73,7 @@ export class CodeAnalyzer {
         averageComplexity: Math.round(avgComplexity * 100) / 100,
         averageMaintainability: Math.round(avgMaintainability),
         codeQuality: this.calculateOverallQuality(fileAnalyses),
-        securityScore: this.calculateSecurityScore(fileAnalyses),
+        securityScore: this.calculateSecurityScoreFromAnalyses(fileAnalyses),
         testCoverage: this.calculateTestCoverage(files)
       },
       files: fileAnalyses,
@@ -585,6 +585,11 @@ export class CodeAnalyzer {
       }
     });
     return Math.max(0, score);
+  }
+
+  private calculateSecurityScoreFromAnalyses(analyses: Array<{ analysis: any }>): number {
+    const totalScore = analyses.reduce((sum, { analysis }) => sum + analysis.security.score, 0);
+    return Math.round(totalScore / analyses.length);
   }
 
   private calculateComplexity(content: string, language: string): number {

@@ -191,6 +191,7 @@ export const useEditorStore = create<EditorState>()(
         colors: {
           'editor.background': '#0d0221',
           'editor.foreground': '#ff00ff',
+          'editor.lineHighlightBackground': '#1a0033',
           'editorCursor.foreground': '#00ffff',
           'editor.selectionBackground': '#ff00ff30',
         }
@@ -201,6 +202,7 @@ export const useEditorStore = create<EditorState>()(
         colors: {
           'editor.background': '#000000',
           'editor.foreground': '#00ff00',
+          'editor.lineHighlightBackground': '#001100',
           'editorCursor.foreground': '#00ff00',
           'editor.selectionBackground': '#00ff0020',
         }

@@ -90,12 +90,9 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
     openFiles, 
     activeFileId, 
     openFile,
-    closeFile, 
-    fontSize, 
-    theme, 
-    wordWrap,
-    minimap,
-    lineNumbers 
+    closeFile,
+    settings,
+    updateSettings 
   } = useEditorStore();
 
   // State
@@ -106,7 +103,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [showAIPanel, setShowAIPanel] = useState(false);
-  const [selectedTheme, setSelectedTheme] = useState(theme);
+  const [selectedTheme, setSelectedTheme] = useState(settings.theme);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
 
   // Editor Ref
@@ -207,10 +204,10 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
 
     // Configure editor
     editor.updateOptions({
-      fontSize,
-      wordWrap,
-      minimap: { enabled: minimap },
-      lineNumbers,
+      fontSize: settings.fontSize,
+      wordWrap: settings.wordWrap,
+      minimap: { enabled: settings.minimap },
+      lineNumbers: settings.lineNumbers,
       scrollBeyondLastLine: false,
       automaticLayout: true,
       suggestOnTriggerCharacters: true,
@@ -256,7 +253,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
         setAiSuggestions(analysis.suggestions);
       }
     });
-  }, [fontSize, wordWrap, minimap, lineNumbers, showAIPanel]);
+  }, [settings.fontSize, settings.wordWrap, settings.minimap, settings.lineNumbers, showAIPanel]);
 
   // Save current file
   const saveCurrentFile = useCallback(async () => {

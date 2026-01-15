@@ -381,10 +381,16 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   };
 
   const renderErrorState = () => {
+    // Only flag as config error if it specifically mentions configuration/API key
+    // AND it's not just a timeout message that happens to mention CodeSandbox
+    const isTimeout = runtimeMessage && runtimeMessage.toLowerCase().includes('timeout');
     const isConfigError = configError || 
-      (runtimeMessage && (runtimeMessage.includes('configuration') || 
-                         runtimeMessage.includes('CSB_API_KEY') || 
-                         runtimeMessage.includes('CodeSandbox')));
+      (runtimeMessage && !isTimeout && (
+        runtimeMessage.includes('configuration') || 
+        runtimeMessage.includes('CSB_API_KEY') || 
+        runtimeMessage.includes('API key') ||
+        runtimeMessage.includes('unauthorized')
+      ));
     
     return (
       <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
@@ -392,7 +398,9 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-yellow-400 opacity-50" />
           <p className="text-sm font-medium mb-1">Preview Not Available</p>
           <p className="text-xs opacity-70 mb-4">
-            {isConfigError ? 'Preview configuration issue detected' : 'Generate some code to see the live preview'}
+            {isConfigError ? 'Preview configuration issue detected' : 
+             isTimeout ? 'Preview Connection Timed Out' :
+             'Generate some code to see the live preview'}
           </p>
           
           {(runtimeMessage || configError) && (

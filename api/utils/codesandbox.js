@@ -240,7 +240,7 @@ const ensureDevServerRunning = async ({ client, devCommand, port, timeoutMs }) =
   }
 };
 
-const createSandboxPreview = async ({ fileMap, timeoutMs = 180_000 }) => {
+const createSandboxPreview = async ({ fileMap, timeoutMs = 300000 }) => {
   let sdk;
   try {
     sdk = getSdk();
@@ -297,7 +297,7 @@ const patchSandboxFiles = async ({
   create = {},
   destroy = [],
   files,
-  timeoutMs = 90_000
+  timeoutMs = 300000
 }) => {
   if (!sandboxId) throw new Error('sandboxId is required');
   const sdk = getSdk();

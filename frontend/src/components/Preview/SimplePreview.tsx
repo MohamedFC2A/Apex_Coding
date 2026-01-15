@@ -168,15 +168,15 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         <div class="files-info">
             <div class="file-card">
                 <h3><span class="icon">📄</span> HTML Files</h3>
-                <p>${htmlFiles.length} file${htmlFiles.length !== 1 ? 's' : ''} found</p>
+                <p>${htmlFiles.length} file${htmlFiles.length === 1 ? '' : 's'} found</p>
             </div>
             <div class="file-card">
                 <h3><span class="icon">🎨</span> CSS Files</h3>
-                <p>${cssFiles.length} file${cssFiles.length !== 1 ? 's' : ''} found</p>
+                <p>${cssFiles.length} file${cssFiles.length === 1 ? '' : 's'} found</p>
             </div>
             <div class="file-card">
                 <h3><span class="icon">⚡</span> JS Files</h3>
-                <p>${jsFiles.length} file${jsFiles.length !== 1 ? 's' : ''} found</p>
+                <p>${jsFiles.length} file${jsFiles.length === 1 ? '' : 's'} found</p>
             </div>
         </div>
         

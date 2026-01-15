@@ -281,20 +281,6 @@ ${context.files.slice(0, 100).join('\n')}${context.files.length > 100 ? '\n...(t
 [COMPLETED FILES]
 ${Array.from(completedFiles).join('\n')}
 
-[PREVIEW OPTIMIZATION]
-Performance Insights: ${previewContext.insights}
-Recommended Settings: 
-- Debounce: ${previewContext.optimization.debounceMs}ms
-- Timeout: ${previewContext.optimization.timeoutMs / 1000}s
-- Max Retries: ${previewContext.optimization.maxRetries}
-- Auto Retry: ${previewContext.optimization.autoRetry ? 'Enabled' : 'Disabled'}
-
-Optimization Suggestions:
-${previewContext.suggestions.map(s => `- ${s}`).join('\n')}
-
-AI Recommendations:
-${previewContext.recommendations.map(r => `- ${r}`).join('\n')}
-
 [USER REQUEST]
 ${prompt}
 `.trim();

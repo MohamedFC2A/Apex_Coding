@@ -16,6 +16,44 @@ const escapeHtml = (value?: string) => {
     .replace(/'/g, '&#39;');
 };
 
+const isExternalAssetUrl = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(trimmed)) return true;
+  return (
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('mailto:') ||
+    trimmed.startsWith('tel:')
+  );
+};
+
+const extractAttribute = (tag: string, attr: string) => {
+  const match = tag.match(new RegExp(`${attr}\\s*=\\s*(['"])(.*?)\\1`, 'i'));
+  return match?.[2] ?? '';
+};
+
+const shouldStripRelativeAsset = (value: string) => {
+  if (!value) return false;
+  return !isExternalAssetUrl(value);
+};
+
+const stripRelativeAssets = (html: string) => {
+  let output = html;
+  output = output.replace(/<link\b[^>]*>/gi, (tag) => {
+    const rel = extractAttribute(tag, 'rel').toLowerCase();
+    if (!rel || !rel.includes('stylesheet')) return tag;
+    const href = extractAttribute(tag, 'href');
+    return shouldStripRelativeAsset(href) ? '' : tag;
+  });
+  output = output.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, (tag) => {
+    const src = extractAttribute(tag, 'src');
+    if (!src) return tag;
+    return shouldStripRelativeAsset(src) ? '' : tag;
+  });
+  return output;
+};
+
 export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
   const files = useProjectStore((s) => s.files);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -360,6 +398,7 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
           }
         }
         
+        enhancedHtml = stripRelativeAssets(enhancedHtml);
         setPreviewContent(enhancedHtml);
       }
     } catch (err) {

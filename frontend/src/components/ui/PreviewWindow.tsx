@@ -1,13 +1,10 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React from 'react';
 import styled from 'styled-components';
-import { Copy, ExternalLink, RefreshCw, AlertTriangle, MonitorPlay } from 'lucide-react';
-import { PreviewRunnerPreview, type PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreview';
+import { AlertTriangle, MonitorPlay } from 'lucide-react';
 import { SimplePreview } from '../Preview/SimplePreview';
 import { ErrorBoundary } from './ErrorBoundary';
-import { usePreviewStore } from '@/stores/previewStore';
-import { useProjectStore } from '@/stores/projectStore';
 
 const Window = styled.div`
   height: 100%;
@@ -18,7 +15,7 @@ const Window = styled.div`
   background: rgba(255, 255, 255, 0.02);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  box-shadow: 
+  box-shadow:
     0 20px 40px rgba(0, 0, 0, 0.3),
     inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   overflow: hidden;
@@ -27,7 +24,7 @@ const Window = styled.div`
   &:hover {
     border-color: rgba(255, 255, 255, 0.15);
     background: rgba(255, 255, 255, 0.03);
-    box-shadow: 
+    box-shadow:
       0 30px 60px rgba(0, 0, 0, 0.4),
       inset 0 0 0 1px rgba(255, 255, 255, 0.08);
     transform: translateY(-2px);
@@ -80,7 +77,6 @@ const Title = styled.div`
 const Right = styled.div`
   display: inline-flex;
   align-items: center;
-  gap: 8px;
 `;
 
 const StatusPill = styled.div<{ $tone: 'idle' | 'busy' | 'ready' | 'error' }>`
@@ -127,40 +123,6 @@ const StatusDot = styled.span<{ $tone: 'idle' | 'busy' | 'ready' | 'error' }>`
   }};
 `;
 
-const IconButton = styled.button`
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  backdrop-filter: blur(12px);
-
-  &:hover {
-    transform: translateY(-1px);
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: white;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  }
-
-  &:active {
-    transform: translateY(0px);
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-  }
-`;
-
 const Content = styled.div`
   position: relative;
   flex: 1;
@@ -174,40 +136,29 @@ interface PreviewWindowProps {
   enabled?: boolean;
 }
 
-
 export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled = true }) => {
-  const previewRef = useRef<PreviewRunnerPreviewHandle>(null);
-  const previewUrl = usePreviewStore((s) => s.previewUrl);
-  const runtimeStatus = usePreviewStore((s) => s.runtimeStatus);
-  const runtimeMessage = usePreviewStore((s) => s.runtimeMessage);
-  const [copied, setCopied] = useState(false);
+  const statusTone = enabled ? 'ready' : 'idle';
+  const statusLabel = enabled ? 'Live' : 'Closed';
 
-  const files = useProjectStore((s) => s.files);
-  const hasPackageJson = useMemo(() => files.some(f => f.path === 'package.json' || f.name === 'package.json'), [files]);
-  // Use legacy (CodeSandbox) preview ONLY if package.json exists. Otherwise use SimplePreview (Natural).
-  const useLegacyPreview = hasPackageJson;
+  const handleReset = () => {
+    if (typeof window === 'undefined') return;
+    window.location.reload();
+  };
 
-  const statusTone = useMemo<'idle' | 'busy' | 'ready' | 'error'>(() => {
-    if (!enabled) return 'idle';
-    if (!useLegacyPreview) return 'ready'; // Simple preview is always ready-ish
-    if (runtimeStatus === 'error') return 'error';
-    if (runtimeStatus === 'ready') return 'ready';
-    if (runtimeStatus === 'idle') return 'idle';
-    return 'busy';
-  }, [enabled, runtimeStatus, useLegacyPreview]);
-
-  const statusLabel = useMemo(() => {
-    if (!enabled) return 'Closed';
-    if (!useLegacyPreview) return 'Live';
-    if (runtimeStatus === 'ready') return 'Ready';
-    if (runtimeStatus === 'error') return 'Error';
-    if (runtimeStatus === 'booting') return 'Booting';
-    if (runtimeStatus === 'installing') return 'Installing';
-    if (runtimeStatus === 'starting') return 'Starting';
-    if (runtimeStatus === 'mounting') return 'Mounting';
-    return 'Idle';
-  }, [enabled, runtimeStatus, useLegacyPreview]);
-
+  const fallback = (
+    <div className="w-full h-full flex flex-col items-center justify-center px-6 text-center">
+      <AlertTriangle size={48} className="text-red-400 mb-4" />
+      <p className="text-lg font-semibold text-white mb-1">Preview failed to load</p>
+      <p className="text-sm text-white/70 mb-4">Refresh the page to restart the preview.</p>
+      <button
+        type="button"
+        className="px-4 py-2 rounded-md border border-white/20 bg-white/10 text-sm font-semibold text-white transition hover:bg-white/20"
+        onClick={handleReset}
+      >
+        Reload Preview
+      </button>
+    </div>
+  );
 
   return (
     <Window className={className}>
@@ -217,89 +168,23 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
           <Dot $color="#febc2e" />
           <Dot $color="#28c840" />
         </Dots>
-        <Title>Live Preview {useLegacyPreview ? '(Sandbox)' : '(Simple)'}</Title>
+        <Title>Live Preview</Title>
         <Right>
-          <StatusPill $tone={statusTone} title={runtimeMessage || statusLabel}>
+          <StatusPill $tone={statusTone} title={statusLabel}>
             <StatusDot $tone={statusTone} />
             {statusLabel}
           </StatusPill>
-
-
-          <IconButton
-            type="button"
-            onClick={() => useLegacyPreview && previewRef.current?.resetSession()}
-            aria-label="Restart preview"
-            title="Restart preview"
-            disabled={!enabled || !useLegacyPreview}
-          >
-            <RefreshCw size={16} />
-          </IconButton>
-
-          <IconButton
-            type="button"
-            onClick={async () => {
-              if (!previewUrl) return;
-              try {
-                await navigator.clipboard.writeText(previewUrl);
-                setCopied(true);
-                window.setTimeout(() => setCopied(false), 900);
-              } catch {}
-            }}
-            aria-label="Copy preview URL"
-            title={copied ? 'Copied!' : 'Copy preview URL'}
-            disabled={!enabled || !previewUrl}
-          >
-            <Copy size={16} />
-          </IconButton>
-
-          <IconButton
-            type="button"
-            onClick={() => {
-              if (!previewUrl) return;
-              window.open(previewUrl, '_blank', 'noopener,noreferrer');
-            }}
-            aria-label="Open preview in new tab"
-            title="Open preview in new tab"
-            disabled={!enabled || !previewUrl}
-          >
-            <ExternalLink size={16} />
-          </IconButton>
         </Right>
       </Titlebar>
       <Content>
-        <ErrorBoundary 
-          onReset={() => previewRef.current?.resetSession()} 
-          fallback={
-            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-              <div className="mb-4">
-                <AlertTriangle size={48} className="text-red-400 mx-auto" />
-              </div>
-              <div className="mb-2 font-bold text-white">Preview Failed to Load</div>
-              <div className="text-sm text-white/60 mb-2 max-w-md">
-                Preview failed to load. Please check your configuration and try again.
-              </div>
-              <button
-                onClick={() => previewRef.current?.resetSession()}
-                className="mt-4 px-4 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 hover:bg-cyan-500/30 transition-colors"
-              >
-                Try Again
-              </button>
-            </div>
-          }
-        >
+        <ErrorBoundary onReset={handleReset} fallback={fallback}>
           {enabled ? (
-            useLegacyPreview ? (
-              <PreviewRunnerPreview ref={previewRef} enabled />
-            ) : (
-              <SimplePreview />
-            )
+            <SimplePreview />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30">
-              <div className="text-center">
-                <MonitorPlay size={48} className="mx-auto mb-4 opacity-50" />
-                <div className="text-sm">Live Preview is closed</div>
-                <div className="text-xs mt-2 opacity-70">Generate some code to enable preview</div>
-              </div>
+            <div className="w-full h-full flex flex-col items-center justify-center text-white/60 bg-black/30">
+              <MonitorPlay size={48} className="mx-auto mb-4 opacity-60" />
+              <div className="text-sm font-semibold">Live Preview is closed</div>
+              <div className="text-xs mt-2 opacity-70">Generate some code to enable preview.</div>
             </div>
           )}
         </ErrorBoundary>

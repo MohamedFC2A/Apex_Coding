@@ -6,6 +6,16 @@ interface SimplePreviewProps {
   className?: string;
 }
 
+const escapeHtml = (value?: string) => {
+  if (!value) return '';
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
   const files = useProjectStore((s) => s.files);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -43,182 +53,140 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
       setHasCssFile(cssFiles.length > 0);
 
       if (htmlFiles.length === 0) {
-        // Generate a simple HTML page if no HTML file exists
-        const mainHtml = `
+        const fileListMarkup = files.length > 0
+          ? files
+              .map((f) => `<li>${escapeHtml(f.path || f.name || 'untitled')}</li>`)
+              .join('')
+          : '<li class="empty">No files yet</li>';
+
+        const defaultHtml = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Preview - Apex Coding</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            color: #f8fafc;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .container {
-            max-width: 800px;
-            width: 100%;
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            padding: 40px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .header h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            background: linear-gradient(90deg, #60a5fa, #a78bfa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 10px;
-        }
-        .header p {
-            color: #94a3b8;
-            font-size: 1.1rem;
-        }
-        .files-info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .file-card {
-            background: rgba(15, 23, 42, 0.8);
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            transition: transform 0.2s, border-color 0.2s;
-        }
-        .file-card:hover {
-            transform: translateY(-2px);
-            border-color: rgba(96, 165, 250, 0.3);
-        }
-        .file-card h3 {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 1.1rem;
-            margin-bottom: 10px;
-            color: #e2e8f0;
-        }
-        .file-card .icon {
-            width: 24px;
-            height: 24px;
-        }
-        .file-card p {
-            color: #94a3b8;
-            font-size: 0.9rem;
-        }
-        .code-preview {
-            background: #0f172a;
-            border-radius: 12px;
-            padding: 20px;
-            margin-top: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            overflow-x: auto;
-        }
-        .code-preview h3 {
-            color: #e2e8f0;
-            margin-bottom: 15px;
-            font-size: 1.1rem;
-        }
-        pre {
-            color: #cbd5e1;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.9rem;
-            line-height: 1.5;
-            white-space: pre-wrap;
-        }
-        .footer {
-            margin-top: 30px;
-            text-align: center;
-            color: #64748b;
-            font-size: 0.9rem;
-            padding-top: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        @media (max-width: 640px) {
-            .container { padding: 20px; }
-            .header h1 { font-size: 2rem; }
-            .files-info { grid-template-columns: 1fr; }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Preview</title>
+  <style>
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background-color: #020617;
+      color: #e2e8f0;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #020617;
+    }
+    .preview-card {
+      width: min(640px, 90vw);
+      padding: 32px;
+      border-radius: 20px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      box-shadow: 0 20px 60px rgba(2, 6, 23, 0.8);
+    }
+    .preview-card h1 {
+      margin-bottom: 8px;
+      font-size: 1.6rem;
+      color: #f8fafc;
+    }
+    .hint {
+      margin-bottom: 16px;
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat {
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      text-align: center;
+    }
+    .stat strong {
+      display: block;
+      font-size: 1.3rem;
+      color: #f8fafc;
+    }
+    .stat span {
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      color: #94a3b8;
+      text-transform: uppercase;
+    }
+    .files h2 {
+      margin: 0;
+      font-size: 1rem;
+      color: #94a3b8;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .files {
+      margin-top: 8px;
+      font-size: 0.9rem;
+    }
+    .files ul {
+      margin: 10px 0 0;
+      padding: 0;
+      list-style: none;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .files li {
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+    .files li.empty {
+      color: #94a3b8;
+      text-align: center;
+    }
+    @media (max-width: 480px) {
+      .preview-card {
+        padding: 24px;
+      }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Simple Preview</h1>
-            <p>Live preview of your generated code</p>
-        </div>
-        
-        <div class="files-info">
-            <div class="file-card">
-                <h3><span class="icon">📄</span> HTML Files</h3>
-                <p>0 files found</p>
-            </div>
-            <div class="file-card">
-                <h3><span class="icon">🎨</span> CSS Files</h3>
-                <p>${cssFiles.length} file${cssFiles.length === 1 ? '' : 's'} found</p>
-            </div>
-            <div class="file-card">
-                <h3><span class="icon">⚡</span> JS Files</h3>
-                <p>${jsFiles.length} file${jsFiles.length === 1 ? '' : 's'} found</p>
-            </div>
-        </div>
-        
-        <div class="code-preview">
-            <h3>Project Structure</h3>
-            <pre>${files.map(f => `📁 ${f.path || f.name}`).join('\n')}</pre>
-        </div>
-        
-        <div class="footer">
-            <p>Built with Apex Coding • Simple Preview Mode</p>
-            <p>Add an index.html file for full preview functionality</p>
-        </div>
+  <div class="preview-card">
+    <h1>Live Preview Ready</h1>
+    <p class="hint">Rendered in-browser with the files you generated so far.</p>
+    <div class="stats">
+      <div class="stat">
+        <span>HTML</span>
+        <strong>${htmlFiles.length}</strong>
+      </div>
+      <div class="stat">
+        <span>CSS</span>
+        <strong>${cssFiles.length}</strong>
+      </div>
+      <div class="stat">
+        <span>JavaScript</span>
+        <strong>${jsFiles.length}</strong>
+      </div>
     </div>
-    
-    <script>
-        // Simple interactivity
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('Simple Preview loaded');
-            
-            // Add click animation to file cards
-            const cards = document.querySelectorAll('.file-card');
-            cards.forEach(card => {
-                card.addEventListener('click', () => {
-                    card.style.transform = 'scale(0.98)';
-                    setTimeout(() => {
-                        card.style.transform = '';
-                    }, 150);
-                });
-            });
-            
-            // Update timestamp
-            const timeElement = document.createElement('p');
-            timeElement.textContent = 'Loaded: ' + new Date().toLocaleTimeString();
-            timeElement.style.marginTop = '10px';
-            timeElement.style.fontSize = '0.8rem';
-            timeElement.style.color = '#475569';
-            document.querySelector('.footer').appendChild(timeElement);
-        });
-    </script>
+    <div class="files">
+      <h2>Project files</h2>
+      <ul>
+        ${fileListMarkup}
+      </ul>
+    </div>
+  </div>
 </body>
 </html>`;
-        setPreviewContent(mainHtml);
+        setPreviewContent(defaultHtml);
       } else {
         // Use the first HTML file found
         const htmlContent = htmlFiles[0].content;

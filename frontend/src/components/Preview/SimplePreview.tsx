@@ -338,9 +338,6 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
             {files.length} file{files.length !== 1 ? 's' : ''}
           </div>
         </div>
-        <div className="mt-2 text-xs text-gray-400">
-          This is a simple preview. For full functionality, configure CodeSandbox API key.
-        </div>
       </div>
 
       {/* Preview Content */}

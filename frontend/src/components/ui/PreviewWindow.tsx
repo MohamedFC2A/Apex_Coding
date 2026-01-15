@@ -4,8 +4,10 @@ import React, { useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { Copy, ExternalLink, RefreshCw, AlertTriangle, MonitorPlay } from 'lucide-react';
 import { PreviewRunnerPreview, type PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreview';
+import { SimplePreview } from '../Preview/SimplePreview';
 import { ErrorBoundary } from './ErrorBoundary';
 import { usePreviewStore } from '@/stores/previewStore';
+import { useProjectStore } from '@/stores/projectStore';
 
 const Window = styled.div`
   height: 100%;
@@ -180,16 +182,23 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
   const runtimeMessage = usePreviewStore((s) => s.runtimeMessage);
   const [copied, setCopied] = useState(false);
 
+  const files = useProjectStore((s) => s.files);
+  const hasPackageJson = useMemo(() => files.some(f => f.path === 'package.json' || f.name === 'package.json'), [files]);
+  // Use legacy (CodeSandbox) preview ONLY if package.json exists. Otherwise use SimplePreview (Natural).
+  const useLegacyPreview = hasPackageJson;
+
   const statusTone = useMemo<'idle' | 'busy' | 'ready' | 'error'>(() => {
     if (!enabled) return 'idle';
+    if (!useLegacyPreview) return 'ready'; // Simple preview is always ready-ish
     if (runtimeStatus === 'error') return 'error';
     if (runtimeStatus === 'ready') return 'ready';
     if (runtimeStatus === 'idle') return 'idle';
     return 'busy';
-  }, [enabled, runtimeStatus]);
+  }, [enabled, runtimeStatus, useLegacyPreview]);
 
   const statusLabel = useMemo(() => {
     if (!enabled) return 'Closed';
+    if (!useLegacyPreview) return 'Live';
     if (runtimeStatus === 'ready') return 'Ready';
     if (runtimeStatus === 'error') return 'Error';
     if (runtimeStatus === 'booting') return 'Booting';
@@ -197,7 +206,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
     if (runtimeStatus === 'starting') return 'Starting';
     if (runtimeStatus === 'mounting') return 'Mounting';
     return 'Idle';
-  }, [enabled, runtimeStatus]);
+  }, [enabled, runtimeStatus, useLegacyPreview]);
 
 
   return (
@@ -208,7 +217,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
           <Dot $color="#febc2e" />
           <Dot $color="#28c840" />
         </Dots>
-        <Title>Live Preview</Title>
+        <Title>Live Preview {useLegacyPreview ? '(Sandbox)' : '(Simple)'}</Title>
         <Right>
           <StatusPill $tone={statusTone} title={runtimeMessage || statusLabel}>
             <StatusDot $tone={statusTone} />
@@ -218,10 +227,10 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
 
           <IconButton
             type="button"
-            onClick={() => previewRef.current?.resetSession()}
+            onClick={() => useLegacyPreview && previewRef.current?.resetSession()}
             aria-label="Restart preview"
             title="Restart preview"
-            disabled={!enabled}
+            disabled={!enabled || !useLegacyPreview}
           >
             <RefreshCw size={16} />
           </IconButton>
@@ -267,7 +276,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
               </div>
               <div className="mb-2 font-bold text-white">Preview Failed to Load</div>
               <div className="text-sm text-white/60 mb-2 max-w-md">
-                Preview failed to load. Please check your CodeSandbox configuration and try again.
+                Preview failed to load. Please check your configuration and try again.
               </div>
               <button
                 onClick={() => previewRef.current?.resetSession()}
@@ -279,7 +288,11 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
           }
         >
           {enabled ? (
-            <PreviewRunnerPreview ref={previewRef} enabled />
+            useLegacyPreview ? (
+              <PreviewRunnerPreview ref={previewRef} enabled />
+            ) : (
+              <SimplePreview />
+            )
           ) : (
             <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30">
               <div className="text-center">

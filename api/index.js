@@ -706,14 +706,16 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - If a file exists, use [[EDIT_NODE:]] to modify it, NEVER [[START_FILE:]]
    - ONE styles.css, ONE main.js/app.js, ONE index.html
 
-2. PROJECT STRUCTURE - STRICT:
-   For static HTML sites:
-   - index.html (main HTML with all structure)
-   - styles.css (ALL CSS in ONE file)
-   - script.js (ALL JavaScript in ONE file - MANDATORY)
-   - NO nested folders for simple sites
+2. PROJECT STRUCTURE - PREFER STATIC HTML/CSS/JS (SIMPLE & NATURAL):
+   - ALWAYS prefer simple, static HTML/CSS/JS structures unless the user explicitly asks for React, Vue, or a build step.
+   - Do NOT generate 'package.json', 'vite.config.js', or 'node_modules' usage unless explicitly requested.
+   - For most tasks, use:
+     - index.html (main HTML with all structure)
+     - style.css (ALL CSS in ONE file)
+     - script.js (ALL JavaScript in ONE file - MANDATORY)
+   - NO nested folders for simple sites. Keep it flat and simple.
    
-   For React + Vite:
+   If React/Vite is EXPLICITLY requested:
    - package.json
    - src/main.tsx (entry point)
    - src/App.tsx (main component)
@@ -776,7 +778,7 @@ EDIT PROTOCOL:
 [[END_EDIT]]
 [[END_FILE]]
 
-STATIC SITE EXAMPLE (correct structure):
+STATIC SITE EXAMPLE (Preferred Structure):
 [[START_FILE: index.html]]
 <!DOCTYPE html>
 <html lang="en">
@@ -784,7 +786,7 @@ STATIC SITE EXAMPLE (correct structure):
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Site</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- content -->
@@ -793,7 +795,7 @@ STATIC SITE EXAMPLE (correct structure):
 </html>
 [[END_FILE]]
 
-[[START_FILE: styles.css]]
+[[START_FILE: style.css]]
 /* ALL styles in ONE file */
 [[END_FILE]]
 
@@ -806,7 +808,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.
 
-REMEMBER: ONE CSS file, ONE JS file, proper structure, NEVER duplicate files. WRITE REAL CODE.`.trim();
+REMEMBER: Prefer simple static files (HTML/CSS/JS) over complex builds. Keep it natural and direct.`.trim();
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
 // Using regex to reliably match both /ai/plan and /api/ai/plan regardless of Vercel rewrites

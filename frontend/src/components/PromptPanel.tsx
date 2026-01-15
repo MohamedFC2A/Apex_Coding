@@ -9,7 +9,7 @@ import { getLanguageFromExtension } from '@/utils/stackDetector';
 import { ProjectFile } from '@/types';
 import { Sparkles, Loader2, Clock, ChevronDown, ChevronRight, ChevronLeft, Settings, Zap, Brain, AlertCircle, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import styled, { keyframes } from 'styled-components';
+import styled from 'styled-components';
 
 // --- Styled Components for advanced glass effects ---
 

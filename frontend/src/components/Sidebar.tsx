@@ -29,6 +29,10 @@ const shimmer = keyframes`
   100% { background-position: 200% 0; }
 `;
 
+const FadeInWrapper = styled.div`
+  animation: ${fadeIn} 0.3s ease forwards;
+`;
+
 // --- Styled Components ---
 
 const Shell = styled.div`
@@ -383,7 +387,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   };
 
   return (
-    <div style={{ animation: `${fadeIn} 0.3s ease forwards` }}>
+    <FadeInWrapper>
       <TreeRow
         type="button"
         $active={isActive}
@@ -428,7 +432,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
           ))}
         </div>
       )}
-    </div>
+    </FadeInWrapper>
   );
 };
 

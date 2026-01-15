@@ -353,7 +353,13 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
         requestId: req.requestId
       });
     }
-    return res.status(500).json({ error: message, requestId: req.requestId });
+    // Generic catch-all for any other error to prevent 500 crash without response
+    console.error(`[preview/sessions] [${req.requestId}] Error:`, err);
+    return res.status(500).json({ 
+      error: 'Preview failed', 
+      details: message, 
+      requestId: req.requestId 
+    });
   }
 });
 

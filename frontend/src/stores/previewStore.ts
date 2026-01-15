@@ -1,7 +1,7 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import { ExecutionResult, LogEntry } from '@/types';
 
-export type RuntimeStatus = 'idle' | 'booting' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
+export type RuntimeStatus = 'idle' | 'configuring' | 'booting' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
 
 interface PreviewState {
   isExecuting: boolean;

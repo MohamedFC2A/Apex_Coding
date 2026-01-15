@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle, Settings, ExternalLink, Info } from 'lucide-react';
 
 import { useAIStore } from '@/stores/aiStore';
 import { usePreviewStore } from '@/stores/previewStore';
@@ -32,6 +32,8 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   const [isLongLoading, setIsLongLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const sessionIdRef = useRef<string | null>(null);
   const creatingSessionRef = useRef(false);
@@ -42,6 +44,34 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   const logStatus = useCallback((line: string) => {
     appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [PREVIEW] ${line}\n`);
   }, [appendSystemConsoleContent]);
+
+  const checkPreviewConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/preview/config');
+      if (!res.ok) throw new Error(`Config check failed: ${res.status}`);
+      const data = await res.json();
+      
+      if (!data.configured) {
+        setConfigError('CodeSandbox API key is not configured');
+        setRuntimeStatus('error', 'Preview configuration required');
+        return false;
+      }
+      
+      if (data.missing && data.missing.length > 0) {
+        setConfigError(`Missing configuration: ${data.missing.join(', ')}`);
+        setRuntimeStatus('error', 'Preview configuration incomplete');
+        return false;
+      }
+      
+      setConfigError(null);
+      return true;
+    } catch (err) {
+      const message = String(err?.message || err || 'Failed to check preview configuration');
+      setConfigError(message);
+      setRuntimeStatus('error', 'Preview configuration error');
+      return false;
+    }
+  }, [setRuntimeStatus]);
 
   const createSession = useCallback(async (initialFiles = files) => {
     if (creatingSessionRef.current) return;
@@ -59,15 +89,27 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       return;
     }
 
+    // Check configuration first
+    setRuntimeStatus('configuring');
+    logStatus('Checking preview configuration…');
+    
+    const configOk = await checkPreviewConfig();
+    if (!configOk) {
+      setIsLoading(false);
+      setIsLongLoading(false);
+      creatingSessionRef.current = false;
+      return;
+    }
+
     setIsLoading(true);
     setIsLongLoading(false);
     setRuntimeStatus('booting');
     logStatus('Starting preview session…');
 
-    const timeoutMs = 180000; // 3 minutes
+    const timeoutMs = 90000; // Reduced from 3 minutes to 90 seconds
     const longLoadingTimer = setTimeout(() => {
       if (creatingSessionRef.current) setIsLongLoading(true);
-    }, 15000);
+    }, 10000); // Reduced from 15 seconds to 10 seconds
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -102,6 +144,8 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           message = 'Preview server is temporarily unavailable. Please try again in a moment.';
         } else if (res.status === 429) {
           message = 'Too many preview requests. Please wait a moment before trying again.';
+        } else if (res.status === 401 || res.status === 400) {
+          message = `Configuration error: ${message}. Please check your CodeSandbox API key.`;
         }
 
         throw new Error(message);
@@ -126,8 +170,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       let msg = String(err?.message || err || 'Preview failed');
       
       if (err.name === 'AbortError') {
-        const timeoutMinutes = Math.round(timeoutMs / 60000);
-        msg = `Preview timeout after ${timeoutMinutes} minute${timeoutMinutes > 1 ? 's' : ''}. CodeSandbox is taking longer than expected. Please try again.`;
+        msg = 'Preview timeout after 90 seconds. CodeSandbox is taking longer than expected. Please try again.';
       }
       
       setRuntimeStatus('error', msg);
@@ -141,7 +184,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       setIsLongLoading(false);
       creatingSessionRef.current = false;
     }
-  }, [files, setRuntimeStatus, setPreviewUrl, logStatus]);
+  }, [files, setRuntimeStatus, setPreviewUrl, logStatus, checkPreviewConfig]);
 
   const resetSessionInternal = useCallback(async () => {
     const currentId = sessionIdRef.current;
@@ -169,14 +212,24 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       return;
     }
 
-    createSession(files);
+    // Check configuration first before creating session
+    const initPreview = async () => {
+      setRuntimeStatus('configuring');
+      const configOk = await checkPreviewConfig();
+      if (configOk) {
+        createSession(files);
+      }
+    };
+
+    initPreview();
+    
     return () => {
       const currentId = sessionIdRef.current;
       if (currentId) {
         fetch(`/api/preview/sessions/${encodeURIComponent(currentId)}`, { method: 'DELETE' }).catch(() => {});
       }
     };
-  }, [enabled, createSession, files, setRuntimeStatus, setPreviewUrl]);
+  }, [enabled, createSession, files, setRuntimeStatus, setPreviewUrl, checkPreviewConfig]);
 
   // Update preview when files change
   useEffect(() => {
@@ -284,29 +337,128 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
 
   useImperativeHandle(ref, () => ({
     resetSession: resetSessionInternal,
-    retryConnection
+    retryConnection,
+    checkConfig: checkPreviewConfig
   }));
 
-  return (
-    <div className={`relative w-full h-full ${className || ''}`}>
-      {isLoading && (
+  const renderLoadingState = () => {
+    if (runtimeStatus === 'configuring') {
+      return (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 backdrop-blur-sm z-10 p-4">
           <div className="flex items-center mb-4">
-            <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-            <span className="ml-3 text-white font-medium">Initializing Preview…</span>
+            <Settings className="w-8 h-8 animate-pulse text-blue-400" />
+            <span className="ml-3 text-white font-medium">Checking Preview Configuration…</span>
           </div>
-          {isLongLoading && (
-            <div className="text-center max-w-md">
-              <p className="text-yellow-400 text-sm animate-pulse mb-2">
-                CodeSandbox is preparing your environment...
-              </p>
-              <p className="text-white/60 text-xs">
-                First-time setup can take 2-3 minutes. Subsequent loads will be faster.
-              </p>
+          <p className="text-white/60 text-sm max-w-md text-center">
+            Verifying CodeSandbox API configuration...
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 backdrop-blur-sm z-10 p-4">
+        <div className="flex items-center mb-4">
+          <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+          <span className="ml-3 text-white font-medium">
+            {runtimeStatus === 'booting' ? 'Booting Preview Environment…' : 
+             runtimeStatus === 'starting' ? 'Starting Preview Server…' : 
+             'Initializing Preview…'}
+          </span>
+        </div>
+        {isLongLoading && (
+          <div className="text-center max-w-md">
+            <p className="text-yellow-400 text-sm animate-pulse mb-2">
+              CodeSandbox is preparing your environment...
+            </p>
+            <p className="text-white/60 text-xs">
+              First-time setup can take up to 90 seconds. Subsequent loads will be faster.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderErrorState = () => {
+    const isConfigError = configError || 
+      (runtimeMessage && (runtimeMessage.includes('configuration') || 
+                         runtimeMessage.includes('CSB_API_KEY') || 
+                         runtimeMessage.includes('CodeSandbox')));
+    
+    return (
+      <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
+        <div className="max-w-md">
+          <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-yellow-400 opacity-50" />
+          <p className="text-sm font-medium mb-1">Preview Not Available</p>
+          <p className="text-xs opacity-70 mb-4">
+            {isConfigError ? 'Preview configuration issue detected' : 'Generate some code to see the live preview'}
+          </p>
+          
+          {(runtimeMessage || configError) && (
+            <div className="mt-4 flex flex-col items-center gap-3">
+              <div className="text-red-300 text-xs max-w-md text-center bg-red-900/20 p-3 rounded border border-red-800/30">
+                <div className="flex items-start mb-2">
+                  <Info className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
+                  <span className="font-medium">Error Details:</span>
+                </div>
+                <div className="text-left font-mono text-xs whitespace-pre-wrap">
+                  {configError || runtimeMessage}
+                </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={retryConnection}
+                  className="flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Retry Preview
+                </button>
+                
+                {isConfigError && (
+                  <button
+                    onClick={() => setShowDiagnostics(true)}
+                    className="flex items-center justify-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-sm transition-colors"
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Check Configuration
+                  </button>
+                )}
+                
+                {isConfigError && (
+                  <a
+                    href="https://codesandbox.io/dashboard/settings/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md text-sm transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Get API Key
+                  </a>
+                )}
+              </div>
+              
+              {isConfigError && (
+                <div className="mt-3 text-xs text-white/50 max-w-md">
+                  <p className="mb-1">To fix this issue:</p>
+                  <ol className="text-left list-decimal pl-4 space-y-1">
+                    <li>Get a free API key from CodeSandbox</li>
+                    <li>Add <code className="bg-black/30 px-1 rounded">CSB_API_KEY=csb_v1_...</code> to your .env file</li>
+                    <li>Restart the server</li>
+                  </ol>
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
+      </div>
+    );
+  };
+
+  return (
+    <div className={`relative w-full h-full ${className || ''}`}>
+      {isLoading && renderLoadingState()}
 
       {iframeUrl ? (
         <iframe
@@ -325,29 +477,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
         />
       ) : (
-        !isLoading && (
-          <div className="w-full h-full flex items-center justify-center text-white/60 bg-black/30 text-center px-6">
-            <div className="max-w-sm">
-              <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-yellow-400 opacity-50" />
-              <p className="text-sm font-medium mb-1">Preview Not Available</p>
-              <p className="text-xs opacity-70 mb-4">
-                Generate some code to see the live preview
-              </p>
-              {runtimeStatus === 'error' && runtimeMessage && (
-                <div className="mt-4 flex flex-col items-center gap-3">
-                  <div className="text-red-300 text-xs max-w-md text-center">{runtimeMessage}</div>
-                  <button
-                    onClick={retryConnection}
-                    className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Retry Preview
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )
+        !isLoading && renderErrorState()
       )}
     </div>
   );

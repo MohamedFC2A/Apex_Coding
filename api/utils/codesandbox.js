@@ -22,11 +22,26 @@ let sdkSingletonKey = null;
 
 const getSdk = () => {
   const apiKey = getCodeSandboxApiKey();
-  if (!apiKey) throw new Error('Missing CodeSandbox API key (CSB_API_KEY)');
+  if (!apiKey) {
+    throw new Error('Missing CodeSandbox API key (CSB_API_KEY). Please set CSB_API_KEY in your environment variables.');
+  }
+
+  // Check for placeholder or invalid key
+  const isPlaceholder = apiKey.includes('REPLACE_ME') || 
+    apiKey.length < 20 || 
+    /placeholder|invalid|example/i.test(apiKey);
+  
+  if (isPlaceholder) {
+    throw new Error('Invalid CodeSandbox API key. The key appears to be a placeholder. Please get a real API key from CodeSandbox.');
+  }
 
   if (!sdkSingleton || sdkSingletonKey !== apiKey) {
-    sdkSingleton = new CodeSandbox(apiKey);
-    sdkSingletonKey = apiKey;
+    try {
+      sdkSingleton = new CodeSandbox(apiKey);
+      sdkSingletonKey = apiKey;
+    } catch (error) {
+      throw new Error(`Failed to initialize CodeSandbox SDK: ${error.message}. Please check your API key format.`);
+    }
   }
 
   return sdkSingleton;
@@ -226,15 +241,33 @@ const ensureDevServerRunning = async ({ client, devCommand, port, timeoutMs }) =
 };
 
 const createSandboxPreview = async ({ fileMap, timeoutMs = 180_000 }) => {
-  const sdk = getSdk();
+  let sdk;
+  try {
+    sdk = getSdk();
+  } catch (error) {
+    throw new Error(`CodeSandbox configuration error: ${error.message}`);
+  }
+
   const { devCommand, port } = inferDevCommandAndPort(fileMap);
   const effectiveFileMap = withCodeSandboxTasksFile(fileMap, { devCommand, port });
 
-  const sandbox = await sdk.sandboxes.create({
-    hibernationTimeoutSeconds: 60 * 45,
-    automaticWakeupConfig: { http: true, websocket: true },
-    privacy: 'public-hosts'
-  });
+  let sandbox;
+  try {
+    sandbox = await sdk.sandboxes.create({
+      hibernationTimeoutSeconds: 60 * 45,
+      automaticWakeupConfig: { http: true, websocket: true },
+      privacy: 'public-hosts'
+    });
+  } catch (error) {
+    if (error.message.includes('401') || error.message.includes('unauthorized')) {
+      throw new Error('CodeSandbox API key is invalid or expired. Please check your API key.');
+    } else if (error.message.includes('429')) {
+      throw new Error('Too many requests to CodeSandbox. Please wait a moment and try again.');
+    } else if (error.message.includes('timeout')) {
+      throw new Error('CodeSandbox API timeout. Please check your internet connection and try again.');
+    }
+    throw new Error(`Failed to create sandbox: ${error.message}`);
+  }
 
   const client = await sandbox.connect();
   try {
@@ -246,6 +279,14 @@ const createSandboxPreview = async ({ fileMap, timeoutMs = 180_000 }) => {
     const url = normalizePreviewUrl(portInfo?.host || client.hosts.getUrl(port));
 
     return { sandboxId: sandbox.id, url, port };
+  } catch (error) {
+    // Provide more helpful error messages
+    if (error.message.includes('timeout')) {
+      throw new Error(`Preview timeout after ${Math.round(timeoutMs / 1000)} seconds. CodeSandbox is taking too long to start. Please try again.`);
+    } else if (error.message.includes('port') || error.message.includes('server')) {
+      throw new Error(`Failed to start development server. Please check your package.json scripts and ensure a dev server is configured.`);
+    }
+    throw new Error(`Preview failed: ${error.message}`);
   } finally {
     client.dispose();
   }

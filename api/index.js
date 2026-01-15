@@ -193,6 +193,58 @@ app.get(['/preview/config', '/api/preview/config'], (req, res) => {
   });
 });
 
+app.get(['/preview/diagnostics', '/api/preview/diagnostics'], async (req, res) => {
+  try {
+    const { apiKey: csbApiKey } = getCodeSandboxConfig();
+    const isPlaceholder = csbApiKey && (
+      csbApiKey.includes('REPLACE_ME') || 
+      csbApiKey.length < 20 || 
+      /placeholder|invalid|example/i.test(csbApiKey)
+    );
+
+    let sandboxConnection = 'checking';
+    
+    // Try to test CodeSandbox API connection
+    if (csbApiKey && !isPlaceholder) {
+      try {
+        const testRes = await fetch('https://codesandbox.io/api/v1/sandboxes', {
+          headers: {
+            'Authorization': `Bearer ${csbApiKey}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (testRes.ok) {
+          sandboxConnection = 'ok';
+        } else if (testRes.status === 401 || testRes.status === 403) {
+          sandboxConnection = 'error';
+        } else {
+          sandboxConnection = 'error';
+        }
+      } catch (err) {
+        sandboxConnection = 'error';
+      }
+    } else {
+      sandboxConnection = 'error';
+    }
+
+    return res.json({
+      environment: process.env.NODE_ENV || 'development',
+      nodeVersion: process.version,
+      platform: process.platform,
+      sandboxConnection,
+      timestamp: new Date().toISOString(),
+      requestId: req.requestId
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Diagnostics failed',
+      message: String(error?.message || error),
+      requestId: req.requestId
+    });
+  }
+});
+
 
 app.get(['/preview/mock', '/api/preview/mock'], (req, res) => {
   res.setHeader('Content-Type', 'text/html');

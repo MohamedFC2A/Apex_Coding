@@ -1,13 +1,64 @@
-html, body {
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  height: auto !important;
-  min-height: 100vh !important;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --nexus-bg: #050505;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-surface: rgba(255, 255, 255, 0.03);
+  --glass-shine: rgba(255, 255, 255, 0.05);
+  --noise-pattern: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
 }
 
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: #020617; }
-::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+body {
+  background-color: var(--nexus-bg);
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.08), transparent 25%), 
+    radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08), transparent 25%),
+    var(--noise-pattern);
+  background-attachment: fixed;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  overflow: hidden; /* Prevent body scroll, use container scroll */
+}
 
-* { scrollbar-width: thin; scrollbar-color: #1e293b #020617; }
-html, body { overflow-y: auto !important; height: auto !important; }
+/* Glass Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Utility classes for Glassmorphism */
+.glass-panel {
+  @apply bg-nexus-glass backdrop-blur-xl border border-nexus-border shadow-glass;
+}
+
+.glass-card {
+  @apply bg-nexus-glass backdrop-blur-lg border border-nexus-border rounded-xl shadow-glass-sm transition-all duration-300;
+}
+
+.glass-card:hover {
+  @apply bg-nexus-glass-hover border-nexus-border-hover shadow-glass-hover -translate-y-[2px];
+}
+
+.text-glow {
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+.text-glow-primary {
+  text-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+}

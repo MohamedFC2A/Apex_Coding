@@ -11,17 +11,23 @@ const Window = styled.div`
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
-  border: 1px solid var(--nexus-border);
-  background: var(--nexus-surface);
-  backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--glass-shadow);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   overflow: hidden;
-  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 
   &:hover {
-    border-color: var(--nexus-border-hover);
-    box-shadow: var(--glass-shadow-hover);
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.03);
+    box-shadow: 
+      0 30px 60px rgba(0, 0, 0, 0.4),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.08);
     transform: translateY(-2px);
   }
 `;
@@ -32,9 +38,9 @@ const Titlebar = styled.div`
   align-items: center;
   padding: 0 16px;
   gap: 12px;
-  border-bottom: 1px solid var(--nexus-border);
-  background: rgba(10, 10, 10, 0.85);
-  backdrop-filter: blur(var(--glass-blur-strong));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
 `;
 
 const Dots = styled.div`
@@ -44,86 +50,101 @@ const Dots = styled.div`
 `;
 
 const Dot = styled.span<{ $color: string }>`
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
   background: ${(p) => p.$color};
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset, 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: transform 200ms ease;
+  opacity: 0.8;
+  box-shadow: 0 0 10px ${(p) => p.$color}66;
+  transition: all 0.2s ease;
 
   &:hover {
+    opacity: 1;
     transform: scale(1.1);
+    box-shadow: 0 0 15px ${(p) => p.$color}99;
   }
 `;
 
 const Title = styled.div`
   flex: 1;
-  color: var(--nexus-text);
+  color: rgba(255, 255, 255, 0.6);
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.10em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  text-align: center;
 `;
 
 const Right = styled.div`
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 `;
 
 const StatusPill = styled.div<{ $tone: 'idle' | 'busy' | 'ready' | 'error' }>`
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 4px 10px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   background: ${(p) => {
-    if (p.$tone === 'ready') return 'rgba(34, 197, 94, 0.14)';
-    if (p.$tone === 'error') return 'rgba(239, 68, 68, 0.14)';
-    if (p.$tone === 'busy') return 'rgba(34, 211, 238, 0.14)';
-    return 'rgba(255, 255, 255, 0.06)';
+    if (p.$tone === 'ready') return 'rgba(34, 197, 94, 0.15)';
+    if (p.$tone === 'error') return 'rgba(239, 68, 68, 0.15)';
+    if (p.$tone === 'busy') return 'rgba(34, 211, 238, 0.15)';
+    return 'rgba(255, 255, 255, 0.05)';
+  }};
+  box-shadow: ${(p) => {
+    if (p.$tone === 'ready') return '0 0 10px rgba(34, 197, 94, 0.2)';
+    if (p.$tone === 'error') return '0 0 10px rgba(239, 68, 68, 0.2)';
+    if (p.$tone === 'busy') return '0 0 10px rgba(34, 211, 238, 0.2)';
+    return 'none';
   }};
 `;
 
 const StatusDot = styled.span<{ $tone: 'idle' | 'busy' | 'ready' | 'error' }>`
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   background: ${(p) => {
     if (p.$tone === 'ready') return '#22c55e';
     if (p.$tone === 'error') return '#ef4444';
     if (p.$tone === 'busy') return '#22d3ee';
-    return 'rgba(255,255,255,0.55)';
+    return 'rgba(255,255,255,0.4)';
   }};
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 0 8px ${(p) => {
+    if (p.$tone === 'ready') return '#22c55e';
+    if (p.$tone === 'error') return '#ef4444';
+    if (p.$tone === 'busy') return '#22d3ee';
+    return 'transparent';
+  }};
 `;
 
 const IconButton = styled.button`
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
-  border: 1px solid var(--nexus-border);
-  background: var(--nexus-surface);
-  color: var(--nexus-text);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
-  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(20px);
+  transition: all 0.2s ease;
+  backdrop-filter: blur(12px);
 
   &:hover {
     transform: translateY(-1px);
-    background: var(--nexus-surface-hover);
-    border-color: var(--nexus-border-hover);
-    color: var(--nexus-cyan);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   }
 
   &:active {
@@ -131,23 +152,19 @@ const IconButton = styled.button`
   }
 
   &:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
     transform: none;
-  }
-
-  &:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px var(--nexus-cyan-glow);
-    border-color: var(--nexus-cyan);
+    box-shadow: none;
   }
 `;
 
 const Content = styled.div`
   position: relative;
   flex: 1;
-  background: var(--nexus-darker);
+  background: rgba(0, 0, 0, 0.3);
   overflow: hidden;
+  backdrop-filter: blur(8px);
 `;
 
 interface PreviewWindowProps {

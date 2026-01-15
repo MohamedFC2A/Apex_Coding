@@ -27,24 +27,21 @@ const Divider = styled.div`
   place-items: center;
   position: relative;
   flex: 0 0 10px;
+  z-index: 10;
 
   &::before {
     content: '';
     width: 2px;
-    height: 60%;
+    height: 40px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.14);
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.25) inset,
-      0 0 18px rgba(34, 211, 238, 0.18);
-    transition: background 160ms ease, box-shadow 160ms ease;
+    background: rgba(255, 255, 255, 0.08);
+    transition: all 0.2s ease;
   }
 
   &:hover::before {
-    background: rgba(255, 255, 255, 0.22);
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.25) inset,
-      0 0 28px rgba(168, 85, 247, 0.22);
+    background: rgba(34, 211, 238, 0.5);
+    height: 60px;
+    box-shadow: 0 0 10px rgba(34, 211, 238, 0.3);
   }
 `;
 

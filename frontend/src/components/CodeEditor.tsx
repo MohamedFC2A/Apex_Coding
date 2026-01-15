@@ -347,10 +347,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     return (
       <GlassCard className="h-full flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 p-4">
-          <div className="h-full rounded-xl border border-amber-500/10 bg-amber-500/5 backdrop-blur-2xl animate-pulse flex items-center justify-center">
+          <div className="h-full rounded-xl border border-cyan-500/10 bg-cyan-500/5 backdrop-blur-2xl animate-pulse flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
-              <p className="text-amber-500/60 font-medium">{t('app.editor.loading')}</p>
+              <div className="w-12 h-12 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
+              <p className="text-cyan-500/60 font-medium">{t('app.editor.loading')}</p>
             </div>
           </div>
         </div>
@@ -407,10 +407,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
               {openTabs.map(path => (
                 <div
                   key={path}
-                  className={`flex items-center gap-2 px-3 py-2 border-r border-white/10 cursor-pointer transition-colors whitespace-nowrap min-w-0 ${
+                  className={`flex items-center gap-2 px-3 py-2 border-r border-white/5 cursor-pointer transition-all duration-200 whitespace-nowrap min-w-0 ${
                     activeFile === path
-                      ? 'bg-white/5 text-amber-500 border-b-2 border-b-amber-500'
-                      : 'hover:bg-white/5 text-white/40'
+                      ? 'bg-white/10 text-cyan-400 border-b-2 border-b-cyan-500 shadow-[inset_0_-10px_20px_rgba(34,211,238,0.05)]'
+                      : 'hover:bg-white/5 text-white/40 hover:text-white/70'
                   }`}
                   onClick={() => setActiveFile(path)}
                   style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
@@ -427,7 +427,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
             </div>
           </div>
           
-          <div className="flex-1 overflow-hidden min-h-0">
+          <div className="flex-1 overflow-hidden min-h-0 bg-[#0D1117]/50 backdrop-blur-sm relative">
             {isStreamingView || currentFile ? (
               <Editor
                 height="100%"
@@ -436,21 +436,24 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
                 onChange={handleEditorChange}
                 onMount={handleEditorDidMount}
                 theme={editorTheme}
-                options={editorOptions}
+                options={{
+                  ...editorOptions,
+                  theme: 'vs-dark' // Force dark theme for better glass integration
+                }}
                 loading={
                   <div className="flex items-center justify-center h-full">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" />
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
                   </div>
                 }
               />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-white/20 gap-6 text-center px-6">
-                <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.1)]">
-                  <Sparkles size={32} className="text-amber-500" />
+                <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-cyan-500/10 to-purple-500/10 border border-white/10 flex items-center justify-center shadow-[0_0_60px_rgba(34,211,238,0.1)] backdrop-blur-xl">
+                  <Sparkles size={40} className="text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-lg font-bold text-white/60">{t('app.editor.welcome')}</h3>
-                  <p className="text-sm leading-relaxed max-w-xs">
+                  <h3 className="text-lg font-bold text-white/80 tracking-wide">{t('app.editor.welcome')}</h3>
+                  <p className="text-sm leading-relaxed max-w-xs text-white/40">
                     {t('app.editor.welcomeDesc')}
                   </p>
                 </div>
@@ -459,7 +462,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
           </div>
 
           <div className={`h-9 flex items-center justify-between px-3 border-t border-white/10 glass-panel ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-            <div className="text-xs text-white/70">
+            <div className="text-xs text-white/70 font-medium tracking-wide">
               {isPlanning
                 ? t('app.plan.status.working') + '...'
                 : isGenerating
@@ -467,7 +470,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
                   : t('app.editor.ready')}
             </div>
             <div className={`text-xs text-white/50 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-              <span className="text-amber-500/80">{modelMode === 'thinking' ? t('app.mode.thinking') : t('app.mode.fast')}</span>
+              <span className="text-cyan-400/80 font-semibold shadow-cyan-500/20 drop-shadow-sm">{modelMode === 'thinking' ? t('app.mode.thinking') : t('app.mode.fast')}</span>
               <span className="opacity-30">•</span>
               <span>{editorTheme}</span>
             </div>

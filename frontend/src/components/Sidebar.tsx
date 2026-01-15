@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
 import { ChevronDown, ChevronRight, Database, FileText, Folder, Settings, User } from 'lucide-react';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -18,71 +18,107 @@ type TreeNode = {
   children?: TreeNode[];
 };
 
+// --- Animations ---
+const fadeIn = keyframes`
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+`;
+
+const shimmer = keyframes`
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+`;
+
+// --- Styled Components ---
+
 const Shell = styled.div`
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(18px);
-  box-shadow:
-    0 22px 60px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+  backdrop-filter: blur(24px);
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
   overflow: hidden;
   min-height: 0;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  
+  &:hover {
+    box-shadow: 
+      0 12px 48px 0 rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
 `;
 
 const Header = styled.div`
   display: grid;
-  gap: 10px;
-  padding: 12px 10px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(13, 17, 23, 0.35);
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
 `;
 
 const HeaderRow = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
 `;
 
 const HeaderTitle = styled.div`
-  font-weight: 950;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-size: 12px;
-  color: #F59E0B;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #3b82f6;
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+  }
 `;
 
 const Tabs = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 `;
 
 const TabButton = styled.button<{ $active?: boolean }>`
-  height: 32px;
-  border-radius: 14px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(245, 158, 11, 0.35)' : 'rgba(255, 255, 255, 0.10)')};
-  background: ${(p) => (p.$active ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.03)')};
-  color: ${(p) => (p.$active ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.70)')};
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: ${(p) => (p.$active ? 'rgba(255, 255, 255, 0.1)' : 'transparent')};
+  color: ${(p) => (p.$active ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.5)')};
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: all 200ms ease;
+  transition: all 0.2s ease;
+  backdrop-filter: ${(p) => (p.$active ? 'blur(8px)' : 'none')};
+  box-shadow: ${(p) => (p.$active ? '0 2px 8px rgba(0,0,0,0.1)' : 'none')};
 
   &:hover {
-    border-color: rgba(245, 158, 11, 0.30);
-    background: rgba(255, 255, 255, 0.05);
-    transform: translateY(-1px);
+    color: rgba(255, 255, 255, 0.9);
+    background: ${(p) => (p.$active ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.05)')};
   }
 `;
 
@@ -90,41 +126,64 @@ const Body = styled.div`
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+  
+  /* Noise Texture Overlay */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--noise-pattern);
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: 0;
+  }
 `;
 
 const TreeContainer = styled.div`
   height: 100%;
-  padding: 12px 10px;
+  padding: 12px;
   overflow-y: auto;
+  position: relative;
+  z-index: 1;
 `;
 
 const TreeRow = styled.button<{ $active?: boolean }>`
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  border: 0;
-  background: ${(p) => (p.$active ? 'rgba(255, 255, 255, 0.08)' : 'transparent')};
-  color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 0.94)' : 'rgba(255, 255, 255, 0.76)')};
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.2)' : 'transparent')};
+  background: ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.1)' : 'transparent')};
+  color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.7)')};
   cursor: pointer;
   text-align: left;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 2px;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.07);
-    color: rgba(255, 255, 255, 0.9);
+    background: ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)')};
+    color: rgba(255, 255, 255, 1);
+    transform: translateX(2px);
+  }
+  
+  & svg {
+    opacity: ${(p) => (p.$active ? 1 : 0.7)};
+    transition: opacity 0.2s;
   }
 `;
 
 const TreeLabel = styled.span`
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   flex: 1;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: 'JetBrains Mono', monospace; /* Monospace for files */
 `;
 
 const StatusGroup = styled.span`
@@ -134,46 +193,53 @@ const StatusGroup = styled.span`
 `;
 
 const StatusText = styled.span`
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 9px;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(250, 204, 21, 0.85);
+  color: rgba(250, 204, 21, 0.9);
+  padding: 2px 4px;
+  background: rgba(250, 204, 21, 0.1);
+  border-radius: 4px;
 `;
 
 const StatusDot = styled.span<{ $color: string }>`
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background: ${(p) => p.$color};
+  box-shadow: 0 0 6px ${(p) => p.$color};
 `;
 
 const EmptyState = styled.div`
-  padding: 14px;
-  border-radius: 12px;
-  border: 1px dashed rgba(255, 255, 255, 0.16);
+  padding: 32px 16px;
+  border-radius: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
   color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
-`;
-
-const shimmer = keyframes`
-  0% { background-position: 0% 50%; opacity: 0.6; }
-  100% { background-position: 180% 50%; opacity: 0.9; }
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  
+  svg {
+    opacity: 0.3;
+  }
 `;
 
 const SkeletonRow = styled.div`
   height: 28px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.05),
-    rgba(255, 255, 255, 0.09),
-    rgba(255, 255, 255, 0.05)
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.03) 100%
   );
-  background-size: 220% 100%;
-  animation: ${shimmer} 1.3s linear infinite;
+  background-size: 200% 100%;
+  animation: ${shimmer} 2s infinite linear;
 `;
 
 const SkeletonStack = styled.div`
@@ -184,9 +250,10 @@ const SkeletonStack = styled.div`
 
 const Footer = styled.div`
   flex-shrink: 0;
-  padding: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(13, 17, 23, 0.25);
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -200,39 +267,47 @@ const FooterMeta = styled.div`
 `;
 
 const FooterMetaLine = styled.div`
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.7);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  
+  &:last-child {
+    font-size: 10px;
+    opacity: 0.5;
+    font-weight: 400;
+  }
 `;
 
 const FooterButton = styled.button`
   width: 36px;
   height: 36px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.78);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: white;
     transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   }
 `;
 
+// Helper functions (same as before)
 const getStatusColor = (status: NodeStatus) => {
-  if (status === 'writing') return 'rgba(250, 204, 21, 0.95)';
-  if (status === 'queued') return 'rgba(59, 130, 246, 0.95)';
-  return 'rgba(34, 197, 94, 0.95)';
+  if (status === 'writing') return 'rgba(250, 204, 21, 1)';
+  if (status === 'queued') return 'rgba(59, 130, 246, 1)';
+  return 'rgba(34, 197, 94, 1)';
 };
 
 const normalizeFileSystem = (files: FileSystem | []) => (Array.isArray(files) ? {} : files);
@@ -308,25 +383,25 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   };
 
   return (
-    <div>
+    <div style={{ animation: `${fadeIn} 0.3s ease forwards` }}>
       <TreeRow
         type="button"
         $active={isActive}
         onClick={handleClick}
         style={{
-          paddingLeft: isRTL ? '10px' : `${depth * 14 + 10}px`,
-          paddingRight: isRTL ? `${depth * 14 + 10}px` : '10px',
+          paddingLeft: isRTL ? '10px' : `${depth * 16 + 10}px`,
+          paddingRight: isRTL ? `${depth * 16 + 10}px` : '10px',
           flexDirection: isRTL ? 'row-reverse' : 'row',
         }}
         aria-expanded={isFolder ? isOpen : undefined}
       >
         {isFolder ? (
           <>
-            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} style={{ transform: isRTL ? 'rotate(180deg)' : 'none' }} />}
-            <Folder size={16} />
+            {isOpen ? <ChevronDown size={14} className="text-nexus-muted" /> : <ChevronRight size={14} className="text-nexus-muted" style={{ transform: isRTL ? 'rotate(180deg)' : 'none' }} />}
+            <Folder size={16} className="text-blue-400" />
           </>
         ) : (
-          <FileText size={16} />
+          <FileText size={16} className="text-slate-400" />
         )}
         <TreeLabel style={{ textAlign: isRTL ? 'right' : 'left' }}>{node.name}</TreeLabel>
         {node.type === 'file' && (
@@ -438,7 +513,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
     }
 
     if (tree.length === 0) {
-      return <EmptyState>No files yet. Generate code to get started.</EmptyState>;
+      return (
+        <EmptyState>
+          <Folder size={40} />
+          <div>No files yet. Generate code to get started.</div>
+        </EmptyState>
+      );
     }
 
     return tree.map((node) => (
@@ -470,6 +550,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
             aria-label="Files"
             style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
           >
+            <FileText size={14} />
             {t('app.sidebar.files')}
           </TabButton>
           <TabButton
@@ -479,6 +560,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
             aria-label="Database"
             style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
           >
+            <Database size={14} />
             {t('app.sidebar.history')}
           </TabButton>
         </Tabs>
@@ -488,33 +570,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
           <TreeContainer className="scrollbar-thin scrollbar-glass" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>{renderTree()}</TreeContainer>
         ) : (
           <TreeContainer className="scrollbar-thin scrollbar-glass">
-            <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ display: 'grid', gap: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Database size={16} />
-                <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                <Database size={18} className="text-purple-400" />
+                <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.9)' }}>
                   Database
                 </div>
               </div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.70)', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
                 {convexEnabled ? 'Convex detected. Schema + data live in your project.' : 'No Database Required.'}
               </div>
 
               {convexEnabled && (
                 <div
                   style={{
-                    borderRadius: 14,
-                    border: '1px solid rgba(255,255,255,0.10)',
+                    borderRadius: 16,
+                    border: '1px solid rgba(255,255,255,0.08)',
                     background: 'rgba(255,255,255,0.03)',
-                    padding: 12,
+                    backdropFilter: 'blur(10px)',
+                    padding: 16,
                     display: 'grid',
-                    gap: 8
+                    gap: 12
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-                    <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)' }}>
                       Schema
                     </div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.50)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>
                       {schemaTables.length > 0 ? `Tables: ${schemaTables.join(', ')}` : 'Tables: —'}
                     </div>
                   </div>
@@ -524,15 +607,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
                         margin: 0,
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
-                        fontSize: 11,
-                        lineHeight: 1.45,
-                        color: 'rgba(255,255,255,0.70)'
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        color: 'rgba(255,255,255,0.7)',
+                        fontFamily: 'JetBrains Mono, monospace'
                       }}
                     >
                       {schemaPreview}
                     </pre>
                   ) : (
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
+                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
                       No `convex/schema.ts` found yet. Ask the AI to create it.
                     </div>
                   )}
@@ -545,10 +629,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ className, onOpenSettings }) =
       <Footer style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
         <FooterMeta style={{ textAlign: isRTL ? 'right' : 'left' }}>
           <FooterMetaLine>{t('brand.name')}</FooterMetaLine>
-          <FooterMetaLine style={{ opacity: 0.4 }}>v1.0.4-alpha</FooterMetaLine>
+          <FooterMetaLine>v1.0.4-alpha</FooterMetaLine>
         </FooterMeta>
         <FooterButton type="button" aria-label="Settings" title="Settings" onClick={onOpenSettings}>
-          <User size={16} />
+          <User size={18} />
         </FooterButton>
       </Footer>
     </Shell>

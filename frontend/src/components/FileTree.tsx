@@ -84,10 +84,10 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth, isRTL }) => {
   return (
     <div>
       <motion.div
-        className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded-md transition-colors ${
+        className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded-md transition-all duration-200 ${
           isActive
-            ? 'bg-[#1f2428] text-white ring-1 ring-amber-500/30 shadow-[0_0_18px_rgba(245,158,11,0.12)]'
-            : 'hover:bg-[#161b22] text-white/80'
+            ? 'bg-white/10 text-white shadow-[0_0_15px_rgba(255,255,255,0.05)] border border-white/5'
+            : 'hover:bg-white/5 text-white/70 hover:text-white'
         }`}
         style={{ 
           paddingLeft: isRTL ? '8px' : `${depth * 12 + 8}px`,
@@ -102,19 +102,19 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth, isRTL }) => {
         {node.type === 'directory' ? (
           <>
             {isOpen ? (
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className="w-3.5 h-3.5 opacity-70" />
             ) : (
-              <ChevronRight className={`w-4 h-4 ${isRTL ? 'rotate-180' : ''}`} />
+              <ChevronRight className={`w-3.5 h-3.5 opacity-70 ${isRTL ? 'rotate-180' : ''}`} />
             )}
-            <Folder className={`w-4 h-4 ${isActive ? 'text-amber-500' : 'text-gray-400'}`} />
+            <Folder className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-blue-400/80'}`} />
           </>
         ) : (
           <>
-            <div className="w-4" />
-            <FileIcon className={`w-4 h-4 ${isActive ? 'text-amber-500' : 'text-gray-400'}`} />
+            <div className="w-3.5" />
+            <FileIcon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-white/40'}`} />
           </>
         )}
-        <span className={`text-sm truncate ${isRTL ? 'text-right' : 'text-left'} flex-1`}>
+        <span className={`text-xs font-medium truncate ${isRTL ? 'text-right' : 'text-left'} flex-1 font-mono tracking-tight`}>
           {node.name || node.path.split('/').pop()}
         </span>
         {status !== 'ready' && (
@@ -181,7 +181,7 @@ export const FileTree: React.FC = () => {
 
   if (files.length === 0) {
     return (
-      <div className="p-4 text-gray-500 text-sm">
+      <div className="p-4 text-white/30 text-xs text-center italic">
         No files yet. Generate code to get started.
       </div>
     );

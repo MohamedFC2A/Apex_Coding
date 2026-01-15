@@ -60,10 +60,8 @@ const Root = styled.div`
   height: 100dvh;
   overflow: hidden;
   position: relative;
-  background: 
-    radial-gradient(ellipse 1200px 600px at 15% 5%, rgba(245, 158, 11, 0.06), transparent 60%),
-    radial-gradient(ellipse 1000px 500px at 85% 90%, rgba(255, 255, 255, 0.05), transparent 60%),
-    var(--nexus-deepest);
+  /* Use global background with noise from globals.css */
+  background: transparent; 
   color: var(--nexus-text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -102,16 +100,30 @@ const HeaderArea = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  background: var(--nexus-surface);
-  backdrop-filter: blur(20px);
-  border-radius: 16px;
-  border: 1px solid var(--nexus-border);
-  padding: 0 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  
+  /* Glassmorphism */
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 
+    0 4px 30px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    
+  padding: 0 24px;
   flex-wrap: nowrap;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  }
 
   @media (max-width: 1024px) {
     gap: 14px;
+    padding: 0 16px;
   }
 
   @media (max-width: 768px) {
@@ -119,6 +131,7 @@ const HeaderArea = styled.div`
     padding: 10px 12px;
     gap: 10px;
     flex-wrap: wrap;
+    border-radius: 16px;
   }
 `;
 
@@ -162,31 +175,31 @@ const HeaderIconButton = styled.button`
   height: 44px;
   display: grid;
   place-items: center;
-  border-radius: 12px;
-  border: 1px solid var(--nexus-border);
-  background: var(--nexus-surface);
-  color: var(--nexus-text);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
-  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   position: relative;
   overflow: hidden;
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(12px);
 
   &::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(255, 255, 255, 0.15));
+    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.1), transparent 70%);
     opacity: 0;
-    transition: opacity 200ms ease;
+    transition: opacity 0.3s ease;
   }
 
   &:hover {
-    background: var(--nexus-surface-hover);
-    border-color: var(--nexus-border-hover);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    color: var(--nexus-cyan);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    color: white;
 
     &::before {
       opacity: 1;
@@ -195,11 +208,13 @@ const HeaderIconButton = styled.button`
 
   &:active {
     transform: translateY(0);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
   }
 
   @media (max-width: 768px) {
     width: 36px;
     height: 36px;
+    border-radius: 10px;
   }
 `;
 
@@ -209,11 +224,12 @@ const OverlayScrim = styled.button<{ $open: boolean }>`
   border: 0;
   padding: 0;
   margin: 0;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   opacity: ${(p) => (p.$open ? 1 : 0)};
   pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
-  transition: opacity 220ms ease;
+  transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 55;
 `;
 
@@ -223,16 +239,19 @@ const OverlayPanel = styled.div<{ $open: boolean }>`
   right: 20px;
   width: min(440px, calc(100vw - 40px));
   max-height: calc(100dvh - 160px);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(10, 10, 10, 0.70);
-  backdrop-filter: blur(28px);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(20, 20, 24, 0.6);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   overflow: hidden;
-  transform: ${(p) => (p.$open ? 'translateY(0)' : 'translateY(-12px)')};
+  transform: ${(p) => (p.$open ? 'translateY(0) scale(1)' : 'translateY(-12px) scale(0.98)')};
   opacity: ${(p) => (p.$open ? 1 : 0)};
   pointer-events: ${(p) => (p.$open ? 'auto' : 'none')};
-  transition: opacity 220ms ease, transform 220ms ease;
+  transition: all 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
   z-index: 56;
 
   @media (max-width: 768px) {
@@ -240,7 +259,7 @@ const OverlayPanel = styled.div<{ $open: boolean }>`
     right: 12px;
     left: 12px;
     width: auto;
-    border-radius: 18px;
+    border-radius: 20px;
     max-height: calc(100dvh - 70px - var(--mobile-nav-height) - env(safe-area-inset-bottom));
   }
 `;
@@ -287,21 +306,25 @@ const FloatingPlanWrap = styled.div<{ $open: boolean }>`
 
 const FloatingPlanPanel = styled.div`
   position: relative;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(28px);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 18, 20, 0.7);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  box-shadow: 
+    0 24px 80px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &::before {
     content: '';
     position: absolute;
-    inset: -80px;
-    background: radial-gradient(280px 160px at 20% 20%, rgba(34, 211, 238, 0.18), transparent 60%),
-      radial-gradient(300px 180px at 80% 60%, rgba(168, 85, 247, 0.16), transparent 60%);
-    filter: blur(24px);
-    opacity: 0.9;
+    inset: -100px;
+    background: radial-gradient(300px 300px at 20% 20%, rgba(34, 211, 238, 0.1), transparent 60%),
+      radial-gradient(300px 300px at 80% 80%, rgba(168, 85, 247, 0.08), transparent 60%);
+    filter: blur(60px);
+    opacity: 0.6;
     pointer-events: none;
   }
 `;
@@ -310,59 +333,61 @@ const FloatingPlanHeader = styled.button`
   position: relative;
   z-index: 1;
   width: 100%;
-  height: 46px;
-  padding: 0 14px;
+  height: 52px;
+  padding: 0 18px;
   display: flex;
   align-items: center;
   gap: 12px;
   justify-content: space-between;
   border: 0;
   cursor: pointer;
-  background: rgba(0, 0, 0, 0.15);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.88);
-  letter-spacing: 0.12em;
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 13px;
+  font-weight: 700;
   transition: background 200ms ease;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.20);
+    background: rgba(255, 255, 255, 0.03);
   }
 `;
 
 const FloatingPlanBody = styled.div`
   position: relative;
   z-index: 1;
-  height: calc(50vh - 46px);
-  max-height: calc(50vh - 46px);
+  height: calc(50vh - 52px);
+  max-height: calc(50vh - 52px);
   overflow: hidden;
 `;
 
 const FloatingPlanToggle = styled.button`
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   display: grid;
   place-items: center;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(28px);
-  color: rgba(255, 255, 255, 0.88);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px);
+  color: rgba(255, 255, 255, 0.9);
   cursor: pointer;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transition: all 200ms ease;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.10);
-    border-color: rgba(255, 255, 255, 0.22);
-    transform: translateY(-2px);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-4px) scale(1.05);
+    box-shadow: 
+      0 20px 40px rgba(0, 0, 0, 0.4),
+      0 0 20px rgba(255, 255, 255, 0.1);
   }
 
   &:active {
-    transform: translateY(0);
+    transform: translateY(0) scale(0.95);
   }
 `;
 
@@ -378,26 +403,27 @@ const BrandStack = styled.div`
 `;
 
 const BrandTitle = styled.div`
-  font-weight: 900;
-  letter-spacing: 0.18em;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  font-size: 13px;
-  background: linear-gradient(135deg, #F59E0B 0%, #FDE68A 50%, #B45309 100%);
+  font-size: 14px;
+  background: linear-gradient(135deg, #FFF 0%, rgba(255,255,255,0.7) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
 
   @media (max-width: 768px) {
     font-size: 12px;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.05em;
   }
 `;
 
 const BrandSubtitle = styled.div`
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.50);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.5);
   max-width: 28ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -414,24 +440,27 @@ const BrandSubtitle = styled.div`
 `;
 
 const StatusPill = styled.div<{ $active?: boolean }>`
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.95)' : 'rgba(255, 255, 255, 0.65)')};
-  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.3)' : 'rgba(255, 255, 255, 0.1)')};
+  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.1)' : 'rgba(255, 255, 255, 0.03)')};
+  color: ${(p) => (p.$active ? '#22d3ee' : 'rgba(255, 255, 255, 0.6)')};
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.05em;
   white-space: nowrap;
-  transition: all 200ms ease;
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+  box-shadow: ${(p) => (p.$active ? '0 0 15px rgba(34, 211, 238, 0.2)' : 'none')};
 
   &:hover {
-    background: rgba(255, 255, 255, 0.10);
-    border-color: rgba(255, 255, 255, 0.20);
+    background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.15)' : 'rgba(255, 255, 255, 0.08)')};
+    border-color: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.5)' : 'rgba(255, 255, 255, 0.2)')};
   }
 
   @media (max-width: 768px) {
     padding: 6px 12px;
-    font-size: 11px;
+    font-size: 10px;
   }
 `;
 

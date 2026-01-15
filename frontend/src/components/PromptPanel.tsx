@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LiquidButton } from './GlassCard';
+import { LiquidButton, LiquidPanel, LiquidInput, GlassCard } from './GlassCard';
 import { JSONValidationStatus } from './JSONValidationStatus';
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -9,6 +9,101 @@ import { getLanguageFromExtension } from '@/utils/stackDetector';
 import { ProjectFile } from '@/types';
 import { Sparkles, Loader2, Clock, ChevronDown, ChevronRight, ChevronLeft, Settings, Zap, Brain, AlertCircle, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
+import styled, { keyframes } from 'styled-components';
+
+// --- Styled Components for advanced glass effects ---
+
+const PanelContainer = styled.div`
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(13, 17, 23, 0.6) 0%, rgba(13, 17, 23, 0.2) 100%);
+`;
+
+const GlassHeader = styled.div`
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+`;
+
+const TextArea = styled.textarea`
+  width: 100%;
+  padding: 16px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: rgba(59, 130, 246, 0.4);
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 20px rgba(59, 130, 246, 0.1);
+  }
+`;
+
+const SettingsButton = styled.button`
+  width: 100%;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const ModeButton = styled.button<{ $active: boolean; $color: string }>`
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  
+  ${props => props.$active ? `
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid ${props.$color};
+    color: #fff;
+    box-shadow: 0 0 15px ${props.$color}40;
+  ` : `
+    background: transparent;
+    border: 1px solid transparent;
+    color: rgba(255, 255, 255, 0.5);
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: rgba(255, 255, 255, 0.8);
+    }
+  `}
+`;
 
 export const PromptPanel: React.FC = () => {
   const { t, isRTL } = useLanguage();
@@ -16,7 +111,8 @@ export const PromptPanel: React.FC = () => {
   const [thinkingStatus, setThinkingStatus] = useState('');
   const [showModelSettings, setShowModelSettings] = useState(false);
   const [validationStatus, setValidationStatus] = useState<{ valid: boolean; notes?: string } | null>(null);
-  const [actualMode, setActualMode] = useState<string>(''); // Track actual mode being used
+  const [actualMode, setActualMode] = useState<string>('');
+  
   const {
     prompt,
     isGenerating,
@@ -38,13 +134,13 @@ export const PromptPanel: React.FC = () => {
     lastSuccessfulFile,
     lastSuccessfulLine
   } = useAIStore();
+  
   const { setFiles, setFileStructure, setStack, setDescription, setProjectId, setProjectName } = useProjectStore();
   const { addLog } = usePreviewStore();
 
   const isThinkingMode = modelMode === 'thinking';
   const isSuperMode = modelMode === 'super';
 
-  // Monitor token gaps for "Still thinking..." status (fallback only)
   useEffect(() => {
     if (!isGenerating) return;
 
@@ -63,7 +159,7 @@ export const PromptPanel: React.FC = () => {
   const handleGenerate = async () => {
     if (!localPrompt.trim() || (isGenerating && executionPhase !== 'interrupted')) return;
 
-    setPrompt(localPrompt); // Persist prompt
+    setPrompt(localPrompt);
     saveCurrentSession();
     setIsGenerating(true);
     setError(null);
@@ -73,7 +169,7 @@ export const PromptPanel: React.FC = () => {
     setThinkingStatus(t('app.plan.status.initializing'));
 
     try {
-      let reasoningContent = ''; // Track accumulated reasoning
+      let reasoningContent = '';
       
       const isResuming = executionPhase === 'interrupted';
       let effectivePrompt = localPrompt;
@@ -86,7 +182,6 @@ export const PromptPanel: React.FC = () => {
           lastSuccessfulLine
         };
 
-        // Check for partial file to force continue
         const partialFile = Object.entries(fileStatuses).find(([_, s]) => s === 'partial')?.[0];
         if (partialFile) {
           effectivePrompt = `CONTINUE ${partialFile} FROM LINE ${lastSuccessfulLine + 1}. \n\nOriginal Request: ${localPrompt}`;
@@ -106,13 +201,10 @@ export const PromptPanel: React.FC = () => {
 
       await aiService.generateCodeStream(
         effectivePrompt,
-        // onToken
         (token) => {
           appendStreamText(token);
         },
-        // onStatus
         (phase, message) => {
-          // Use phase to determine consistent status text
           if (phase === 'thinking') {
             setThinkingStatus(t('app.plan.status.thinking'));
           } else if (phase === 'streaming') {
@@ -122,11 +214,9 @@ export const PromptPanel: React.FC = () => {
           } else if (phase === 'done') {
             setThinkingStatus(t('app.plan.status.complete'));
           } else {
-            // Fallback to server message
             setThinkingStatus(message);
           }
         },
-        // onMeta (new callback for meta events)
         (meta) => {
           if (meta.provider) {
             const label = meta.model ? `${meta.model}` : meta.provider;
@@ -138,11 +228,8 @@ export const PromptPanel: React.FC = () => {
             });
           }
         },
-        // onJSON
         (payload) => {
           const data = payload;
-
-          // Convert project_files to ProjectFile format
           const convertedFiles = (data.project_files || []).map((file: any) => ({
             path: file.name,
             content: file.content,
@@ -150,8 +237,6 @@ export const PromptPanel: React.FC = () => {
           }));
 
           setFiles(convertedFiles);
-
-          // Build file structure from project_files
           setFileStructure((data.project_files || []).map((file: any) => ({
             path: file.name,
             type: 'file' as const
@@ -167,19 +252,16 @@ export const PromptPanel: React.FC = () => {
             setProjectName(projectName);
           }
 
-          // Store sections for display (contract v2 only has minimal fields)
           setSections({
             structure: data.project_files?.map((f: any) => f.name).join('\n'),
             download: data.instructions
           });
 
-          // Validation status
           setValidationStatus({
             valid: true,
             notes: `Successfully generated ${data.project_files?.length || 0} files`
           });
 
-          // Auto-run the code after generation
           if (data.project_files && data.project_files.length > 0) {
             addLog({
               timestamp: Date.now(),
@@ -191,11 +273,8 @@ export const PromptPanel: React.FC = () => {
           setIsGenerating(false);
           setThinkingStatus('');
         },
-        // onError
         (error) => {
-          // Show clear error message based on error content
           let errorMessage = error;
-
           if (typeof error === 'string') {
             if (error.includes('DEEPSEEK_NOT_CONFIGURED')) {
               errorMessage = 'DeepSeek is not configured. Set DEEPSEEK_API_KEY in the backend environment (Vercel project env vars or backend/.env for local dev).';
@@ -207,7 +286,6 @@ export const PromptPanel: React.FC = () => {
           }
 
           setError(errorMessage);
-
           addLog({
             timestamp: Date.now(),
             type: 'error',
@@ -217,10 +295,8 @@ export const PromptPanel: React.FC = () => {
           setIsGenerating(false);
           setThinkingStatus('');
         },
-        // onReasoning - handle chain-of-thought chunks from thinking mode
         (chunk) => {
           reasoningContent += chunk;
-          // Update status to show thinking is in progress with visual feedback
           const charCount = reasoningContent.length;
           if (charCount < 500) {
             setThinkingStatus(t('app.plan.status.thinking'));
@@ -230,14 +306,12 @@ export const PromptPanel: React.FC = () => {
             setThinkingStatus(t('app.plan.status.reasoning'));
           }
         },
-        // onComplete - ensure loading state is ALWAYS reset when stream ends
         () => {
           setIsGenerating(false);
           if (!thinkingStatus.includes('Complete')) {
             setThinkingStatus('');
           }
         },
-        // thinkingMode
         {
           thinkingMode: isThinkingMode,
           onFileEvent: handleFileEvent,
@@ -252,101 +326,92 @@ export const PromptPanel: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+    <PanelContainer style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
       {/* Liquid Glass Header */}
-      <div className={`liquid-panel p-4 border-b border-white/10 flex items-center justify-between ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+      <GlassHeader className={`${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
         <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-          <div className="liquid-glass p-2 rounded-lg glow-amber">
+          <GlassCard glow="amber" className="p-2 rounded-lg flex items-center justify-center bg-amber-500/10 border-amber-500/20">
             <Sparkles className="w-5 h-5 text-amber-400" />
-          </div>
-          <h2 className="text-lg font-bold enterprise-text">{t('app.workspace.title')}</h2>
+          </GlassCard>
+          <h2 className="text-lg font-bold text-white tracking-tight">{t('app.workspace.title')}</h2>
         </div>
-        <div className={`liquid-panel px-3 py-1.5 rounded-lg flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-          <Zap className="w-4 h-4 text-amber-400" />
-          <span className="text-xs text-white/70">{actualMode || 'DeepSeek'}</span>
+        <div className={`glass-panel px-3 py-1.5 rounded-lg flex items-center gap-2 border-white/5 bg-white/5 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+          <Zap className="w-3.5 h-3.5 text-amber-400" />
+          <span className="text-xs font-medium text-white/70">{actualMode || 'DeepSeek'}</span>
         </div>
-      </div>
+      </GlassHeader>
 
       {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-6">
         {/* User Prompt Section */}
-        <div className="space-y-2">
-          <label className={`text-sm font-semibold text-white/80 block ${isRTL ? 'text-right' : 'text-left'}`}>
+        <div className="space-y-3">
+          <label className={`text-sm font-semibold text-white/90 block ${isRTL ? 'text-right' : 'text-left'}`}>
             {t('app.workspace.promptLabel')}
           </label>
-          <textarea
+          <TextArea
             value={localPrompt}
             onChange={(e) => setLocalPrompt(e.target.value)}
             placeholder={t('app.workspace.promptPlaceholder')}
-            className={`w-full liquid-input p-4 text-white placeholder-gray-400 resize-none scrollbar-thin font-mono text-sm leading-relaxed ${isRTL ? 'text-right' : 'text-left'}`}
+            className={`scrollbar-thin ${isRTL ? 'text-right' : 'text-left'}`}
             style={{ height: 'calc(50vh - 8rem)', minHeight: '240px' }}
             disabled={isGenerating}
           />
         </div>
 
         {/* Model Settings (Collapsible) */}
-        <div className="liquid-panel rounded-lg overflow-hidden">
-          <button
+        <div className="space-y-2">
+          <SettingsButton
             onClick={() => setShowModelSettings(!showModelSettings)}
-            className={`w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
+            className={`${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
           >
             <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
               <Settings className="w-4 h-4 text-white/60" />
-              <span className="text-sm font-semibold text-white/80">{t('app.workspace.settings')}</span>
+              <span className="text-sm font-semibold">{t('app.workspace.settings')}</span>
             </div>
             {showModelSettings ? (
               <ChevronDown className="w-4 h-4 text-white/60" />
             ) : (
               isRTL ? <ChevronLeft className="w-4 h-4 text-white/60" /> : <ChevronRight className="w-4 h-4 text-white/60" />
             )}
-          </button>
+          </SettingsButton>
 
           {showModelSettings && (
-            <div className="p-4 pt-0 space-y-4 border-t border-white/5">
+            <GlassCard className="p-4 space-y-5 animate-in slide-in-from-top-2 duration-200">
               {/* Thinking Mode Toggle */}
-              <div className="space-y-2">
-                <label className={`text-xs text-white/60 block ${isRTL ? 'text-right' : 'text-left'}`}>
+              <div className="space-y-3">
+                <label className={`text-xs font-semibold text-white/50 uppercase tracking-wider block ${isRTL ? 'text-right' : 'text-left'}`}>
                   {t('app.workspace.thinkingMode')}
                 </label>
                 <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                  <button
+                  <ModeButton
+                    $active={!isThinkingMode && !isSuperMode}
+                    $color="#f59e0b"
                     onClick={() => setModelMode('fast')}
-                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${!isThinkingMode && !isSuperMode
-                        ? 'liquid-glass border-amber-500/50 text-white glow-amber'
-                        : 'liquid-panel hover:bg-white/5 text-white/60'
-                      }`}
+                    className={isRTL ? 'flex-row-reverse' : 'flex-row'}
                   >
-                    <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <Zap className={`w-4 h-4 ${!isThinkingMode && !isSuperMode ? 'text-amber-400' : 'text-white/40'}`} />
-                      <span>{t('app.workspace.modeFast')}</span>
-                    </div>
-                  </button>
-                  <button
+                    <Zap className="w-4 h-4" />
+                    <span>{t('app.workspace.modeFast')}</span>
+                  </ModeButton>
+                  <ModeButton
+                    $active={isThinkingMode}
+                    $color="#8b5cf6"
                     onClick={() => setModelMode('thinking')}
-                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${isThinkingMode
-                        ? 'liquid-glass border-amber-500/50 text-white glow-amber'
-                        : 'liquid-panel hover:bg-white/5 text-white/60'
-                      }`}
+                    className={isRTL ? 'flex-row-reverse' : 'flex-row'}
                   >
-                    <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <Brain className={`w-4 h-4 ${isThinkingMode ? 'text-amber-400' : 'text-white/40'}`} />
-                      <span>{t('app.workspace.modeThinking')}</span>
-                    </div>
-                  </button>
-                  <button
+                    <Brain className="w-4 h-4" />
+                    <span>{t('app.workspace.modeThinking')}</span>
+                  </ModeButton>
+                  <ModeButton
+                    $active={isSuperMode}
+                    $color="#3b82f6"
                     onClick={() => setModelMode('super')}
-                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${isSuperMode
-                        ? 'liquid-glass border-amber-500/50 text-white glow-amber'
-                        : 'liquid-panel hover:bg-white/5 text-white/60'
-                      }`}
+                    className={isRTL ? 'flex-row-reverse' : 'flex-row'}
                   >
-                    <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <Sparkles className={`w-4 h-4 ${isSuperMode ? 'text-amber-400' : 'text-white/40'}`} />
-                      <span>{t('app.workspace.modeSuper')}</span>
-                    </div>
-                  </button>
+                    <Sparkles className="w-4 h-4" />
+                    <span>{t('app.workspace.modeSuper')}</span>
+                  </ModeButton>
                 </div>
-                <p className={`text-xs text-white/30 ${isRTL ? 'text-right' : 'text-left'}`}>
+                <p className={`text-xs text-white/40 leading-relaxed ${isRTL ? 'text-right' : 'text-left'}`}>
                   {isSuperMode
                     ? t('app.workspace.modeDescriptionSuper')
                     : isThinkingMode
@@ -355,11 +420,11 @@ export const PromptPanel: React.FC = () => {
                 </p>
               </div>
 
-              <div className={`liquid-panel p-3 rounded-lg text-xs text-white/40 space-y-1 ${isRTL ? 'text-right' : 'text-left'}`}>
-                <p><strong className="text-white/60">{t('app.workspace.provider')}:</strong> DeepSeek</p>
-                <p className="text-white/30 mt-2">Note: API credentials are configured server-side</p>
+              <div className={`p-3 rounded-lg bg-white/5 border border-white/5 text-xs space-y-1.5 ${isRTL ? 'text-right' : 'text-left'}`}>
+                <p><strong className="text-white/70">{t('app.workspace.provider')}:</strong> <span className="text-white/90">DeepSeek</span></p>
+                <p className="text-white/30 italic">Note: API credentials are configured server-side</p>
               </div>
-            </div>
+            </GlassCard>
           )}
         </div>
 
@@ -367,9 +432,9 @@ export const PromptPanel: React.FC = () => {
         <LiquidButton
           onClick={handleGenerate}
           disabled={(isGenerating && executionPhase !== 'interrupted') || !localPrompt.trim()}
-          glow
+          glow={!isGenerating}
           loading={isGenerating && executionPhase !== 'interrupted'}
-          className="w-full"
+          className="w-full shadow-lg shadow-blue-500/10"
         >
           {isGenerating && executionPhase !== 'interrupted' ? (
             <div className={`flex items-center justify-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -386,54 +451,58 @@ export const PromptPanel: React.FC = () => {
       </div>
 
       {/* Status Footer */}
-      <div className="liquid-panel p-4 space-y-3 border-t border-white/10">
+      <div className="p-4 border-t border-white/10 bg-black/20 backdrop-blur-md space-y-3">
         {isGenerating && thinkingStatus && (
-          <div className={`liquid-glass p-3 rounded-lg flex items-center gap-2 glow-amber ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-            {thinkingStatus.includes(t('app.plan.status.thinking')) ? (
-              <Brain className="w-4 h-4 text-amber-400 animate-pulse" />
-            ) : thinkingStatus.includes(t('app.plan.status.working')) ? (
-              <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
-            ) : thinkingStatus.includes(t('app.plan.status.validating')) ? (
-              <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-            ) : (
-              <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-            )}
-            <p className="text-xs text-white/60">{thinkingStatus}</p>
+          <GlassCard glow="blue" className="p-3 flex items-center gap-3 bg-blue-500/5 border-blue-500/10">
+            <div className={`${isRTL ? 'order-2' : 'order-1'}`}>
+              {thinkingStatus.includes(t('app.plan.status.thinking')) ? (
+                <Brain className="w-4 h-4 text-blue-400 animate-pulse" />
+              ) : thinkingStatus.includes(t('app.plan.status.working')) ? (
+                <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+              ) : (
+                <Clock className="w-4 h-4 text-blue-400 animate-pulse" />
+              )}
+            </div>
+            <div className={`flex-1 min-w-0 ${isRTL ? 'text-right order-1' : 'text-left order-2'}`}>
+              <p className="text-xs font-medium text-blue-100 truncate">{thinkingStatus}</p>
+            </div>
             {actualMode && (
-              <span className={`text-xs text-white/40 ${isRTL ? 'mr-auto' : 'ml-auto'}`}>({actualMode})</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/50 ${isRTL ? 'order-3 mr-auto' : 'order-3 ml-auto'}`}>
+                {actualMode}
+              </span>
             )}
-          </div>
+          </GlassCard>
         )}
 
         {error && (
-          <div className={`liquid-glass p-3 rounded-lg flex items-center justify-between gap-2 border border-red-500/30 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-            <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-              <AlertCircle className="w-4 h-4 text-red-400" />
-              <div className={`flex flex-col ${isRTL ? 'items-end' : 'items-start'}`}>
-                <p className={`text-xs text-white/80 mb-1 ${isRTL ? 'text-right' : 'text-left'}`}>{error}</p>
-                <p className={`text-xs text-white/60 ${isRTL ? 'text-right' : 'text-left'}`}>
+          <GlassCard className="p-3 flex items-start justify-between gap-3 bg-red-500/10 border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+            <div className={`flex gap-3 w-full ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className={`flex flex-col flex-1 min-w-0 ${isRTL ? 'items-end' : 'items-start'}`}>
+                <p className={`text-xs font-medium text-red-200 mb-1 break-words w-full ${isRTL ? 'text-right' : 'text-left'}`}>{error}</p>
+                <p className={`text-[10px] text-red-300/60 ${isRTL ? 'text-right' : 'text-left'}`}>
                   {t('app.workspace.errorConfig')}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setError(null)}
-              className="text-white/60 hover:text-white"
+              className="text-red-300/60 hover:text-red-200 transition-colors flex-shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
-          </div>
+          </GlassCard>
         )}
 
         {sections.trace && !isGenerating && (
-          <div className="liquid-glass p-3 rounded-lg">
-            <p className={`font-semibold text-white/80 mb-2 text-xs ${isRTL ? 'text-right' : 'text-left'}`}>
+          <GlassCard className="p-3 bg-white/5 border-white/10">
+            <p className={`font-semibold text-white/80 mb-2 text-xs uppercase tracking-wider ${isRTL ? 'text-right' : 'text-left'}`}>
               {t('app.workspace.trace')}
             </p>
-            <pre className={`text-xs text-white/60 whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto scrollbar-thin ${isRTL ? 'text-right' : 'text-left'}`}>
+            <pre className={`text-[10px] text-white/60 whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto scrollbar-thin ${isRTL ? 'text-right' : 'text-left'}`}>
               {sections.trace}
             </pre>
-          </div>
+          </GlassCard>
         )}
 
         {validationStatus && !isGenerating && (
@@ -444,11 +513,11 @@ export const PromptPanel: React.FC = () => {
         )}
 
         {sections.interpretation && !isGenerating && (
-          <div className={`text-xs text-white/50 ${isRTL ? 'text-right' : 'text-left'}`}>
+          <div className={`text-xs text-white/40 italic px-1 ${isRTL ? 'text-right' : 'text-left'}`}>
             {sections.interpretation}
           </div>
         )}
       </div>
-    </div>
+    </PanelContainer>
   );
 };

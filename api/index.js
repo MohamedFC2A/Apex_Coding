@@ -151,36 +151,11 @@ app.post(['/download/zip', '/api/download/zip'], async (req, res) => {
 });
 
 // ================================
-// Live Preview providers (Vercel)
+// Live Preview - CodeSandbox only
 // ================================
-const normalizePreviewRunnerUrl = (raw) => String(raw || '').trim().replace(/\/+$/, '');
-const normalizePreviewRunnerToken = (raw) => {
-  const token = String(raw || '').trim();
-  // Guard against env values accidentally copied with quotes in Vercel UI.
-  if (token.length >= 2 && ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'")))) {
-    return token.slice(1, -1).trim();
-  }
-  return token;
-};
-
-const getPreviewRunnerConfig = () => {
-  const baseUrl = normalizePreviewRunnerUrl(process.env.PREVIEW_RUNNER_URL);
-  const token = normalizePreviewRunnerToken(process.env.PREVIEW_RUNNER_TOKEN);
-  if (!baseUrl || !token) return null;
-  return { baseUrl, token };
-};
-
 const getCodeSandboxConfig = () => {
   const apiKey = getCodeSandboxApiKey();
   return { apiKey };
-};
-
-const getPreviewProvider = () => {
-  const raw = String(process.env.PREVIEW_PROVIDER || '').trim().toLowerCase();
-  if (raw === 'codesandbox' || raw === 'csb') return 'codesandbox';
-  if (raw === 'preview-runner' || raw === 'runner') return 'preview-runner';
-  // Default: CodeSandbox. (Preview runner requires explicit opt-in on Vercel.)
-  return 'codesandbox';
 };
 
 const toPreviewFileMapFromArray = (files) => {
@@ -218,81 +193,6 @@ app.get(['/preview/config', '/api/preview/config'], (req, res) => {
   });
 });
 
-const proxyToPreviewRunner = async (req, res, { method, url, body }) => {
-  const config = getPreviewRunnerConfig();
-  if (!config) {
-    return res.status(500).json({
-      error: 'Preview runner is not configured',
-      missing: ['PREVIEW_RUNNER_URL', 'PREVIEW_RUNNER_TOKEN'].filter((k) => !String(process.env[k] || '').trim()),
-      requestId: req.requestId
-    });
-  }
-
-  const controller = new AbortController();
-  const timeoutMs = 25_000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const upstream = await fetch(`${config.baseUrl}${url}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.token}`
-      },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal
-    });
-
-    const text = await upstream.text().catch(() => '');
-
-    if (upstream.status === 401 || upstream.status === 403) {
-      return res.status(upstream.status).json({
-        error: 'Unauthorized from preview runner',
-        hint:
-          'PREVIEW_RUNNER_TOKEN mismatch. Ensure Vercel env PREVIEW_RUNNER_TOKEN exactly matches the preview-runner env PREVIEW_RUNNER_TOKEN (no quotes/spaces), then redeploy Vercel and restart preview-runner.',
-        requestId: req.requestId
-      });
-    }
-
-    res.status(upstream.status);
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
-    return res.send(text);
-  } catch (err) {
-    const message = String(err?.name === 'AbortError' ? 'Preview runner timeout' : err?.message || err || 'Preview runner error');
-    return res.status(502).json({
-      error: message,
-      hint:
-        'Preview runner is unreachable. Local dev: run `cd preview-runner && docker compose up -d` and set PREVIEW_RUNNER_URL=http://localhost:8080. Vercel: PREVIEW_RUNNER_URL must be a public URL (not localhost).',
-      requestId: req.requestId
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
-const joinUrlPath = (baseUrl, path) => {
-  const base = String(baseUrl || '').replace(/\/+$/, '');
-  const p = String(path || '');
-  if (!base) return p;
-  if (!p) return base;
-  if (p.startsWith('/')) return `${base}${p}`;
-  return `${base}/${p}`;
-};
-
-const rewritePreviewSessionUrl = (runnerBaseUrl, maybeUrl) => {
-  const raw = String(maybeUrl || '').trim();
-  if (!raw) return raw;
-
-  if (raw.startsWith('/')) return joinUrlPath(runnerBaseUrl, raw);
-
-  try {
-    const parsed = new URL(raw);
-    const pathAndQuery = `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    return joinUrlPath(runnerBaseUrl, pathAndQuery);
-  } catch {
-    return raw;
-  }
-};
 
 app.get(['/preview/mock', '/api/preview/mock'], (req, res) => {
   res.setHeader('Content-Type', 'text/html');
@@ -358,14 +258,11 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
 
     if (isMissing || isPlaceholder) {
       clearTimeout(timeoutId);
-      // Return a Mock Session instead of erroring
-      return res.json({
-        id: 'mock-session',
-        url: `${req.protocol}://${req.get('host')}/api/preview/mock`,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        provider: 'mock',
-        message: isMissing ? 'CodeSandbox API key not configured' : 'Invalid CodeSandbox API key'
+      return res.status(400).json({
+        error: isMissing ? 'CodeSandbox API key not configured' : 'Invalid CodeSandbox API key',
+        missing: ['CSB_API_KEY'],
+        hint: 'Set CSB_API_KEY on the server (Vercel env or .env) and redeploy.',
+        requestId: req.requestId
       });
     }
 
@@ -376,57 +273,16 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
       return res.status(400).json({ error: 'files is required', requestId: req.requestId });
     }
 
-    // Add retry logic for better reliability
-    let retryCount = 0;
-    const maxRetries = 2;
-    let lastError;
-    
-    while (retryCount <= maxRetries) {
-      try {
-        const { sandboxId, url } = await createSandboxPreview({ 
-          fileMap, 
-          timeoutMs: timeoutMs - (retryCount * 30000) // Reduce timeout on retries
-        });
-        
-        clearTimeout(timeoutId);
-        const now = Date.now();
-        return res.json({ 
-          id: sandboxId, 
-          url, 
-          createdAt: now, 
-          updatedAt: now, 
-          provider,
-          retryCount
-        });
-      } catch (err) {
-        lastError = err;
-        retryCount++;
-        
-        // Don't retry on authentication errors
-        if (/unauthorized|invalid token|401|403/i.test(err.message)) {
-          break;
-        }
-        
-        if (retryCount <= maxRetries) {
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
-        }
-      }
-    }
+    const { sandboxId, url } = await createSandboxPreview({ fileMap, timeoutMs });
     
     clearTimeout(timeoutId);
-    const message = String(lastError?.message || lastError || 'CodeSandbox preview error');
-    if (/unauthorized|invalid token|401|403/i.test(message)) {
-      return res.status(401).json({
-        error: 'CodeSandbox unauthorized',
-        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
-        requestId: req.requestId
-      });
-    }
-    return res.status(502).json({ 
-      error: message, 
-      requestId: req.requestId,
-      retryAttempt: maxRetries
+    const now = Date.now();
+    return res.json({ 
+      id: sandboxId, 
+      url, 
+      createdAt: now, 
+      updatedAt: now, 
+      provider
     });
   } catch (err) {
     clearTimeout(timeoutId);
@@ -438,6 +294,13 @@ app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
       });
     }
     const message = String(err?.message || err || 'CodeSandbox preview error');
+    if (/unauthorized|invalid token|401|403/i.test(message)) {
+      return res.status(401).json({
+        error: 'CodeSandbox unauthorized',
+        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
+        requestId: req.requestId
+      });
+    }
     return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
@@ -446,15 +309,6 @@ app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res)
   const provider = 'codesandbox';
   const id = String(req.params.id || '').trim();
   if (!id) return res.status(400).json({ error: 'id is required', requestId: req.requestId });
-  
-  if (id === 'mock-session') {
-    return res.json({
-      id: 'mock-session',
-      url: `${req.protocol}://${req.get('host')}/api/preview/mock`,
-      requestId: req.requestId,
-      provider: 'mock'
-    });
-  }
 
   return res.json({
     id,
@@ -465,18 +319,6 @@ app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res)
 });
 
 app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
-  const id = String(req.params.id || '').trim();
-  if (id === 'mock-session') {
-    return res.json({ 
-      ok: true, 
-      id: 'mock-session', 
-      url: `${req.protocol}://${req.get('host')}/api/preview/mock`, 
-      updatedAt: Date.now(), 
-      requestId: req.requestId, 
-      provider: 'mock' 
-    });
-  }
-
   const provider = 'codesandbox';
   try {
     const { apiKey: csbApiKey } = getCodeSandboxConfig();
@@ -522,11 +364,6 @@ app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, re
 });
 
 app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
-  const id = String(req.params.id || '').trim();
-  if (id === 'mock-session') {
-    return res.json({ ok: true, requestId: req.requestId, provider: 'mock' });
-  }
-
   const provider = 'codesandbox';
   try {
     const { apiKey: csbApiKey } = getCodeSandboxConfig();

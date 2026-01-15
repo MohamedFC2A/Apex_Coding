@@ -2,11 +2,10 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { Copy, ExternalLink, Info, RefreshCw, AlertTriangle, MonitorPlay } from 'lucide-react';
+import { Copy, ExternalLink, RefreshCw, AlertTriangle, MonitorPlay } from 'lucide-react';
 import { PreviewRunnerPreview, type PreviewRunnerPreviewHandle } from '../Preview/PreviewRunnerPreview';
 import { ErrorBoundary } from './ErrorBoundary';
 import { usePreviewStore } from '@/stores/previewStore';
-import { Content as PopoverContent, Description, Heading, Popover, Trigger } from './InstructionPopover';
 
 const Window = styled.div`
   height: 100%;
@@ -156,14 +155,6 @@ interface PreviewWindowProps {
   enabled?: boolean;
 }
 
-type PreviewConfig = {
-  provider?: string;
-  configured?: boolean;
-  baseUrl?: string | null;
-  tokenPresent?: boolean;
-  tokenLast4?: string | null;
-  missing?: string[];
-};
 
 export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled = true }) => {
   const previewRef = useRef<PreviewRunnerPreviewHandle>(null);
@@ -171,9 +162,6 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
   const runtimeStatus = usePreviewStore((s) => s.runtimeStatus);
   const runtimeMessage = usePreviewStore((s) => s.runtimeMessage);
   const [copied, setCopied] = useState(false);
-  const [config, setConfig] = useState<PreviewConfig | null>(null);
-  const [configLoading, setConfigLoading] = useState(false);
-  const [configError, setConfigError] = useState<string | null>(null);
 
   const statusTone = useMemo<'idle' | 'busy' | 'ready' | 'error'>(() => {
     if (!enabled) return 'idle';
@@ -194,24 +182,6 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
     return 'Idle';
   }, [enabled, runtimeStatus]);
 
-  const loadConfig = async () => {
-    if (configLoading) return;
-    setConfigLoading(true);
-    setConfigError(null);
-
-    try {
-      const res = await fetch('/api/preview/config', { cache: 'no-store' });
-      const text = await res.text().catch(() => '');
-      if (!res.ok) throw new Error(text || `Config failed (${res.status})`);
-      const parsed = JSON.parse(text);
-      setConfig(parsed && typeof parsed === 'object' ? (parsed as PreviewConfig) : null);
-    } catch (err: any) {
-      setConfigError(String(err?.message || err || 'Failed to load preview config'));
-      setConfig(null);
-    } finally {
-      setConfigLoading(false);
-    }
-  };
 
   return (
     <Window className={className}>
@@ -228,40 +198,6 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
             {statusLabel}
           </StatusPill>
 
-          <Popover openDelayMs={80} closeDelayMs={120}>
-            <Trigger>
-              <IconButton
-                type="button"
-                onClick={() => void loadConfig()}
-                aria-label="Preview configuration"
-                title="Preview configuration"
-              >
-                <Info size={16} />
-              </IconButton>
-            </Trigger>
-            <PopoverContent>
-              <Heading>Preview Configuration</Heading>
-              <Description>
-                {configLoading
-                  ? 'Loading…'
-                  : configError
-                    ? configError
-                    : config
-                      ? [
-                          `Provider: ${String(config.provider || '(unknown)')}`,
-                          `Configured: ${Boolean(config.configured)}`,
-                          `Base URL: ${String(config.baseUrl || '(none)')}`,
-                          `Token present: ${Boolean(config.tokenPresent)}${config.tokenLast4 ? ` (…${String(config.tokenLast4)})` : ''}`,
-                          Array.isArray(config.missing) && config.missing.length > 0
-                            ? `Missing: ${config.missing.join(', ')}`
-                            : ''
-                        ]
-                          .filter(Boolean)
-                          .join('\n')
-                      : 'Not loaded.'}
-              </Description>
-            </PopoverContent>
-          </Popover>
 
           <IconButton
             type="button"
@@ -314,7 +250,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
               </div>
               <div className="mb-2 font-bold text-white">Preview Failed to Load</div>
               <div className="text-sm text-white/60 mb-2 max-w-md">
-                This might be due to ad-blockers, network restrictions, or missing CodeSandbox configuration.
+                Preview failed to load. Please check your CodeSandbox configuration and try again.
               </div>
               <button
                 onClick={() => previewRef.current?.resetSession()}

@@ -1,11 +1,10 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { Loader2, RefreshCw, AlertTriangle, Wifi, WifiOff, Brain } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 
 import { useAIStore } from '@/stores/aiStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { diffPreviewFileMaps, toPreviewFileMap, type FileMap } from '@/utils/previewFilesUtils';
-import { previewAIAssistant } from '@/utils/previewAIAssistant';
 
 interface PreviewRunnerPreviewProps {
   className?: string;
@@ -33,46 +32,18 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   const [isLongLoading, setIsLongLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
-  const [isAIAnalyzing, setIsAIAnalyzing] = useState(false);
 
   const sessionIdRef = useRef<string | null>(null);
   const creatingSessionRef = useRef(false);
   const prevMapRef = useRef<FileMap>({});
   const patchTimerRef = useRef<number | null>(null);
   const idleHandleRef = useRef<number | null>(null);
-  const retryTimeoutRef = useRef<number | null>(null);
 
   const logStatus = useCallback((line: string) => {
     appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [PREVIEW] ${line}\n`);
   }, [appendSystemConsoleContent]);
 
-  // AI Analysis function
-  const runAIAnalysis = useCallback(async () => {
-    setIsAIAnalyzing(true);
-    try {
-      const analysis = await previewAIAssistant.diagnosePreviewSystem();
-      setAiAnalysis(analysis);
-      
-      // Log AI findings
-      appendThinkingContent(`[AI ANALYSIS] ${analysis.summary}\n`);
-      analysis.problems.forEach((problem: any) => {
-        appendThinkingContent(`[AI] ${problem.severity.toUpperCase()}: ${problem.message}\n`);
-        appendThinkingContent(`[AI] Root cause: ${problem.rootCause}\n`);
-        appendThinkingContent(`[AI] Solution: ${problem.solution}\n`);
-      });
-      
-      return analysis;
-    } catch (error) {
-      console.error('AI Analysis failed:', error);
-    } finally {
-      setIsAIAnalyzing(false);
-    }
-  }, [appendThinkingContent]);
-
-  const createSession = useCallback(async (initialFiles = files, isRetry = false) => {
+  const createSession = useCallback(async (initialFiles = files) => {
     if (creatingSessionRef.current) return;
     creatingSessionRef.current = true;
     
@@ -91,33 +62,20 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
     setIsLoading(true);
     setIsLongLoading(false);
     setRuntimeStatus('booting');
-    setConnectionStatus('connecting');
-    logStatus(isRetry ? `Retrying preview session... (attempt ${retryCount + 1})` : 'Starting preview session…');
+    logStatus('Starting preview session…');
 
-    // Progressive timeout based on retry count
-    const baseTimeout = 180000; // 3 minutes base (CodeSandbox needs time)
-    const retryPenalty = retryCount * 30000; // Add 30s per retry
-    const timeoutMs = Math.min(baseTimeout + retryPenalty, 300000); // Max 5 minutes
-
-    // Show "taking longer than expected" after 15s for first try, 30s for retries
-    const longLoadingDelay = isRetry ? 30000 : 15000;
+    const timeoutMs = 180000; // 3 minutes
     const longLoadingTimer = setTimeout(() => {
       if (creatingSessionRef.current) setIsLongLoading(true);
-    }, longLoadingDelay);
+    }, 15000);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      // Add retry attempt to request headers for debugging
-      const headers: Record<string, string> = { 
-        'Content-Type': 'application/json',
-        'X-Preview-Retry': String(retryCount)
-      };
-
       const res = await fetch('/api/preview/sessions', {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ files: initialFiles }),
         signal: controller.signal
       });
@@ -161,88 +119,42 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       setIframeUrl(url);
       setPreviewUrl(url);
       setRuntimeStatus('starting');
-      setConnectionStatus('connected');
       prevMapRef.current = toPreviewFileMap(initialFiles);
-      setRetryCount(0); // Reset retry count on success
-      
-      const retryInfo = data?.retryCount ? ` (after ${data.retryCount} retries)` : '';
-      logStatus(`Session ready: ${id}${retryInfo}`);
-      
-      // Notify AI about successful preview
-      if (!isRetry) {
-        appendThinkingContent(`[THOUGHT] Live preview initialized successfully. Session ID: ${id}\n`);
-      }
+      logStatus(`Session ready: ${id}`);
     } catch (err: any) {
       clearTimeout(timeoutId);
       let msg = String(err?.message || err || 'Preview failed');
       
-      // Use AI to generate intelligent error message
-      const context = {
-        fileCount: initialFiles.length,
-        retryCount,
-        hasApiKey: !!process.env.CSB_API_KEY
-      };
-      msg = previewAIAssistant.generateIntelligentErrorMessage(err, context);
-      
       if (err.name === 'AbortError') {
         const timeoutMinutes = Math.round(timeoutMs / 60000);
-        msg = `Preview timeout after ${timeoutMinutes} minute${timeoutMinutes > 1 ? 's' : ''}. CodeSandbox is provisioning your environment. This is normal for first-time setup. Please try again.`;
+        msg = `Preview timeout after ${timeoutMinutes} minute${timeoutMinutes > 1 ? 's' : ''}. CodeSandbox is taking longer than expected. Please try again.`;
       }
       
       setRuntimeStatus('error', msg);
-      setConnectionStatus('error');
-      appendThinkingContent(`[THOUGHT] Preview runner error: ${msg}\n`);
       logStatus(`ERROR: ${msg}`);
       setIframeUrl(null);
       setSessionId(null);
       sessionIdRef.current = null;
-      
-      // Run AI analysis on errors
-      if (retryCount === 0) {
-        runAIAnalysis();
-      }
-      
-      // Auto-retry logic
-      if (retryCount < 3 && err.name !== 'AbortError') {
-        const retryDelay = Math.min(5000 * (retryCount + 1), 15000); // 5s, 10s, 15s
-        logStatus(`Auto-retrying in ${retryDelay / 1000}s...`);
-        retryTimeoutRef.current = window.setTimeout(() => {
-          setRetryCount(prev => prev + 1);
-          createSession(initialFiles, true);
-        }, retryDelay);
-      }
     } finally {
       clearTimeout(longLoadingTimer);
       setIsLoading(false);
       setIsLongLoading(false);
       creatingSessionRef.current = false;
     }
-  }, [files, retryCount, setRuntimeStatus, setPreviewUrl, logStatus, appendThinkingContent]);
+  }, [files, setRuntimeStatus, setPreviewUrl, logStatus]);
 
   const resetSessionInternal = useCallback(async () => {
-    // Clear any pending retry
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
-    }
-    
     const currentId = sessionIdRef.current;
     if (currentId) {
       try {
         await fetch(`/api/preview/sessions/${encodeURIComponent(currentId)}`, { method: 'DELETE' });
       } catch {}
     }
-    setRetryCount(0);
     await createSession(files);
   }, [createSession, files]);
 
   const retryConnection = useCallback(() => {
-    setRetryCount(0);
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
-    }
-    createSession(files, true);
+    createSession(files);
   }, [createSession, files]);
 
   // Initialize preview when enabled
@@ -254,7 +166,6 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       setSessionId(null);
       sessionIdRef.current = null;
       setIsLoading(false);
-      setConnectionStatus('disconnected');
       return;
     }
 
@@ -263,9 +174,6 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       const currentId = sessionIdRef.current;
       if (currentId) {
         fetch(`/api/preview/sessions/${encodeURIComponent(currentId)}`, { method: 'DELETE' }).catch(() => {});
-      }
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
       }
     };
   }, [enabled, createSession, files, setRuntimeStatus, setPreviewUrl]);
@@ -338,7 +246,6 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
         } catch (err: any) {
           const msg = String(err?.message || err || 'Sync failed');
           setRuntimeStatus('error', msg);
-          appendThinkingContent(`[THOUGHT] Preview sync error: ${msg}\n`);
           logStatus(`ERROR: ${msg}`);
         }
       };
@@ -370,7 +277,6 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
     isGenerating,
     isPlanning,
     setRuntimeStatus,
-    appendThinkingContent,
     appendSystemConsoleContent,
     logStatus,
     setPreviewUrl
@@ -381,20 +287,6 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
     retryConnection
   }));
 
-  // Connection status indicator
-  const StatusIndicator = () => {
-    switch (connectionStatus) {
-      case 'connecting':
-        return <Wifi className="w-4 h-4 text-yellow-400 animate-pulse" />;
-      case 'connected':
-        return <Wifi className="w-4 h-4 text-green-400" />;
-      case 'error':
-        return <WifiOff className="w-4 h-4 text-red-400" />;
-      default:
-        return <WifiOff className="w-4 h-4 text-gray-400" />;
-    }
-  };
-
   return (
     <div className={`relative w-full h-full ${className || ''}`}>
       {isLoading && (
@@ -402,18 +294,14 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           <div className="flex items-center mb-4">
             <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
             <span className="ml-3 text-white font-medium">Initializing Preview…</span>
-            <StatusIndicator />
           </div>
           {isLongLoading && (
             <div className="text-center max-w-md">
               <p className="text-yellow-400 text-sm animate-pulse mb-2">
-                {retryCount > 0 ? `Retrying... (attempt ${retryCount})` : 'CodeSandbox is preparing your environment...'}
+                CodeSandbox is preparing your environment...
               </p>
               <p className="text-white/60 text-xs">
-                {retryCount > 0 
-                  ? 'The server is experiencing high load. Please wait...'
-                  : 'First-time setup can take 2-3 minutes. Subsequent loads will be faster.'
-                }
+                First-time setup can take 2-3 minutes. Subsequent loads will be faster.
               </p>
             </div>
           )}
@@ -426,15 +314,11 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           className="w-full h-full border-0"
           onLoad={() => {
             setRuntimeStatus('ready');
-            setConnectionStatus('connected');
             logStatus('Preview ready.');
           }}
           onError={() => {
-            setRuntimeStatus('error', 'preview iframe error');
-            setConnectionStatus('error');
+            setRuntimeStatus('error', 'Preview failed to render');
             logStatus('ERROR: Preview failed to render.');
-            appendThinkingContent('[THOUGHT] Detected preview iframe error. Attempting to recover…\n');
-            // Don't auto-reset on iframe error, let user decide
           }}
           allow="clipboard-read; clipboard-write; accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
           referrerPolicy="no-referrer"
@@ -451,40 +335,14 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
               </p>
               {runtimeStatus === 'error' && runtimeMessage && (
                 <div className="mt-4 flex flex-col items-center gap-3">
-                  <div className="text-red-300 text-xs max-w-md">{runtimeMessage}</div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={retryConnection}
-                      className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
-                    >
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      {retryCount > 0 ? 'Retry Again' : 'Retry Preview'}
-                    </button>
-                    <button
-                      onClick={runAIAnalysis}
-                      disabled={isAIAnalyzing}
-                      className="flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md text-sm transition-colors disabled:opacity-50"
-                    >
-                      <Brain className="w-4 h-4 mr-2" />
-                      {isAIAnalyzing ? 'Analyzing...' : 'AI Diagnose'}
-                    </button>
-                  </div>
-                  {aiAnalysis && (
-                    <div className="mt-3 text-left bg-gray-800 p-3 rounded max-w-md">
-                      <div className="text-xs font-semibold text-purple-400 mb-2">AI Analysis:</div>
-                      <div className="text-xs text-gray-300">{aiAnalysis.summary}</div>
-                      {aiAnalysis.problems.length > 0 && (
-                        <div className="mt-2">
-                          <div className="text-xs font-semibold text-yellow-400">Issues Found:</div>
-                          {aiAnalysis.problems.slice(0, 3).map((problem: any, i: number) => (
-                            <div key={i} className="text-xs text-gray-400 mt-1">
-                              • {problem.message}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div className="text-red-300 text-xs max-w-md text-center">{runtimeMessage}</div>
+                  <button
+                    onClick={retryConnection}
+                    className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Retry Preview
+                  </button>
                 </div>
               )}
             </div>

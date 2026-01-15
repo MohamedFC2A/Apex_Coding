@@ -8,11 +8,6 @@ import { LanguageProvider } from './context/LanguageContext';
 // Load test utils in development
 if (process.env.NODE_ENV === 'development') {
   import('./utils/uiTestUtils');
-  // Add diagnostic tool to window
-  import('./utils/previewDiagnostic').then(({ runPreviewDiagnostic }) => {
-    (window as any).previewDiagnostic = runPreviewDiagnostic;
-    console.log('💡 Run previewDiagnostic() in console to check preview configuration');
-  });
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

@@ -106,10 +106,10 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
     setRuntimeStatus('booting');
     logStatus('Starting preview session…');
 
-    const timeoutMs = 90000; // Reduced from 3 minutes to 90 seconds
+    const timeoutMs = 300000; // Increased to 5 minutes to match backend cold start
     const longLoadingTimer = setTimeout(() => {
       if (creatingSessionRef.current) setIsLongLoading(true);
-    }, 10000); // Reduced from 15 seconds to 10 seconds
+    }, 15000); // Show long loading message after 15 seconds
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -170,7 +170,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       let msg = String(err?.message || err || 'Preview failed');
       
       if (err.name === 'AbortError') {
-        msg = 'Preview timeout after 90 seconds. CodeSandbox is taking longer than expected. Please try again.';
+        msg = 'Preview timeout. CodeSandbox is taking longer than expected (over 5 minutes). Please try again.';
       }
       
       setRuntimeStatus('error', msg);
@@ -372,7 +372,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
               CodeSandbox is preparing your environment...
             </p>
             <p className="text-white/60 text-xs">
-              First-time setup can take up to 90 seconds. Subsequent loads will be faster.
+              First-time setup can take 3-5 minutes. Subsequent loads will be faster.
             </p>
           </div>
         )}

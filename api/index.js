@@ -294,7 +294,7 @@ app.get(['/preview/mock', '/api/preview/mock'], (req, res) => {
 app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
   const provider = 'codesandbox';
   const controller = new AbortController();
-  const timeoutMs = 240000; // 4 minutes for cold starts
+  const timeoutMs = 300000; // 5 minutes for cold starts
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
   try {

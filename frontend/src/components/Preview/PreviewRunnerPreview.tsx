@@ -65,7 +65,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       
       setConfigError(null);
       return true;
-    } catch (err) {
+    } catch (err: any) {
       const message = String(err?.message || err || 'Failed to check preview configuration');
       setConfigError(message);
       setRuntimeStatus('error', 'Preview configuration error');

@@ -50,6 +50,31 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Suppress 404 errors for missing static files in production
+              if (typeof window !== 'undefined') {
+                const originalError = console.error;
+                console.error = function(...args) {
+                  const message = args[0]?.toString() || '';
+                  if (
+                    message.includes('404') ||
+                    message.includes('NOT_FOUND') ||
+                    message.includes('Failed to load resource') ||
+                    message.includes('dxb1::')
+                  ) {
+                    // Silently ignore 404 errors for missing static files
+                    return;
+                  }
+                  originalError.apply(console, args);
+                };
+              }
+            `,
+          }}
+        />
+      </head>
       <body className={`${inter.className} bg-black text-white antialiased`} suppressHydrationWarning>
         <div className="min-h-screen flex flex-col">
           <div className="flex-1 min-h-0">

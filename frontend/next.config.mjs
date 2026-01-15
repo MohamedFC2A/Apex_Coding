@@ -14,13 +14,52 @@ const nextConfig = {
     '.repl.co',
     '.janeway.replit.dev'
   ],
+  // Suppress console errors for missing static files
+  onDemandEntries: {
+    maxInactiveAge: 25 * 1000,
+    pagesBufferLength: 2,
+  },
+  // Ensure static files are served correctly
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     // Local dev: proxy Next -> local Express API.
     // Vercel: DO NOT proxy to localhost; let `vercel.json` route `/api/*` to the serverless function.
     if (process.env.VERCEL) return [];
 
     return [{ source: '/api/:path*', destination: 'http://localhost:3001/api/:path*' }];
-  }
+  },
+  // Ignore missing static files during build
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

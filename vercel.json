@@ -6,14 +6,14 @@
       "use": "@vercel/node"
     },
     {
-      "src": "frontend/package.json",
+      "src": "frontend/next.config.mjs",
       "use": "@vercel/next"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/index.js"
+      "dest": "api/index.js"
     }
   ]
 }

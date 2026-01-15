@@ -69,6 +69,43 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
+// Global error handler middleware (must be before catch-all route)
+app.use((err, req, res, next) => {
+  // If response already sent, delegate to default Express error handler
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const requestId = req.requestId || 'unknown';
+  const errorMessage = err?.message || String(err) || 'Internal server error';
+  
+  console.error(`[error-handler] [${requestId}] ${req.method} ${req.url} - ${errorMessage}`, err);
+
+  // Determine status code
+  let statusCode = 500;
+  if (err?.statusCode) {
+    statusCode = err.statusCode;
+  } else if (err?.status) {
+    statusCode = err.status;
+  } else if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+    statusCode = 404;
+  } else if (errorMessage.includes('unauthorized') || errorMessage.includes('401')) {
+    statusCode = 401;
+  } else if (errorMessage.includes('forbidden') || errorMessage.includes('403')) {
+    statusCode = 403;
+  } else if (errorMessage.includes('bad request') || errorMessage.includes('400')) {
+    statusCode = 400;
+  }
+
+  res.status(statusCode).json({
+    error: errorMessage,
+    requestId,
+    method: req.method,
+    url: req.url,
+    ...(process.env.NODE_ENV === 'development' && { stack: err?.stack })
+  });
+});
+
 app.get('/', (_req, res) => {
   res.status(200).send('Apex Coding Backend is Running!');
 });
@@ -1232,9 +1269,23 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
 });
 
 // Catch-all: explicit 404 (helps diagnose rewrites / 405 confusion on Vercel).
+// This should be the last route handler before module.exports
 app.all('*', (req, res) => {
-  console.log(`[fallback] 404 Not Found: ${req.method} ${req.url}`);
-  res.status(404).json({ error: 'Route not found', method: req.method, url: req.url });
+  // Skip favicon and common static assets to reduce noise
+  const path = req.path.toLowerCase();
+  if (path.includes('favicon') || path.includes('.ico') || path.includes('.svg') || path.includes('.png') || path.includes('.jpg')) {
+    return res.status(204).end();
+  }
+  
+  console.log(`[fallback] 404 Not Found: ${req.method} ${req.url} [${req.requestId || 'no-id'}]`);
+  res.status(404).json({ 
+    error: 'Route not found', 
+    code: 'NOT_FOUND',
+    method: req.method, 
+    url: req.url,
+    requestId: req.requestId || 'unknown',
+    hint: 'Check that the route exists and the HTTP method is correct'
+  });
 });
 
 // Vercel requires exporting the app instance (no app.listen)

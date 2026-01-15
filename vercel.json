@@ -19,6 +19,14 @@
       "dest": "/api/index.js"
     },
     {
+      "src": "/favicon.ico",
+      "dest": "/frontend/public/favicon.ico"
+    },
+    {
+      "src": "/favicon.svg",
+      "dest": "/frontend/public/favicon.svg"
+    },
+    {
       "src": "/(.*)",
       "dest": "/frontend/$1"
     }

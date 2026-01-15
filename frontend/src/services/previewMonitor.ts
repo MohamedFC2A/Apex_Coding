@@ -193,13 +193,10 @@ class PreviewMonitor {
 
 // Hook for React components
 export const usePreviewMonitor = () => {
-  const previewStore = usePreviewStore();
-  const aiStore = useAIStore();
-
   const monitor = PreviewMonitor.getInstance();
 
   // Subscribe to preview store changes
-  const unsubscribePreview = previewStore.subscribe((state) => {
+  const unsubscribePreview = usePreviewStore.subscribe((state) => {
     if (state.runtimeStatus === 'error' && state.runtimeMessage) {
       monitor.reportError(state.runtimeMessage, { status: state.runtimeStatus });
     } else if (state.runtimeStatus === 'ready' && state.previewUrl) {
@@ -208,7 +205,7 @@ export const usePreviewMonitor = () => {
   });
 
   // Subscribe to AI store for generation events
-  const unsubscribeAI = aiStore.subscribe((state) => {
+  const unsubscribeAI = useAIStore.subscribe((state) => {
     if (state.isGenerating) {
       monitor.logPreviewEvent('GENERATION_STARTED');
     }

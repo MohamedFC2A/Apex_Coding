@@ -48,18 +48,9 @@ const nextConfig = {
 
     return [{ source: '/api/:path*', destination: 'http://localhost:3001/api/:path*' }];
   },
-  // Ignore missing static files during build
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      };
-    }
-    return config;
-  },
+  // Turbopack configuration (Next.js 16+ uses Turbopack by default)
+  // The webpack fallbacks are not needed with Turbopack
+  turbopack: {},
 };
 
 export default nextConfig;

@@ -405,7 +405,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
   }
 
   return (
-    <GlassCard className={`h-full flex flex-col overflow-hidden ${isRTL ? 'rtl' : 'ltr'}`}>
+    <GlassCard className={`h-full min-h-[600px] flex flex-col overflow-hidden ${isRTL ? 'rtl' : 'ltr'}`}>
       <div className={`flex-1 min-h-0 flex ${isRTL ? 'flex-col md:flex-row-reverse' : 'flex-col md:flex-row'}`}>
         {showFileTree && (
           <div className={`w-full md:w-64 min-h-0 border-b md:border-b-0 ${isRTL ? 'md:border-l' : 'md:border-r'} border-white/10 glass-panel`}>
@@ -473,7 +473,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
             </div>
           </div>
           
-          <div className="flex-1 overflow-hidden min-h-0 bg-[#0D1117]/50 backdrop-blur-sm relative">
+          <div className="flex-1 overflow-hidden min-h-[400px] bg-[#0a0a0f] relative">
             {isStreamingView || currentFile ? (
               <Editor
                 height="100%"

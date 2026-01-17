@@ -109,6 +109,15 @@ const translations: Record<Language, Translations> = {
     'app.plan.pending': 'Pending',
     'app.terminal.title': 'Terminal',
     'app.editor.title': 'Editor',
+    'app.editor.ready': 'Ready',
+    'app.editor.loading': 'Loading editor...',
+    'app.editor.welcome': 'Welcome to Apex Editor',
+    'app.editor.welcomeDesc': 'Generate code with AI to see it here',
+    'app.editor.run': 'Run',
+    'app.editor.download': 'Download',
+    'app.mode.fast': 'Fast Mode',
+    'app.mode.thinking': 'Thinking Mode',
+    'app.mode.architect': 'Architect Mode',
 
     // Workspace & Prompt Panel
     'app.workspace.title': 'AI Workspace',
@@ -238,6 +247,15 @@ const translations: Record<Language, Translations> = {
     'app.plan.pending': 'قيد الانتظار',
     'app.terminal.title': 'الطرفية',
     'app.editor.title': 'المحرر',
+    'app.editor.ready': 'جاهز',
+    'app.editor.loading': 'جاري تحميل المحرر...',
+    'app.editor.welcome': 'مرحباً بك في محرر أبيكس',
+    'app.editor.welcomeDesc': 'ولد الكود بالذكاء الاصطناعي لرؤيته هنا',
+    'app.editor.run': 'تشغيل',
+    'app.editor.download': 'تحميل',
+    'app.mode.fast': 'الوضع السريع',
+    'app.mode.thinking': 'وضع التفكير',
+    'app.mode.architect': 'وضع المهندس',
 
     // Workspace & Prompt Panel
     'app.workspace.title': 'بيئة عمل الذكاء الاصطناعي',

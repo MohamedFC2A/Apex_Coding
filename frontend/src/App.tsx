@@ -1671,6 +1671,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         'AUTO-FIX: The WebContainer preview failed to start/run.',
         `Error: ${runtimeMessage}`,
         'Analyze the project structure and logs below. Fix missing dependencies, scripts, or configuration.',
+        'IMPORTANT: You must output the COMPLETE content of any file you fix (e.g. package.json, vite.config.js). Do not use placeholders.',
         `Recent Logs:\n${tail}`
        ].join('\n\n');
 

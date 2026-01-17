@@ -7,6 +7,7 @@ import { usePreviewStore } from '../../stores/previewStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAIStore } from '../../stores/aiStore';
 import { WebContainerService } from '../../services/webcontainer';
+import { ensureProjectConfig } from '../../utils/projectRepair';
 import { ErrorBoundary } from './ErrorBoundary';
 
 const Window = styled.div`
@@ -90,7 +91,7 @@ interface PreviewWindowProps {
 }
 
 export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled = true }) => {
-  const { files } = useProjectStore();
+  const { files, upsertFile } = useProjectStore();
   const {
     previewUrl,
     runtimeStatus,
@@ -102,12 +103,33 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
   const [terminalOutput, setTerminalOutput] = useState<string>('');
   const [retryCount, setRetryCount] = useState(0);
   const mountedFilesRef = useRef<string>('');
+  const terminalRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll terminal
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [terminalOutput]);
 
   // 1. Boot & Mount
   useEffect(() => {
     if (!enabled || files.length === 0) return;
 
-    const currentFilesHash = JSON.stringify(files.map(f => (f.path || f.name) + f.content.length));
+    // Check configuration and repair if needed BEFORE hashing/mounting
+    const { files: cleanFiles, repaired } = ensureProjectConfig(files);
+
+    // If repaired, update store and return (effect will re-run with new files)
+    if (repaired) {
+      cleanFiles.forEach(f => {
+        if (!files.some(existing => existing.path === f.path)) {
+          upsertFile(f as any);
+        }
+      });
+      return;
+    }
+
+    const currentFilesHash = JSON.stringify(cleanFiles.map(f => (f.path || f.name || '') + (f.content?.length || 0)));
     if (mountedFilesRef.current === currentFilesHash) return;
 
     const init = async () => {
@@ -117,15 +139,9 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
       try {
         // Prepare files map
         const fileMap: Record<string, string> = {};
-        files.forEach(f => {
+        cleanFiles.forEach(f => {
           if (f.path) fileMap[f.path] = f.content || '';
         });
-
-        // Ensure package.json exists
-        if (!fileMap['package.json']) {
-           setRuntimeStatus('error', 'Missing package.json');
-           return;
-        }
 
         await WebContainerService.mount(fileMap);
         mountedFilesRef.current = currentFilesHash;
@@ -156,7 +172,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
     };
 
     init();
-  }, [files, enabled, retryCount]); // Re-run if files change or retry requested
+  }, [files, enabled, retryCount, upsertFile, setRuntimeStatus]);
 
   const handleRefresh = () => {
     const frame = document.getElementById('preview-frame') as HTMLIFrameElement;
@@ -220,12 +236,15 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
             )}
 
             {(terminalOutput || runtimeStatus === 'error') && (
-               <TerminalView>
-                 <div className="flex items-center gap-2 mb-2 border-b border-white/10 pb-2">
-                    <Terminal size={12} />
-                    <span>Terminal Output</span>
+               <TerminalView ref={terminalRef}>
+                 <div className="flex items-center justify-between gap-2 mb-2 border-b border-white/10 pb-2 sticky top-0 bg-black/80 backdrop-blur">
+                    <div className="flex items-center gap-2">
+                      <Terminal size={12} className="text-cyan-400" />
+                      <span className="font-bold text-cyan-100">Terminal Output</span>
+                    </div>
+                    <button onClick={() => setTerminalOutput('')} className="text-[10px] uppercase opacity-50 hover:opacity-100">Clear</button>
                  </div>
-                 {terminalOutput || 'No logs yet...'}
+                 {terminalOutput || 'Initializing environment...'}
                </TerminalView>
             )}
           </Overlay>

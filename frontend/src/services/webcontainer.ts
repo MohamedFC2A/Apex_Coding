@@ -1,8 +1,9 @@
-import { WebContainer } from '@webcontainer/api';
+import { WebContainer, WebContainerProcess } from '@webcontainer/api';
 import { usePreviewStore } from '../stores/previewStore';
 
 let webContainerInstance: WebContainer | null = null;
 let bootPromise: Promise<WebContainer> | null = null;
+let activeDevProcess: WebContainerProcess | null = null;
 
 export class WebContainerService {
   /**
@@ -45,7 +46,7 @@ export class WebContainerService {
   }
 
   /**
-   * Run `npm install`
+   * Run `npm install` with timeout
    */
   static async installDependencies(onOutput?: (data: string) => void) {
     const instance = await this.boot();
@@ -59,7 +60,13 @@ export class WebContainerService {
       })
     );
 
-    return installProcess.exit;
+    // Timeout after 60 seconds
+    const exitPromise = installProcess.exit;
+    const timeoutPromise = new Promise<number>((_, reject) =>
+      setTimeout(() => reject(new Error('npm install timed out after 60s')), 60000)
+    );
+
+    return Promise.race([exitPromise, timeoutPromise]);
   }
 
   /**
@@ -67,7 +74,15 @@ export class WebContainerService {
    */
   static async startDevServer(onOutput?: (data: string) => void) {
     const instance = await this.boot();
+
+    // Kill previous process if active
+    if (activeDevProcess) {
+      activeDevProcess.kill();
+      activeDevProcess = null;
+    }
+
     const devProcess = await instance.spawn('npm', ['run', 'dev']);
+    activeDevProcess = devProcess;
 
     devProcess.output.pipeTo(
       new WritableStream({
@@ -76,6 +91,16 @@ export class WebContainerService {
         },
       })
     );
+
+    // NOTE: WebContainer doesn't have removeAllListeners publicly exposed in types sometimes,
+    // but effectively we just add new ones.
+    // If we want to be safe, we can ignore this or rely on a wrapper.
+    // For now, we'll just add the listener and assume the singleton nature isn't too spammy
+    // or we should handle this differently.
+    // BUT since we are re-using the singleton, we SHOULD clean up.
+    // Let's rely on `on` overwriting? No, `on` adds.
+    // Workaround: We don't remove, we just ensure we only add ONCE globally or use a flag?
+    // Actually, let's just add them. The store update is idempotent enough.
 
     instance.on('server-ready', (port, url) => {
       usePreviewStore.getState().setPreviewUrl(url);

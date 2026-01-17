@@ -744,21 +744,18 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - ONE styles.css, ONE main.js/app.js, ONE index.html
 
 2. PROJECT STRUCTURE - PREFER STATIC HTML/CSS/JS (SIMPLE & NATURAL):
-   - ALWAYS prefer simple, static HTML/CSS/JS structures unless the user explicitly asks for React, Vue, or a build step.
-   - Do NOT generate 'package.json', 'vite.config.js', or 'node_modules' usage unless explicitly requested.
-   - For most tasks, use:
-     - index.html (main HTML with all structure)
-     - style.css (ALL CSS in ONE file)
-     - script.js (ALL JavaScript in ONE file - MANDATORY)
-   - NO nested folders for simple sites. Keep it flat and simple.
-   
-   If React/Vite is EXPLICITLY requested:
-   - package.json
-   - src/main.tsx (entry point)
-   - src/App.tsx (main component)
-   - src/styles/ (styles folder if present)
-   - src/components/ (components folder)
+   - ALWAYS prefer React + Vite for robust applications.
+   - ALWAYS generate a 'package.json' file with correct dependencies.
+   - ALWAYS generate a 'vite.config.js' (or .ts) file.
+   - Structure must be WebContainer-ready (Node.js/Vite friendly).
 
+   MANDATORY FILE STRUCTURE:
+   - package.json (Must include "dev": "vite", "build": "vite build", "preview": "vite preview")
+   - index.html (Must be in root, pointing to src/main.tsx or src/main.js)
+   - vite.config.js (Must be configured for React if used)
+   - src/main.tsx (Entry point)
+   - src/App.tsx (Main component)
+   
    ENV RULES (Vite):
    - Use import.meta.env.VITE_* in frontend code.
    - NEVER use process.env.NEXT_PUBLIC_* in Vite projects.
@@ -815,32 +812,54 @@ EDIT PROTOCOL:
 [[END_EDIT]]
 [[END_FILE]]
 
-STATIC SITE EXAMPLE (Preferred Structure):
+VITE REACT EXAMPLE (Preferred Structure):
+[[START_FILE: package.json]]
+{
+  "name": "vite-project",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "lucide-react": "^0.344.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.56",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.1.4"
+  }
+}
+[[END_FILE]]
+
+[[START_FILE: vite.config.js]]
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+})
+[[END_FILE]]
+
 [[START_FILE: index.html]]
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Site</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <!-- content -->
-  <script src="script.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
-[[END_FILE]]
-
-[[START_FILE: style.css]]
-/* ALL styles in ONE file */
-[[END_FILE]]
-
-[[START_FILE: script.js]]
-// ALL JavaScript in ONE file
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('App loaded');
-});
 [[END_FILE]]
 
 BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.

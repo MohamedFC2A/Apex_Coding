@@ -1,9 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { AlertTriangle, MonitorPlay } from 'lucide-react';
-import { SimplePreview } from '../Preview/SimplePreview';
+import { AlertTriangle, Loader2, RotateCw, Terminal, XCircle } from 'lucide-react';
+import { usePreviewStore } from '../../stores/previewStore';
+import { useProjectStore } from '../../stores/projectStore';
+import { useAIStore } from '../../stores/aiStore';
+import { WebContainerService } from '../../services/webcontainer';
 import { ErrorBoundary } from './ErrorBoundary';
 
 const Window = styled.div`
@@ -12,123 +15,73 @@ const Window = styled.div`
   flex-direction: column;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  box-shadow:
-    0 20px 40px rgba(0, 0, 0, 0.3),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  background: rgba(10, 10, 10, 0.95);
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-
-  &:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.03);
-    box-shadow:
-      0 30px 60px rgba(0, 0, 0, 0.4),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-    transform: translateY(-2px);
-  }
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 `;
 
 const Titlebar = styled.div`
-  height: 48px;
+  height: 40px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 16px;
-  gap: 12px;
+  background: rgba(255, 255, 255, 0.05);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(12px);
 `;
 
-const Dots = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-`;
-
-const Dot = styled.span<{ $color: string }>`
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: ${(p) => p.$color};
-  opacity: 0.8;
-  box-shadow: 0 0 10px ${(p) => p.$color}66;
-  transition: all 0.2s ease;
-
-  &:hover {
-    opacity: 1;
-    transform: scale(1.1);
-    box-shadow: 0 0 15px ${(p) => p.$color}99;
-  }
-`;
-
-const Title = styled.div`
+const UrlBar = styled.div`
   flex: 1;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  text-align: center;
-`;
-
-const Right = styled.div`
-  display: inline-flex;
+  margin: 0 16px;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  display: flex;
   align-items: center;
-`;
-
-const StatusPill = styled.div<{ $tone: 'idle' | 'busy' | 'ready' | 'error' }>`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: ${(p) => {
-    if (p.$tone === 'ready') return 'rgba(34, 197, 94, 0.15)';
-    if (p.$tone === 'error') return 'rgba(239, 68, 68, 0.15)';
-    if (p.$tone === 'busy') return 'rgba(34, 211, 238, 0.15)';
-    return 'rgba(255, 255, 255, 0.05)';
-  }};
-  box-shadow: ${(p) => {
-    if (p.$tone === 'ready') return '0 0 10px rgba(34, 197, 94, 0.2)';
-    if (p.$tone === 'error') return '0 0 10px rgba(239, 68, 68, 0.2)';
-    if (p.$tone === 'busy') return '0 0 10px rgba(34, 211, 238, 0.2)';
-    return 'none';
-  }};
-`;
-
-const StatusDot = styled.span<{ $tone: 'idle' | 'busy' | 'ready' | 'error' }>`
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: ${(p) => {
-    if (p.$tone === 'ready') return '#22c55e';
-    if (p.$tone === 'error') return '#ef4444';
-    if (p.$tone === 'busy') return '#22d3ee';
-    return 'rgba(255,255,255,0.4)';
-  }};
-  box-shadow: 0 0 8px ${(p) => {
-    if (p.$tone === 'ready') return '#22c55e';
-    if (p.$tone === 'error') return '#ef4444';
-    if (p.$tone === 'busy') return '#22d3ee';
-    return 'transparent';
-  }};
+  padding: 0 8px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  font-family: monospace;
 `;
 
 const Content = styled.div`
   position: relative;
   flex: 1;
-  background: rgba(0, 0, 0, 0.3);
-  overflow: hidden;
-  backdrop-filter: blur(8px);
+  background: white;
+`;
+
+const Iframe = styled.iframe`
+  width: 100%;
+  height: 100%;
+  border: 0;
+`;
+
+const Overlay = styled.div`
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 10, 0.9);
+  color: white;
+  z-index: 10;
+`;
+
+const TerminalView = styled.div`
+  width: 90%;
+  max-width: 600px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 16px;
+  font-family: monospace;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: pre-wrap;
 `;
 
 interface PreviewWindowProps {
@@ -137,57 +90,146 @@ interface PreviewWindowProps {
 }
 
 export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled = true }) => {
-  const statusTone = enabled ? 'ready' : 'idle';
-  const statusLabel = enabled ? 'Live' : 'Closed';
+  const { files } = useProjectStore();
+  const {
+    previewUrl,
+    runtimeStatus,
+    setRuntimeStatus,
+    setPreviewUrl
+  } = usePreviewStore();
+  const { addChatMessage } = useAIStore();
 
-  const handleReset = () => {
-    if (typeof window === 'undefined') return;
-    window.location.reload();
+  const [terminalOutput, setTerminalOutput] = useState<string>('');
+  const [retryCount, setRetryCount] = useState(0);
+  const mountedFilesRef = useRef<string>('');
+
+  // 1. Boot & Mount
+  useEffect(() => {
+    if (!enabled || files.length === 0) return;
+
+    const currentFilesHash = JSON.stringify(files.map(f => (f.path || f.name) + f.content.length));
+    if (mountedFilesRef.current === currentFilesHash) return;
+
+    const init = async () => {
+      setRuntimeStatus('booting');
+      setTerminalOutput('');
+
+      try {
+        // Prepare files map
+        const fileMap: Record<string, string> = {};
+        files.forEach(f => {
+          if (f.path) fileMap[f.path] = f.content || '';
+        });
+
+        // Ensure package.json exists
+        if (!fileMap['package.json']) {
+           setRuntimeStatus('error', 'Missing package.json');
+           return;
+        }
+
+        await WebContainerService.mount(fileMap);
+        mountedFilesRef.current = currentFilesHash;
+
+        // Install dependencies
+        setRuntimeStatus('installing');
+        const installExit = await WebContainerService.installDependencies((data) => {
+          setTerminalOutput(prev => prev + data);
+          usePreviewStore.getState().addLog({ timestamp: Date.now(), message: data, source: 'system', type: 'info' });
+        });
+
+        if (installExit !== 0) {
+          throw new Error(`npm install failed with exit code ${installExit}`);
+        }
+
+        // Start Dev Server
+        setRuntimeStatus('starting');
+        await WebContainerService.startDevServer((data) => {
+          setTerminalOutput(prev => prev + data);
+          usePreviewStore.getState().addLog({ timestamp: Date.now(), message: data, source: 'system', type: 'info' });
+        });
+
+      } catch (err: any) {
+        console.error('Preview Error:', err);
+        setRuntimeStatus('error', err.message);
+        // The App.tsx component observes runtimeStatus and triggers auto-fix
+      }
+    };
+
+    init();
+  }, [files, enabled, retryCount]); // Re-run if files change or retry requested
+
+  const handleRefresh = () => {
+    const frame = document.getElementById('preview-frame') as HTMLIFrameElement;
+    if (frame) frame.src = frame.src;
   };
 
-  const fallback = (
-    <div className="w-full h-full flex flex-col items-center justify-center px-6 text-center">
-      <AlertTriangle size={48} className="text-red-400 mb-4" />
-      <p className="text-lg font-semibold text-white mb-1">Preview failed to load</p>
-      <p className="text-sm text-white/70 mb-4">Refresh the page to restart the preview.</p>
-      <button
-        type="button"
-        className="px-4 py-2 rounded-md border border-white/20 bg-white/10 text-sm font-semibold text-white transition hover:bg-white/20"
-        onClick={handleReset}
-      >
-        Reload Preview
-      </button>
-    </div>
-  );
+  const handleRetry = () => {
+    mountedFilesRef.current = ''; // Force remount
+    setRetryCount(c => c + 1);
+  };
 
   return (
     <Window className={className}>
       <Titlebar>
-        <Dots>
-          <Dot $color="#ff5f57" />
-          <Dot $color="#febc2e" />
-          <Dot $color="#28c840" />
-        </Dots>
-        <Title>Live Preview</Title>
-        <Right>
-          <StatusPill $tone={statusTone} title={statusLabel}>
-            <StatusDot $tone={statusTone} />
-            {statusLabel}
-          </StatusPill>
-        </Right>
+        <div className="flex gap-2">
+           <div className="w-3 h-3 rounded-full bg-red-500/80" />
+           <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+           <div className="w-3 h-3 rounded-full bg-green-500/80" />
+        </div>
+        <UrlBar>{previewUrl || 'Loading...'}</UrlBar>
+        <button onClick={handleRefresh} className="p-1 hover:bg-white/10 rounded">
+          <RotateCw size={14} className="text-white/60" />
+        </button>
       </Titlebar>
+
       <Content>
-        <ErrorBoundary onReset={handleReset} fallback={fallback}>
-          {enabled ? (
-            <SimplePreview />
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center text-white/60 bg-black/30">
-              <MonitorPlay size={48} className="mx-auto mb-4 opacity-60" />
-              <div className="text-sm font-semibold">Live Preview is closed</div>
-              <div className="text-xs mt-2 opacity-70">Generate some code to enable preview.</div>
-            </div>
-          )}
-        </ErrorBoundary>
+        {previewUrl && runtimeStatus === 'ready' && (
+          <Iframe
+            id="preview-frame"
+            src={previewUrl}
+            title="Preview"
+            allow="clipboard-read; clipboard-write"
+          />
+        )}
+
+        {runtimeStatus !== 'ready' && (
+          <Overlay>
+            {runtimeStatus === 'error' ? (
+              <>
+                <XCircle size={40} className="text-red-500 mb-4" />
+                <h3 className="text-lg font-bold mb-2">Preview Failed</h3>
+                <p className="text-white/60 mb-6 text-center max-w-md">
+                   The container failed to start. The AI has been notified to fix the issue.
+                </p>
+                <button
+                  onClick={handleRetry}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-semibold transition"
+                >
+                  Retry Manually
+                </button>
+              </>
+            ) : (
+              <>
+                <Loader2 size={40} className="text-cyan-400 animate-spin mb-4" />
+                <h3 className="text-lg font-bold mb-2">
+                  {runtimeStatus === 'booting' && 'Booting WebContainer...'}
+                  {runtimeStatus === 'installing' && 'Installing Dependencies...'}
+                  {runtimeStatus === 'starting' && 'Starting Dev Server...'}
+                </h3>
+              </>
+            )}
+
+            {(terminalOutput || runtimeStatus === 'error') && (
+               <TerminalView>
+                 <div className="flex items-center gap-2 mb-2 border-b border-white/10 pb-2">
+                    <Terminal size={12} />
+                    <span>Terminal Output</span>
+                 </div>
+                 {terminalOutput || 'No logs yet...'}
+               </TerminalView>
+            )}
+          </Overlay>
+        )}
       </Content>
     </Window>
   );

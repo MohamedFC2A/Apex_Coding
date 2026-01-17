@@ -1652,6 +1652,34 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     if (!isPreviewOpen) return;
     if (isGenerating || isPlanning) return;
 
+    // 1. Check for runtime Error (WebContainer failed)
+    if (runtimeStatus === 'error') {
+       const signature = `runtime-error:${runtimeMessage}`;
+       const attempts = autoDebugRef.current.signature === signature ? autoDebugRef.current.attempts : 0;
+       if (attempts >= 1) return;
+
+       autoDebugRef.current = { signature, attempts: attempts + 1 };
+
+       const tail = logs
+        .slice(-30)
+        .map((line) => `[${new Date(line.timestamp).toLocaleTimeString()}] ${line.message}`)
+        .join('\n');
+
+       logSystem('[STATUS] Auto-fix triggered: Preview Runtime Error.');
+
+       const requestText = [
+        'AUTO-FIX: The WebContainer preview failed to start/run.',
+        `Error: ${runtimeMessage}`,
+        'Analyze the project structure and logs below. Fix missing dependencies, scripts, or configuration.',
+        `Recent Logs:\n${tail}`
+       ].join('\n\n');
+
+       const fixPrompt = buildFixPrompt(requestText);
+       void handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
+       return;
+    }
+
+    // 2. Check for Console TypeError (Runtime crash inside the app)
     const last = logs[logs.length - 1];
     if (!last) return;
 
@@ -1683,7 +1711,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
     const fixPrompt = buildFixPrompt(requestText);
     void handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
-  }, [autoDebugRef, buildFixPrompt, handleGenerate, isGenerating, isPlanning, isPreviewOpen, logSystem, logs]);
+  }, [autoDebugRef, buildFixPrompt, handleGenerate, isGenerating, isPlanning, isPreviewOpen, logSystem, logs, runtimeStatus, runtimeMessage]);
 
 
   const handleMainActionClick = useCallback(() => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Code, FileText, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useProjectStore } from '@/stores/projectStore';
 
@@ -58,37 +58,49 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
   const files = useProjectStore((s) => s.files);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [previewContent, setPreviewContent] = useState<string>('');
-  const [hasHtmlFile, setHasHtmlFile] = useState(false);
-  const [hasJsFile, setHasJsFile] = useState(false);
-  const [hasCssFile, setHasCssFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const generatePreview = () => {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastFilesHashRef = useRef<string>('');
+  
+  // Compute file stats with useMemo to prevent recalculation
+  const { htmlFiles, jsFiles, cssFiles, hasHtmlFile, hasJsFile, hasCssFile } = useMemo(() => {
+    const htmlF = files.filter(f => 
+      f.path?.endsWith('.html') || f.name?.endsWith('.html') ||
+      f.path?.endsWith('.htm') || f.name?.endsWith('.htm')
+    );
+    const jsF = files.filter(f => 
+      f.path?.endsWith('.js') || f.name?.endsWith('.js') ||
+      f.path?.endsWith('.jsx') || f.name?.endsWith('.jsx') ||
+      f.path?.endsWith('.ts') || f.name?.endsWith('.ts') ||
+      f.path?.endsWith('.tsx') || f.name?.endsWith('.tsx')
+    );
+    const cssF = files.filter(f => 
+      f.path?.endsWith('.css') || f.name?.endsWith('.css') ||
+      f.path?.endsWith('.scss') || f.name?.endsWith('.scss') ||
+      f.path?.endsWith('.sass') || f.name?.endsWith('.sass')
+    );
+    return {
+      htmlFiles: htmlF,
+      jsFiles: jsF,
+      cssFiles: cssF,
+      hasHtmlFile: htmlF.length > 0,
+      hasJsFile: jsF.length > 0,
+      hasCssFile: cssF.length > 0
+    };
+  }, [files]);
+  
+  // Create a simple hash of file contents to detect real changes
+  const filesHash = useMemo(() => {
+    return files.map(f => `${f.path || f.name}:${f.content?.length || 0}`).join('|');
+  }, [files]);
+  
+  // Memoized generatePreview wrapped in useCallback
+  const generatePreview = useCallback(() => {
     try {
       setError(null);
-      
-      // Find HTML, JS, and CSS files
-      const htmlFiles = files.filter(f => 
-        f.path?.endsWith('.html') || f.name?.endsWith('.html') ||
-        f.path?.endsWith('.htm') || f.name?.endsWith('.htm')
-      );
-      
-      const jsFiles = files.filter(f => 
-        f.path?.endsWith('.js') || f.name?.endsWith('.js') ||
-        f.path?.endsWith('.jsx') || f.name?.endsWith('.jsx') ||
-        f.path?.endsWith('.ts') || f.name?.endsWith('.ts') ||
-        f.path?.endsWith('.tsx') || f.name?.endsWith('.tsx')
-      );
-      
-      const cssFiles = files.filter(f => 
-        f.path?.endsWith('.css') || f.name?.endsWith('.css') ||
-        f.path?.endsWith('.scss') || f.name?.endsWith('.scss') ||
-        f.path?.endsWith('.sass') || f.name?.endsWith('.sass')
-      );
 
-      setHasHtmlFile(htmlFiles.length > 0);
-      setHasJsFile(jsFiles.length > 0);
-      setHasCssFile(cssFiles.length > 0);
+      // Use memoized file arrays instead of filtering again
 
       if (htmlFiles.length === 0) {
         const fileListMarkup = files.length > 0
@@ -404,13 +416,34 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
     } catch (err) {
       setError(`Failed to generate preview: ${(err as Error).message}`);
     }
-  };
+  }, [htmlFiles, jsFiles, cssFiles, files]);
 
+  // Debounced effect to prevent infinite loops and site freezing
   useEffect(() => {
-    if (files.length > 0) {
-      generatePreview();
+    // Only update if hash actually changed
+    if (filesHash === lastFilesHashRef.current) {
+      return;
     }
-  }, [files]);
+    
+    // Clear any pending timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    // Debounce preview generation by 500ms to batch rapid changes
+    debounceTimerRef.current = setTimeout(() => {
+      lastFilesHashRef.current = filesHash;
+      if (files.length > 0) {
+        generatePreview();
+      }
+    }, 500);
+    
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [filesHash, files.length, generatePreview]);
 
   useEffect(() => {
     if (iframeRef.current && previewContent) {

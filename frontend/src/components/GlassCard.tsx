@@ -4,8 +4,9 @@ interface GlassCardProps {
   children: React.ReactNode;
   className?: string;
   hover?: boolean;
-  glow?: 'none' | 'blue' | 'purple' | 'cyan' | 'amber';
+  glow?: 'none' | 'blue' | 'purple' | 'cyan' | 'amber' | 'success' | 'danger';
   animated?: boolean;
+  shine?: boolean;
 }
 
 export const GlassCard: React.FC<GlassCardProps> = ({
@@ -13,36 +14,58 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   className = '',
   hover = true,
   glow = 'none',
-  animated = false
+  animated = false,
+  shine = false
 }) => {
   const glowClasses = {
     none: '',
-    blue: 'shadow-[0_0_20px_rgba(59,130,246,0.15)] border-blue-500/20',
-    purple: 'shadow-[0_0_20px_rgba(168,85,247,0.15)] border-purple-500/20',
-    cyan: 'shadow-[0_0_20px_rgba(34,211,238,0.15)] border-cyan-500/20',
-    amber: 'shadow-[0_0_20px_rgba(251,191,36,0.15)] border-amber-500/20',
+    blue: 'shadow-[0_0_25px_rgba(59,130,246,0.2)] border-blue-500/25',
+    purple: 'shadow-[0_0_25px_rgba(168,85,247,0.2)] border-purple-500/25',
+    cyan: 'shadow-[0_0_25px_rgba(34,211,238,0.2)] border-cyan-500/25',
+    amber: 'shadow-[0_0_25px_rgba(251,191,36,0.2)] border-amber-500/25',
+    success: 'shadow-[0_0_25px_rgba(16,185,129,0.2)] border-emerald-500/25',
+    danger: 'shadow-[0_0_25px_rgba(239,68,68,0.2)] border-red-500/25',
   };
 
   return (
     <div 
       className={`
-        glass-card
+        relative overflow-hidden
         bg-nexus-glass backdrop-blur-xl border border-nexus-border
         rounded-xl
-        transition-all duration-300 ease-out
-        ${hover ? 'hover:bg-nexus-glass-hover hover:border-nexus-border-hover hover:shadow-glass-hover hover:-translate-y-[2px]' : ''}
+        transition-all duration-300 ease-apex-smooth
+        ${hover ? `
+          hover:bg-nexus-glass-hover 
+          hover:border-nexus-border-hover 
+          hover:shadow-glass-hover 
+          hover:-translate-y-[2px]
+          active:translate-y-0
+          active:shadow-glass-sm
+        ` : ''}
         ${glowClasses[glow]}
         ${animated ? 'animate-pulse-slow' : ''}
         ${className}
       `}
     >
-      {children}
+      {/* Top shine line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      
+      {/* Shine effect on hover */}
+      {shine && (
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
+      )}
+      
+      {/* Content */}
+      <div className="relative z-10">
+        {children}
+      </div>
     </div>
   );
 };
 
 interface LiquidButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'success' | 'danger';
+  variant?: 'primary' | 'secondary' | 'success' | 'danger' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
   glow?: boolean;
   loading?: boolean;
   children: React.ReactNode;
@@ -50,6 +73,7 @@ interface LiquidButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement
 
 export const LiquidButton: React.FC<LiquidButtonProps> = ({
   variant = 'primary',
+  size = 'md',
   glow = false,
   loading = false,
   children,
@@ -58,30 +82,43 @@ export const LiquidButton: React.FC<LiquidButtonProps> = ({
   ...props
 }) => {
   const variants = {
-    primary: 'bg-blue-600/20 text-blue-100 border-blue-500/30 hover:bg-blue-600/30 hover:border-blue-500/50 hover:shadow-[0_0_15px_rgba(37,99,235,0.3)]',
-    secondary: 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10 hover:border-white/20',
-    success: 'bg-green-600/20 text-green-100 border-green-500/30 hover:bg-green-600/30 hover:border-green-500/50 hover:shadow-[0_0_15px_rgba(22,163,74,0.3)]',
-    danger: 'bg-red-600/20 text-red-100 border-red-500/30 hover:bg-red-600/30 hover:border-red-500/50 hover:shadow-[0_0_15px_rgba(220,38,38,0.3)]',
+    primary: 'bg-gradient-to-r from-blue-600/30 to-purple-600/30 text-white border-blue-500/40 hover:from-blue-600/40 hover:to-purple-600/40 hover:border-blue-500/60 hover:shadow-[0_0_25px_rgba(59,130,246,0.3)]',
+    secondary: 'bg-white/5 text-white/90 border-white/10 hover:bg-white/10 hover:border-white/20 hover:shadow-glass-sm',
+    success: 'bg-emerald-600/20 text-emerald-100 border-emerald-500/30 hover:bg-emerald-600/30 hover:border-emerald-500/50 hover:shadow-[0_0_20px_rgba(16,185,129,0.25)]',
+    danger: 'bg-red-600/20 text-red-100 border-red-500/30 hover:bg-red-600/30 hover:border-red-500/50 hover:shadow-[0_0_20px_rgba(239,68,68,0.25)]',
+    ghost: 'bg-transparent text-white/70 border-transparent hover:bg-white/5 hover:text-white',
+  };
+  
+  const sizes = {
+    sm: 'px-4 py-2 text-sm rounded-lg',
+    md: 'px-6 py-3 rounded-xl',
+    lg: 'px-8 py-4 text-lg rounded-2xl',
   };
 
   return (
     <button
       className={`
-        relative overflow-hidden
-        px-6 py-3 rounded-xl
+        relative overflow-hidden group
+        ${sizes[size]}
         flex items-center justify-center gap-2
-        font-medium tracking-wide transition-all duration-300
+        font-semibold tracking-wide
+        transition-all duration-300 ease-apex-smooth
         border backdrop-blur-md
-        disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none
+        hover:-translate-y-0.5
+        active:translate-y-0 active:scale-[0.98]
+        disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:scale-100
         ${variants[variant]}
-        ${glow ? 'shadow-glow' : ''}
+        ${glow ? 'shadow-glow animate-glow-pulse' : ''}
         ${className}
       `}
       disabled={disabled || loading}
       {...props}
     >
-      {/* Shine effect */}
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
+      {/* Top shine line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-60" />
+      
+      {/* Hover shine sweep */}
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-out pointer-events-none" />
       
       {loading ? (
         <>
@@ -91,7 +128,9 @@ export const LiquidButton: React.FC<LiquidButtonProps> = ({
           </svg>
           <span>Loading...</span>
         </>
-      ) : children}
+      ) : (
+        <span className="relative z-10">{children}</span>
+      )}
     </button>
   );
 };
@@ -132,29 +171,52 @@ interface LiquidPanelProps {
   children: React.ReactNode;
   className?: string;
   hover?: boolean;
-  glow?: 'none' | 'blue' | 'purple' | 'cyan' | 'amber';
+  glow?: 'none' | 'blue' | 'purple' | 'cyan' | 'amber' | 'success';
+  padding?: 'none' | 'sm' | 'md' | 'lg';
 }
 
-export const LiquidPanel: React.FC<LiquidPanelProps> = ({ children, className = '', hover = false, glow = 'none' }) => {
+export const LiquidPanel: React.FC<LiquidPanelProps> = ({ 
+  children, 
+  className = '', 
+  hover = false, 
+  glow = 'none',
+  padding = 'md'
+}) => {
   const glowClasses = {
     none: '',
-    blue: 'shadow-[0_0_15px_rgba(59,130,246,0.1)] border-blue-500/20',
-    purple: 'shadow-[0_0_15px_rgba(168,85,247,0.1)] border-purple-500/20',
-    cyan: 'shadow-[0_0_15px_rgba(34,211,238,0.1)] border-cyan-500/20',
-    amber: 'shadow-[0_0_15px_rgba(251,191,36,0.1)] border-amber-500/20',
+    blue: 'shadow-[0_0_20px_rgba(59,130,246,0.15)] border-blue-500/25',
+    purple: 'shadow-[0_0_20px_rgba(168,85,247,0.15)] border-purple-500/25',
+    cyan: 'shadow-[0_0_20px_rgba(34,211,238,0.15)] border-cyan-500/25',
+    amber: 'shadow-[0_0_20px_rgba(251,191,36,0.15)] border-amber-500/25',
+    success: 'shadow-[0_0_20px_rgba(16,185,129,0.15)] border-emerald-500/25',
+  };
+  
+  const paddingClasses = {
+    none: '',
+    sm: 'p-3',
+    md: 'p-5',
+    lg: 'p-8',
   };
 
   return (
     <div 
       className={`
-        glass-panel rounded-xl
+        relative overflow-hidden rounded-xl
         bg-nexus-glass backdrop-blur-xl border border-nexus-border
-        ${hover ? 'hover:bg-nexus-glass-hover hover:border-nexus-border-hover transition-colors duration-300' : ''} 
-        ${glowClasses[glow]} 
+        transition-all duration-300 ease-apex-smooth
+        ${hover ? 'hover:bg-nexus-glass-hover hover:border-nexus-border-hover hover:-translate-y-1 hover:shadow-glass-hover' : ''} 
+        ${glowClasses[glow]}
+        ${paddingClasses[padding]}
         ${className}
       `}
     >
-      {children}
+      {/* Top shine line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/8 to-transparent" />
+      
+      {/* Content */}
+      <div className="relative z-10">
+        {children}
+      </div>
     </div>
   );
 };

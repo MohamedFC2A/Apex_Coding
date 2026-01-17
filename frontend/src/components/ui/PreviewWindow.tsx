@@ -3,7 +3,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import { AlertTriangle, MonitorPlay } from 'lucide-react';
-import { SimplePreview } from '../Preview/SimplePreview';
+import { WebContainerPreview } from '../Preview/WebContainerPreview';
 import { ErrorBoundary } from './ErrorBoundary';
 
 const Window = styled.div`
@@ -179,7 +179,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
       <Content>
         <ErrorBoundary onReset={handleReset} fallback={fallback}>
           {enabled ? (
-            <SimplePreview />
+            <WebContainerPreview />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-white/60 bg-black/30">
               <MonitorPlay size={48} className="mx-auto mb-4 opacity-60" />

@@ -19,7 +19,7 @@ const nextConfig = {
     maxInactiveAge: 25 * 1000,
     pagesBufferLength: 2,
   },
-  // Ensure static files are served correctly
+  // Ensure static files are served correctly + WebContainer COOP/COEP
   async headers() {
     return [
       {
@@ -30,12 +30,17 @@ const nextConfig = {
             value: 'nosniff',
           },
           {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
             key: 'X-XSS-Protection',
             value: '1; mode=block',
+          },
+          // WebContainer requires these headers for SharedArrayBuffer
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
+          },
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp',
           },
         ],
       },

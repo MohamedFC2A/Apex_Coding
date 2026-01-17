@@ -2069,22 +2069,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         </FloatingPlanWrap>
       )}
       
-      {modelMode === 'super' && (
-        <FloatingPlanWrap $open={true}>
-          <FloatingPlanPanel>
-            <FloatingPlanHeader type="button" onClick={() => {}} aria-label="Workflow">
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <ListTodo size={16} />
-                Deep-Thinking Workflow
-              </span>
-              <span style={{ opacity: 0.7 }}>✨</span>
-            </FloatingPlanHeader>
-            <FloatingPlanBody>
-              <SuperWorkflow />
-            </FloatingPlanBody>
-          </FloatingPlanPanel>
-        </FloatingPlanWrap>
-      )}
+      {modelMode === 'super' && <SuperWorkflow />}
 
       <IDEFooter>© 2026 Apex Coding | AI-Powered Developer Platform</IDEFooter>
       <BrainConsole

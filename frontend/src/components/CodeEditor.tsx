@@ -65,32 +65,56 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     editorRef.current = editor;
     monacoRef.current = monaco;
 
-    // Define Apex Gold theme (User's request)
+    // Define Apex Gold theme (Enhanced Professional)
     monaco.editor.defineTheme('apex-gold', {
       base: 'vs-dark',
       inherit: true,
       rules: [
-        { token: 'comment', foreground: '71717a', fontStyle: 'italic' },
+        { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
         { token: 'keyword', foreground: 'F59E0B', fontStyle: 'bold' },
-        { token: 'string', foreground: 'FFFFFF' },
+        { token: 'keyword.control', foreground: 'F59E0B', fontStyle: 'bold' },
+        { token: 'string', foreground: 'FBBF24' },
+        { token: 'string.escape', foreground: 'FCD34D' },
         { token: 'number', foreground: 'FCD34D' },
         { token: 'type', foreground: 'F59E0B' },
+        { token: 'type.identifier', foreground: '60A5FA' },
         { token: 'function', foreground: 'FFFFFF', fontStyle: 'bold' },
+        { token: 'function.declaration', foreground: '60A5FA', fontStyle: 'bold' },
         { token: 'variable', foreground: 'E5E7EB' },
-        { token: 'operator', foreground: 'F59E0B' }
+        { token: 'variable.parameter', foreground: 'FCD34D' },
+        { token: 'operator', foreground: 'F59E0B' },
+        { token: 'delimiter', foreground: '9CA3AF' },
+        { token: 'tag', foreground: 'F87171' },
+        { token: 'attribute.name', foreground: 'FBBF24' },
+        { token: 'attribute.value', foreground: 'A5B4FC' },
       ],
       colors: {
-        'editor.background': '#0D1117',
-        'editor.foreground': '#E5E7EB',
-        'editor.lineHighlightBackground': '#1F2937',
-        'editor.selectionBackground': '#F59E0B33',
-        'editorCursor.foreground': '#F59E0B',
-        'editorLineNumber.foreground': '#4B5563', 
-        'editorLineNumber.activeForeground': '#F59E0B',
-        'editor.selectionHighlightBackground': '#F59E0B11',
-        'scrollbarSlider.background': '#F59E0B22',
-        'scrollbarSlider.hoverBackground': '#F59E0B44',
-        'scrollbarSlider.activeBackground': '#F59E0B66'
+        'editor.background': '#0a0a0f',
+        'editor.foreground': '#e5e7eb',
+        'editor.lineHighlightBackground': '#1f293766',
+        'editor.lineHighlightBorder': '#f59e0b22',
+        'editor.selectionBackground': '#f59e0b44',
+        'editor.selectionHighlightBackground': '#f59e0b22',
+        'editorCursor.foreground': '#f59e0b',
+        'editorLineNumber.foreground': '#4b5563',
+        'editorLineNumber.activeForeground': '#f59e0b',
+        'editorGutter.background': '#0a0a0f',
+        'editorGutter.addedBackground': '#22c55e',
+        'editorGutter.modifiedBackground': '#3b82f6',
+        'editorGutter.deletedBackground': '#ef4444',
+        'scrollbarSlider.background': '#f59e0b22',
+        'scrollbarSlider.hoverBackground': '#f59e0b44',
+        'scrollbarSlider.activeBackground': '#f59e0b66',
+        'editorBracketMatch.background': '#f59e0b33',
+        'editorBracketMatch.border': '#f59e0b',
+        'editorIndentGuide.background1': '#374151',
+        'editorIndentGuide.activeBackground1': '#f59e0b44',
+        'editorWhitespace.foreground': '#374151',
+        'minimap.background': '#0a0a0f',
+        'minimap.selectionHighlight': '#f59e0b44',
+        'editorOverviewRuler.border': '#1f2937',
+        'stickyScroll.background': '#0d0d12',
+        'stickyScrollHover.background': '#1f2937',
       },
     });
 
@@ -254,7 +278,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     return isGenerating ? typedValue : storeContent;
   }, [currentFile, isGenerating, isStreamingView, storeContent, streamText, typedValue]);
 
-  // ENHANCED OPTIONS - 100x better
+  // ENHANCED PROFESSIONAL IDE OPTIONS
   const editorOptions: monaco.editor.IStandaloneEditorConstructionOptions = {
     readOnly: isStreamingView,
     automaticLayout: true,
@@ -262,22 +286,31 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
     fontLigatures: true,
     lineNumbers: 'on',
+    lineNumbersMinChars: 4,
+    glyphMargin: true,
+    folding: true,
+    foldingHighlight: true,
+    foldingStrategy: 'indentation',
+    showFoldingControls: 'always',
     renderWhitespace: 'selection',
     renderLineHighlight: 'all',
+    renderLineHighlightOnlyWhenFocus: false,
     scrollBeyondLastLine: false,
-    minimap: {
-      enabled: true,
-      side: 'right',
-      showSlider: 'mouseover',
-      renderCharacters: true,
-      maxColumn: 120,
-    },
     scrollbar: {
       vertical: 'visible',
       horizontal: 'visible',
       useShadows: true,
-      verticalScrollbarSize: 10,
-      horizontalScrollbarSize: 10,
+      verticalScrollbarSize: 12,
+      horizontalScrollbarSize: 12,
+      arrowSize: 0,
+    },
+    minimap: {
+      enabled: true,
+      side: 'right',
+      showSlider: 'always',
+      renderCharacters: false,
+      maxColumn: 80,
+      scale: 1,
     },
     suggest: {
       showMethods: true,
@@ -305,19 +338,18 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     },
     bracketPairColorization: {
       enabled: true,
+      independentColorPoolPerBracketType: true,
     },
     guides: {
       bracketPairs: true,
       indentation: true,
       highlightActiveIndentation: true,
+      highlightActiveBracketPair: true,
     },
     stickyScroll: {
       enabled: true,
       maxLineCount: 5,
     },
-    folding: true,
-    foldingStrategy: 'indentation',
-    showFoldingControls: 'mouseover',
     matchBrackets: 'always',
     autoClosingBrackets: 'always',
     autoClosingQuotes: 'always',
@@ -330,17 +362,31 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
     trimAutoWhitespace: true,
     wordWrap: 'on',
     wrappingIndent: 'indent',
-    rulers: [80, 120],
+    wrappingStrategy: 'advanced',
     cursorBlinking: 'smooth',
+    cursorSmoothCaretAnimation: 'on',
+    cursorStyle: 'line',
     smoothScrolling: true,
     mouseWheelZoom: true,
     multiCursorModifier: 'alt',
     padding: {
-      top: 16,
-      bottom: 16,
+      top: 12,
+      bottom: 12,
     },
     links: true,
     colorDecorators: true,
+    contextmenu: true,
+    snippetSuggestions: 'inline',
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnCommitCharacter: true,
+    acceptSuggestionOnEnter: 'on',
+    wordBasedSuggestions: 'matchingDocuments',
+    occurrencesHighlight: 'singleFile',
+    selectionHighlight: true,
+    codeLens: true,
+    lightbulb: {
+      enabled: true,
+    },
   };
 
   if (isHydrating && files.length === 0) {

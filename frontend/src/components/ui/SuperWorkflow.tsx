@@ -370,8 +370,8 @@ export const SuperWorkflow: React.FC = () => {
   const [metrics, setMetrics] = useState({ cpu: 0, ram: 0, ops: 0 });
 
   useEffect(() => {
-    if (!isGenerating) {
-      setMetrics({ cpu: 12, ram: 24, ops: 0 });
+    if (!isGenerating || collapsed) {
+      if (!isGenerating) setMetrics({ cpu: 12, ram: 24, ops: 0 });
       return;
     }
 
@@ -381,9 +381,9 @@ export const SuperWorkflow: React.FC = () => {
         ram: Math.floor(Math.random() * 30) + 40,
         ops: Math.floor(Math.random() * 1000) + 5000
       });
-    }, 1000);
+    }, 2000);
     return () => clearInterval(interval);
-  }, [isGenerating]);
+  }, [isGenerating, collapsed]);
 
   // Parse thinking content for "log-like" updates
   useEffect(() => {

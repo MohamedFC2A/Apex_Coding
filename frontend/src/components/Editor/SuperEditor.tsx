@@ -34,6 +34,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
 
   const [editor, setEditor] = useState<any>(null);
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  const editorRef = useRef<any>(null);
 
   useEffect(() => {
     const buildFileTree = (files: any[]): FileNode[] => {
@@ -222,7 +223,6 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
   );
 });
 
-const editorRef = useRef<any>(null);
 
 const getFileLanguage = (filename: string): string => {
   const ext = filename.split('.').pop()?.toLowerCase();

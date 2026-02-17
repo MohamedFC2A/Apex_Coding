@@ -50,6 +50,11 @@ const summarizeTopFolders = (paths: string[]) => {
     .join(', ');
 };
 
+const hasExplicitFrameworkRequest = (prompt: string) => {
+  const text = String(prompt || '').toLowerCase();
+  return /\breact\b|\bnext(?:\.js)?\b|\bvite\b|\btypescript app\b|\bvue\b|\bangular\b|\bsvelte\b/.test(text);
+};
+
 const getErrorMessage = (err: any, fallback: string) => {
   return (
     err?.error ||
@@ -112,6 +117,7 @@ STRICT PLANNING RULES:
           const enhancedRequestPrompt = constraints
             ? mergePromptWithConstraints(prompt, constraints)
             : prompt;
+          const explicitFrameworkRequested = hasExplicitFrameworkRequest(enhancedRequestPrompt);
 
           // Add projectType-specific guidelines
           if (selectedProjectType === 'FRONTEND_ONLY') {
@@ -119,11 +125,13 @@ STRICT PLANNING RULES:
 
 [PROJECT TYPE: FRONTEND ONLY]
 STRUCTURE:
-- Generate static or client-side only applications (HTML/CSS/JavaScript).
+- Default to strict vanilla static output: index.html + style.css + script.js.
+- Only switch to React/Next/Vite when explicitly requested by the user prompt.
 - NO backend APIs, databases, server-side code, or authentication.
 - Prefer flat file structure: index.html, style.css, script.js.
 - ONE CSS file for all styles. ONE JS file for all logic. ONE HTML entry point.
 - Do NOT create package.json or build configs unless explicitly requested.
+- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.
 
 COMPONENT DECOMPOSITION:
 - Break the UI into named sections: Header/Nav, Hero, Content Sections, Footer.
@@ -149,7 +157,8 @@ INTERACTIVITY:
 
 QUALITY:
 - Each step must be atomic, testable, and independently verifiable in live preview.
-- Optimize for instant preview — all files must be valid, linkable HTML/CSS/JS.`;
+- Optimize for instant preview — all files must be valid, linkable HTML/CSS/JS.
+- Enforce complete-first-pass delivery with no placeholder TODOs.`;
           } else if (selectedProjectType === 'FULL_STACK') {
             planningRules += `
 
@@ -350,6 +359,18 @@ QUALITY:
       }
 
       const constrainedPrompt = constraints ? mergePromptWithConstraints(prompt, constraints) : prompt;
+      const explicitFrameworkRequested = hasExplicitFrameworkRequest(constrainedPrompt);
+      const frontendStrictModeBanner =
+        selectedProjectMode === 'FRONTEND_ONLY'
+          ? [
+              '[FRONTEND STRICT MODE]',
+              '- Default architecture: vanilla HTML/CSS/JS only.',
+              '- Required baseline files: index.html, style.css, script.js.',
+              '- Do not produce React/Next/Vite scaffolding unless explicitly requested.',
+              `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.`,
+              '- Follow strict quality gate: structure + a11y + responsive + syntax-safe JS.'
+            ].join('\n')
+          : '';
 
       const enhancedPrompt = `
 [SYSTEM PERSONA]
@@ -371,8 +392,9 @@ EXECUTION RULES:
 
 2. **WEB PROJECT REQUIREMENTS (PREVIEW RUNNER READY)**:
    - **STRUCTURE**:
-     - If prompt contains "[PROJECT MODE] Frontend-only", generate frontend files only (no backend folder).
-     - Otherwise use fullstack structure:
+     - If project mode is FRONTEND_ONLY: generate strict vanilla frontend by default (index.html, style.css, script.js).
+     - Only generate React/Next/Vite structure when explicitly requested by the user.
+     - If project mode is FULL_STACK, use fullstack structure:
        - \`backend/\` (Node.js API)
        - \`frontend/\` (Vite + React + TS)
        - Root config files (\`package.json\`, \`vite.config.ts\`, etc.)
@@ -418,6 +440,7 @@ EXECUTION RULES:
    - Optimize for a reliable, production-ready baseline in the initial pass.
 
 ${buildAIOrganizationPolicyBlock(selectedProjectMode)}
+${frontendStrictModeBanner ? `\n\n${frontendStrictModeBanner}` : ''}
 
 [PROJECT CONTEXT]
 Project Name: ${projectState.projectName}

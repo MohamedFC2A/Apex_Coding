@@ -721,6 +721,23 @@ const addFilesToZip = (zip, files) => {
   return 0;
 };
 
+const FRONTEND_PRO_QUALITY_POLICY = [
+  '[FRONTEND PRO QUALITY POLICY]',
+  '- Default frontend mode is strict vanilla: index.html + style.css + script.js.',
+  '- Do not switch to React/Next/Vite unless explicitly requested by the user prompt.',
+  '- For static mode, enforce one HTML entry point, one CSS file, and one JS file (no duplicates).',
+  '- Never output TODO/placeholders in final code.',
+  '- Keep JavaScript syntax-safe and avoid glued comment/code lines that can break parsing.',
+  '- Add clean interactivity when relevant: menu toggle, form validation, smooth-scroll, active nav, and observer effects.',
+  '- Enforce semantic HTML, responsive layout, and accessibility defaults (labels/aria/keyboard-safe interactions).',
+  '- First pass must be complete and preview-ready.'
+].join('\n');
+
+const hasExplicitFrameworkRequest = (prompt) => {
+  const text = String(prompt || '').toLowerCase();
+  return /\breact\b|\bnext(?:\.js)?\b|\bvite\b|\btypescript app\b|\bvue\b|\bangular\b|\bsvelte\b/.test(text);
+};
+
 // Prompts
 const PLAN_SYSTEM_PROMPT_FRONTEND = `You are an Elite Frontend Architect specializing in production-grade static web applications.
 
@@ -779,7 +796,9 @@ REPO CONSTRAINTS:
 - NO build tools (Vite/Webpack). NO backend API calls. NO server-side code.
 - Use Lucide Icons via CDN or inline SVGs.
 - Structure must be webcontainer compatible.
-- LIVE PREVIEW is CRITICAL: all files must be valid, linkable HTML/CSS/JS.`.trim();
+- LIVE PREVIEW is CRITICAL: all files must be valid, linkable HTML/CSS/JS.
+
+${FRONTEND_PRO_QUALITY_POLICY}`.trim();
 
 const PLAN_SYSTEM_PROMPT_FULLSTACK = `You are an Elite Full-Stack Software Architect.
 
@@ -912,6 +931,10 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - If the request is underspecified, choose strong professional defaults and continue.
    - Optimize for a reliable result that runs correctly on first preview.
 
+10. COMMENT/CODE SAFETY:
+   - Never glue comment text and executable tokens on the same line.
+   - Keep a clean newline after comment-only lines before code.
+
 FILE-MARKER PROTOCOL:
 [[START_FILE: path/to/file.ext]]
 <file contents>
@@ -956,7 +979,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.
 
-REMEMBER: Prefer simple static files (HTML/CSS/JS) over complex builds. Keep it natural and direct.`.trim();
+REMEMBER: Prefer simple static files (HTML/CSS/JS) over complex builds. Keep it natural and direct.
+
+${FRONTEND_PRO_QUALITY_POLICY}`.trim();
 
 const normalizeConstraints = (rawConstraints = {}, fallbackProjectType = null) => {
   const projectMode =
@@ -982,11 +1007,22 @@ const normalizeConstraints = (rawConstraints = {}, fallbackProjectType = null) =
   };
 };
 
-const buildConstraintsBlock = (constraints) => {
+const buildConstraintsBlock = (constraints, prompt = '') => {
   const featureLines = [
     ...constraints.selectedFeatures.map((feature) => `- ${feature}`),
     ...constraints.customFeatureTags.map((feature) => `- custom: ${feature}`)
   ];
+  const explicitFrameworkRequested = hasExplicitFrameworkRequest(prompt);
+  const frontendModeRules = constraints.projectMode === 'FRONTEND_ONLY'
+    ? [
+        'Frontend Defaults:',
+        '- Default to strict vanilla static site output: index.html, style.css, script.js.',
+        `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.`,
+        '- Only produce React/Next/Vite structure when explicit framework request is YES.',
+        '',
+        FRONTEND_PRO_QUALITY_POLICY
+      ].join('\n')
+    : '';
 
   return [
     '[SERVER CONSTRAINTS]',
@@ -998,12 +1034,13 @@ const buildConstraintsBlock = (constraints) => {
     'Rules:',
     '- Respect all constraints strictly.',
     '- Do not output files that violate project mode.',
-    '- Ensure selected features are implemented in code output.'
+    '- Ensure selected features are implemented in code output.',
+    ...(frontendModeRules ? ['', frontendModeRules] : [])
   ].join('\n');
 };
 
 const attachConstraintsToPrompt = (prompt, constraints) => {
-  return `${String(prompt || '').trim()}\n\n${buildConstraintsBlock(constraints)}`.trim();
+  return `${String(prompt || '').trim()}\n\n${buildConstraintsBlock(constraints, prompt)}`.trim();
 };
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)

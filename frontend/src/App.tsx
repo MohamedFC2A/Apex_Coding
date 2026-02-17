@@ -1809,7 +1809,8 @@ function App() {
       projectMode: effectiveProjectType,
       selectedFeatures,
       customFeatureTags,
-      enforcement: constraintsEnforcement
+      enforcement: constraintsEnforcement,
+      qualityGateMode: 'strict'
     };
   }, [constraintsEnforcement, customFeatureTags, effectiveProjectType, selectedFeatures]);
 
@@ -2300,7 +2301,7 @@ function App() {
             let finalText = cleaned;
             
             if (event.partial) {
-               finalText = repairTruncatedContent(cleaned, resolvedPath);
+               finalText = repairTruncatedContent(cleaned, resolvedPath, { isKnownPartial: true, allowAggressiveFixes: true });
                if (finalText !== cleaned) {
                   logSystem(`[REPAIR] Fixed truncated file: ${resolvedPath}`);
                   setFileStatus(resolvedPath, 'compromised');
@@ -2407,18 +2408,6 @@ function App() {
             if (!integrity.ok) {
               effectivePartial = true;
               setFileStatus(resolvedPath, 'partial');
-              const repaired = repairTruncatedContent(latest, resolvedPath);
-              if (repaired !== latest) {
-                latest = repaired;
-                updateFile(resolvedPath, repaired);
-                upsertFileNode(resolvedPath, repaired);
-                upsertFile({
-                  name: resolvedPath.split('/').pop() || resolvedPath,
-                  path: resolvedPath,
-                  content: repaired,
-                  language: getLanguageFromExtension(resolvedPath)
-                });
-              }
               logSystem(`[STATUS] Integrity check failed for ${resolvedPath}: ${integrity.reason}. Marked as partial for auto-resume.`);
               addBrainEvent({
                 source: 'file',
@@ -2696,11 +2685,15 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
       if (useAIStore.getState().executionPhase !== 'interrupted' && partialPaths.size === 0) {
         const currentFiles = useProjectStore.getState().files;
-        if (generationConstraints.enforcement === 'hard' && generationConstraints.selectedFeatures.length > 0) {
-          const { missingFeatures } = validateConstraints(currentFiles, generationConstraints);
-          if (missingFeatures.length > 0) {
-            logSystem(`[constraints] Missing features detected: ${missingFeatures.join(', ')}. Applying one auto-fix pass...`);
-            const repairPrompt = buildConstraintsRepairPrompt(missingFeatures, generationConstraints);
+        if (generationConstraints.enforcement === 'hard') {
+          const { missingFeatures, qualityViolations, readyForFinalize } = validateConstraints(currentFiles, generationConstraints);
+          if (!readyForFinalize) {
+            const qualitySummary = qualityViolations.length > 0 ? ` | Quality issues: ${qualityViolations.join(', ')}` : '';
+            logSystem(`[constraints] Auto-fix required. Missing features: ${missingFeatures.join(', ') || 'none'}${qualitySummary}`);
+            const repairPrompt = buildConstraintsRepairPrompt(
+              [...missingFeatures, ...qualityViolations.map((issue) => `quality:${issue}`)],
+              generationConstraints
+            );
             await runStream(repairPrompt);
           }
         }

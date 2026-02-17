@@ -72,9 +72,22 @@ const rebuildHtmlWithDomParser = (html: string): string => {
   return `${doctype}\n${doc.documentElement.outerHTML}`;
 };
 
-export const repairTruncatedContent = (content: string, path: string): string => {
+type RepairOptions = {
+  isKnownPartial?: boolean;
+  allowAggressiveFixes?: boolean;
+};
+
+const looksTruncated = (text: string) => {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return false;
+  return /[\{\[\(,:=]\s*$/.test(trimmed) || /(?:\/\/|\/\*)\s*$/.test(trimmed);
+};
+
+export const repairTruncatedContent = (content: string, path: string, options: RepairOptions = {}): string => {
   if (!content) return '';
   const ext = path.split('.').pop()?.toLowerCase();
+  const isKnownPartial = Boolean(options.isKnownPartial);
+  const allowAggressiveFixes = Boolean(options.allowAggressiveFixes);
   
   // Only attempt repair for code/data files
   if (!/(js|ts|tsx|jsx|json|css|html|md)$/.test(ext || '')) {
@@ -98,28 +111,37 @@ export const repairTruncatedContent = (content: string, path: string): string =>
 
     // Final pass: let a real HTML parser normalize/rebuild the document.
     repaired = rebuildHtmlWithDomParser(repaired);
+    return repaired;
   }
 
-  // 1. Fix "Unexpected identifier" caused by truncated keys in objects (e.g. "image")
-  if (/(js|ts|tsx|jsx|json)$/.test(ext || '')) {
-    if (/[\{\,\[]\s*[a-zA-Z_$][a-zA-Z0-9_]*$/.test(repaired)) {
-        repaired += ': null';
-    } else if (/:\s*$/.test(repaired)) {
-        repaired += ' null';
-    } else if (/[,\[]\s*$/.test(repaired)) {
-        repaired += ' null';
-    }
+  const scriptLike = /(js|ts|tsx|jsx|json)$/.test(ext || '');
+  if (!scriptLike) return repaired;
+
+  // Conservative mode: do not mutate complete files unless partial truncation is known.
+  if (!isKnownPartial && !looksTruncated(repaired)) {
+    return repaired;
   }
 
-  // 2. Close open braces/parens/brackets (skip those in comments/strings for accuracy)
+  if (!allowAggressiveFixes && !isKnownPartial) {
+    return repaired;
+  }
+
+  // Truncation-aware fallback repair for known partial files.
+  if (/[\{\,\[]\s*[a-zA-Z_$][a-zA-Z0-9_]*$/.test(repaired)) {
+    repaired += ': null';
+  } else if (/:\s*$/.test(repaired)) {
+    repaired += ' null';
+  } else if (/[,\[]\s*$/.test(repaired)) {
+    repaired += ' null';
+  }
+
   const openBraces = (repaired.match(/\{/g) || []).length;
   const closeBraces = (repaired.match(/\}/g) || []).length;
   const openParens = (repaired.match(/\(/g) || []).length;
   const closeParens = (repaired.match(/\)/g) || []).length;
   const openBrackets = (repaired.match(/\[/g) || []).length;
   const closeBrackets = (repaired.match(/\]/g) || []).length;
-  
-  // Close unclosed quotes (simple heuristic)
+
   const doubleQuotes = (repaired.match(/"/g) || []).length;
   const singleQuotes = (repaired.match(/'/g) || []).length;
   const backticks = (repaired.match(/`/g) || []).length;
@@ -132,11 +154,6 @@ export const repairTruncatedContent = (content: string, path: string): string =>
   for (let i = 0; i < openParens - closeParens; i++) repaired += ')';
   for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
   for (let i = 0; i < openBraces - closeBraces; i++) repaired += '\n}';
-
-  // 3. Add a safety comment to indicate repair (helps with debugging)
-  if (/(js|ts|tsx|jsx)$/.test(ext || '')) {
-    repaired += '\n// [AUTO-REPAIRED] Truncated content auto-fixed for syntax validity';
-  }
 
   return repaired;
 };

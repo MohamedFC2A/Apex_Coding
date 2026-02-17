@@ -56,6 +56,19 @@ export const buildFrontendPlanningPolicyBlock = (): string =>
     '- Each step must be atomic and independently verifiable in the live preview.'
   ].join('\n');
 
+export const buildFrontendProfessionalBaselineBlock = (): string =>
+  [
+    '[FRONTEND PROFESSIONAL BASELINE]',
+    '- Default output for static frontend must be exactly: index.html, style.css, script.js.',
+    '- Keep naming stable and predictable: index.html + style.css + script.js for vanilla projects.',
+    '- Mandatory section map: Header/Nav, Hero, Features/Content, CTA/Form, Footer.',
+    '- JavaScript architecture: IIFE or module-safe bootstrapping + DOM ready initialization + guarded selectors.',
+    '- Event binding must be runtime-safe (check element existence before addEventListener).',
+    '- Avoid alert() as the default UX pattern; prefer inline status or accessible messages unless explicitly requested.',
+    '- Never glue comments with executable code on the same line in a way that can break syntax.',
+    '- Deliver complete, runnable behavior in first pass; no TODO placeholders.'
+  ].join('\n');
+
 export const buildAntiDuplicationPolicyBlock = (): string =>
   [
     '[ANTI-DUPLICATION POLICY]',
@@ -64,6 +77,8 @@ export const buildAntiDuplicationPolicyBlock = (): string =>
     '- Never split CSS into multiple files unless explicitly using CSS modules or framework convention.',
     '- Never create a new file if an existing file already serves the same purpose.',
     '- ONE CSS file, ONE JS file, ONE HTML entry point for simple static sites.',
+    '- If style.css exists, do not create main.css/styles.css duplicates.',
+    '- If script.js exists, do not create app.js/main.js duplicates for the same static project.',
     '- If editing an existing project, preserve the existing file structure — do not reorganize.'
   ].join('\n');
 
@@ -93,6 +108,7 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
   const isFrontendOnly = constraints.projectMode === 'FRONTEND_ONLY';
   const frontendPolicyBlock = isFrontendOnly ? buildFrontendDeliveryPolicyBlock() : null;
   const frontendPlanningBlock = isFrontendOnly ? buildFrontendPlanningPolicyBlock() : null;
+  const frontendProfessionalBaselineBlock = isFrontendOnly ? buildFrontendProfessionalBaselineBlock() : null;
   const antiDuplicationBlock = buildAntiDuplicationPolicyBlock();
 
   return [
@@ -111,6 +127,7 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
     organizationBlock,
     '',
     antiDuplicationBlock,
+    ...(frontendProfessionalBaselineBlock ? ['', frontendProfessionalBaselineBlock] : []),
     ...(frontendPolicyBlock ? ['', frontendPolicyBlock] : []),
     ...(frontendPlanningBlock ? ['', frontendPlanningBlock] : [])
   ].join('\n');

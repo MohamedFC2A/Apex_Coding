@@ -854,7 +854,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             projectMode: (projectType || 'FRONTEND_ONLY') as 'FRONTEND_ONLY' | 'FULL_STACK',
             selectedFeatures: get().selectedFeatures,
             customFeatureTags: get().customFeatureTags,
-            enforcement: 'hard' as const
+            enforcement: 'hard' as const,
+            qualityGateMode: 'strict' as const
           };
           const data = await aiService.generatePlan(prompt, thinkingMode, abortSignal, projectType, constraints);
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
@@ -1095,7 +1096,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
              };
              
              const currentContent = findContent(files, targetPath);
-             const repaired = repairTruncatedContent(currentContent, targetPath);
+             const repaired = repairTruncatedContent(currentContent, targetPath, {
+                isKnownPartial: true,
+                allowAggressiveFixes: true
+             });
              
              if (repaired !== currentContent) {
                 get().upsertFileNode(targetPath, repaired);

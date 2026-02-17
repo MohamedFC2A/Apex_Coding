@@ -1315,7 +1315,11 @@ function App() {
       useAIStore.getState().restoreSession(targetSessionId);
     };
 
-    void bootstrapHistory();
+    void bootstrapHistory().finally(() => {
+      if (!cancelled) {
+        setBootstrapReady(true);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -1332,6 +1336,7 @@ function App() {
     constraintsEnforcement: storedConstraintsEnforcement,
     stack,
     description,
+    isHydrating: isProjectHydrating,
     reset: resetProject,
     setFiles,
     setFileStructure,
@@ -1359,6 +1364,7 @@ function App() {
   const [planOpen, setPlanOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [constraintsPanelOpen, setConstraintsPanelOpen] = useState(false);
+  const [bootstrapReady, setBootstrapReady] = useState(false);
   const [completionSuggestion, setCompletionSuggestion] = useState<CompletionSuggestion | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [chatAutoFollow, setChatAutoFollow] = useState(true);
@@ -1780,10 +1786,11 @@ function App() {
   ]);
 
   useEffect(() => {
+    if (!bootstrapReady || isProjectHydrating) return;
     if (files.length > 0) return;
     if (interactionMode !== 'edit') return;
     setInteractionMode('create');
-  }, [files.length, interactionMode, setInteractionMode]);
+  }, [bootstrapReady, files.length, interactionMode, isProjectHydrating, setInteractionMode]);
 
   const flushFileBuffers = useCallback((options?: { onlyPath?: string; force?: boolean }) => {
     if (fileChunkBuffersRef.current.size === 0) return;
@@ -3107,6 +3114,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
   }, [planSteps.length]);
 
   useEffect(() => {
+    if (!bootstrapReady || isProjectHydrating) return;
     if (autoResumeTriggeredRef.current) return;
     if (isGenerating || isPlanning) return;
 
@@ -3125,9 +3133,17 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     }
 
     const aiSnapshot = useAIStore.getState();
+    const hasFiles = useProjectStore.getState().files.length > 0;
     const hasPartialFiles = Object.values(aiSnapshot.fileStatuses || {}).some((status) => status === 'partial' || status === 'compromised');
-    const hasPlanContext = aiSnapshot.planSteps.length > 0 || Boolean(aiSnapshot.lastPlannedPrompt);
-    const resumable = aiSnapshot.executionPhase === 'interrupted' || hasPartialFiles || hasPlanContext;
+    const isInterrupted = aiSnapshot.executionPhase === 'interrupted';
+    const isStillWriting = Boolean(aiSnapshot.writingFilePath);
+
+    if (aiSnapshot.executionPhase === 'completed' && hasFiles && !hasPartialFiles) {
+      clearAutoResumePayload();
+      return;
+    }
+
+    const resumable = isInterrupted || hasPartialFiles || isStillWriting;
     if (!resumable) return;
 
     autoResumeTriggeredRef.current = true;
@@ -3139,7 +3155,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
     logSystem('[STATUS] Auto-resume detected after refresh. Continuing generation…');
     void handleGenerate(payload.prompt, { resume: true, preserveProjectMeta: true });
-  }, [executionPhase, handleGenerate, isGenerating, isPlanning, logSystem]);
+  }, [bootstrapReady, executionPhase, handleGenerate, isGenerating, isPlanning, isProjectHydrating, logSystem]);
 
   useEffect(() => {
     if (!isPreviewOpen) return;

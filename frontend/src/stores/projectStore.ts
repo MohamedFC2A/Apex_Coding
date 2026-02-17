@@ -510,7 +510,7 @@ if (typeof window !== 'undefined') {
       backupTimer = window.setTimeout(() => {
         backupTimer = null;
         writeLegacyAutosaveBackup();
-      }, 400);
+      }, 150);
     };
 
     const prevSigs = new Map<string, string>();
@@ -572,5 +572,25 @@ if (typeof window !== 'undefined') {
         await flushNow();
       }
     };
+
+    if (!w.__APEX_WORKSPACE_PERSIST_EVENTS_BOUND__) {
+      const flushWorkspaceOnExit = () => {
+        try {
+          // Intentionally fire-and-forget.
+          void w.__APEX_WORKSPACE_PERSIST__?.flush?.();
+        } catch {
+          // ignore
+        }
+      };
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+          flushWorkspaceOnExit();
+        }
+      });
+      window.addEventListener('pagehide', flushWorkspaceOnExit);
+      window.addEventListener('beforeunload', flushWorkspaceOnExit);
+      w.__APEX_WORKSPACE_PERSIST_EVENTS_BOUND__ = true;
+    }
   }
 }

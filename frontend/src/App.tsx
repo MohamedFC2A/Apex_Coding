@@ -1288,11 +1288,38 @@ function App() {
   }, [recoverSession]);
 
   useEffect(() => {
-    void useProjectStore.getState().hydrateFromDisk();
-  }, []);
+    let cancelled = false;
 
-  useEffect(() => {
-    void useAIStore.getState().hydrateHistoryFromDisk();
+    const bootstrapHistory = async () => {
+      await useProjectStore.getState().hydrateFromDisk();
+      if (cancelled) return;
+
+      const ai = useAIStore.getState();
+      await ai.hydrateHistoryFromDisk();
+      if (cancelled) return;
+
+      const latestAI = useAIStore.getState();
+      const hasLiveContext =
+        latestAI.chatHistory.length > 0 ||
+        latestAI.planSteps.length > 0 ||
+        useProjectStore.getState().files.length > 0;
+      if (hasLiveContext) return;
+
+      const targetSessionId =
+        (latestAI.currentSessionId &&
+        latestAI.history.some((session) => session.id === latestAI.currentSessionId)
+          ? latestAI.currentSessionId
+          : latestAI.history[0]?.id) || null;
+
+      if (!targetSessionId) return;
+      useAIStore.getState().restoreSession(targetSessionId);
+    };
+
+    void bootstrapHistory();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const {

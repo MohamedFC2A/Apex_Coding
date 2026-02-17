@@ -1,6 +1,6 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { FileSystem, GenerationStatus, ProjectFile } from '@/types';
+import { FileStructure, FileSystem, GenerationStatus, ProjectFile } from '@/types';
 import { useProjectStore } from '@/stores/projectStore';
 import { aiService } from '@/services/aiService';
 import { repairTruncatedContent } from '@/utils/codeRepair';
@@ -68,6 +68,7 @@ export interface HistorySession {
   customFeatureTags: string[];
   constraintsEnforcement: 'hard';
   files: FileSystem;
+  fileStructure?: FileStructure[];
   projectFiles?: ProjectFile[];
   stack?: string;
   description?: string;
@@ -280,6 +281,7 @@ const COMPRESSION_THRESHOLD_CHARS = 100_000;
 const KEEP_RECENT_MESSAGES = 8;
 const SUMMARY_CHUNK_SIZE = 5;
 const MAX_HISTORY_SESSIONS = 40;
+const AI_EMERGENCY_SESSION_KEY = 'apex-ai-emergency-session';
 
 // Keep long-running sessions responsive: cap large UI strings.
 const MAX_THINKING_CHARS = 120_000;
@@ -300,6 +302,44 @@ const DEFAULT_COMPRESSION_SNAPSHOT: CompressionSnapshot = {
   compressedMessagesCount: 0,
   summaryBlocks: [],
   lastCompressedAt: 0
+};
+
+const readEmergencySession = (): Partial<HistorySession> | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(AI_EMERGENCY_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const id = String(parsed?.id || '').trim();
+    if (!id) return null;
+    return {
+      id,
+      createdAt: Number(parsed?.createdAt || Date.now()),
+      updatedAt: Number(parsed?.updatedAt || Date.now()),
+      title: String(parsed?.title || 'Recovered Session'),
+      projectName: String(parsed?.projectName || ''),
+      projectType: (parsed?.projectType === 'FULL_STACK' ? 'FULL_STACK' : 'FRONTEND_ONLY') as ProjectType,
+      selectedFeatures: Array.isArray(parsed?.selectedFeatures) ? parsed.selectedFeatures : [],
+      customFeatureTags: Array.isArray(parsed?.customFeatureTags) ? parsed.customFeatureTags : [],
+      constraintsEnforcement: 'hard',
+      stack: String(parsed?.stack || ''),
+      description: String(parsed?.description || ''),
+      activeFile: parsed?.activeFile ? String(parsed.activeFile) : null,
+      chatHistory: Array.isArray(parsed?.chatHistory)
+        ? parsed.chatHistory.map((m: any) => ({
+            role: m?.role === 'assistant' || m?.role === 'system' ? m.role : 'user',
+            content: String(m?.content || '')
+          }))
+        : [],
+      plan: String(parsed?.plan || ''),
+      planSteps: Array.isArray(parsed?.planSteps) ? parsed.planSteps : [],
+      contextBudget: parsed?.contextBudget || DEFAULT_CONTEXT_BUDGET,
+      compressionSnapshot: parsed?.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
+      activeModelProfile: parsed?.activeModelProfile || getActiveModelProfile()
+    };
+  } catch {
+    return null;
+  }
 };
 
 const normalizeModelMode = (mode: ModelMode): ModelMode => {
@@ -1294,6 +1334,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         const contextSize = contextBudget.usedChars;
         const compressed = compressChatHistoryHierarchical(state.chatHistory, state.compressionSnapshot);
         const activeModelProfile = getActiveModelProfile();
+        const fullChatHistory = state.chatHistory.map((message) => ({ ...message }));
         
         const existingSession = state.history.find(s => s.id === sessionId);
         const createdAt = existingSession?.createdAt || Date.now();
@@ -1309,11 +1350,12 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           customFeatureTags: [...state.customFeatureTags],
           constraintsEnforcement: state.constraintsEnforcement,
           files: cloneFileSystem(snapshotFiles),
+          fileStructure: fileStructure.map((entry) => ({ ...entry })),
           projectFiles: shouldSnapshotFileContents ? projectFiles.map((f) => ({ ...f })) : undefined,
           stack,
           description,
           activeFile,
-          chatHistory: compressed.chatHistory,
+          chatHistory: fullChatHistory,
           plan: state.plan,
           planSteps: state.planSteps.map((step) => ({ ...step })),
           contextSize,
@@ -1374,7 +1416,31 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             compressionSnapshot: snapshot.compressionSnapshot,
             activeModelProfile: snapshot.activeModelProfile
           };
-          setTimeout(() => void saveSessionToDisk(stored).catch(() => undefined), 0);
+          void saveSessionToDisk(stored).catch(() => undefined);
+
+          if (typeof window !== 'undefined') {
+            const emergencyPayload = {
+              id: snapshot.id,
+              createdAt: snapshot.createdAt,
+              updatedAt: snapshot.updatedAt,
+              title: snapshot.title,
+              projectName: snapshot.projectName,
+              projectType: snapshot.projectType,
+              selectedFeatures: snapshot.selectedFeatures,
+              customFeatureTags: snapshot.customFeatureTags,
+              constraintsEnforcement: snapshot.constraintsEnforcement,
+              stack: snapshot.stack,
+              description: snapshot.description,
+              activeFile: snapshot.activeFile,
+              chatHistory: snapshot.chatHistory,
+              plan: snapshot.plan,
+              planSteps: snapshot.planSteps,
+              contextBudget: snapshot.contextBudget,
+              compressionSnapshot: snapshot.compressionSnapshot,
+              activeModelProfile: snapshot.activeModelProfile
+            };
+            window.localStorage.setItem(AI_EMERGENCY_SESSION_KEY, JSON.stringify(emergencyPayload));
+          }
         } catch {
           // ignore persistence errors
         }
@@ -1389,7 +1455,41 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         if (typeof window === 'undefined') return;
         try {
           const stored = await loadSessionsFromDisk(MAX_HISTORY_SESSIONS).catch(() => []);
-          if (!Array.isArray(stored) || stored.length === 0) return;
+          if (!Array.isArray(stored) || stored.length === 0) {
+            const emergency = readEmergencySession();
+            if (!emergency?.id) return;
+            const projectStore = useProjectStore.getState();
+            const emergencyProjectFiles = Array.isArray(projectStore.files) ? projectStore.files : [];
+            const recovered: HistorySession = {
+              id: emergency.id,
+              createdAt: Number(emergency.createdAt || Date.now()),
+              updatedAt: Number(emergency.updatedAt || Date.now()),
+              title: String(emergency.title || 'Recovered Session'),
+              projectName: String(emergency.projectName || ''),
+              projectType: (emergency.projectType || 'FRONTEND_ONLY') as ProjectType,
+              selectedFeatures: Array.isArray(emergency.selectedFeatures) ? emergency.selectedFeatures : [],
+              customFeatureTags: Array.isArray(emergency.customFeatureTags) ? emergency.customFeatureTags : [],
+              constraintsEnforcement: 'hard',
+              files: buildTreeFromProjectFiles(emergencyProjectFiles),
+              fileStructure: projectStore.fileStructure || [],
+              projectFiles: emergencyProjectFiles,
+              stack: String(emergency.stack || ''),
+              description: String(emergency.description || ''),
+              activeFile: emergency.activeFile || null,
+              chatHistory: Array.isArray(emergency.chatHistory) ? emergency.chatHistory.map((msg) => ({ ...msg })) : [],
+              plan: String(emergency.plan || ''),
+              planSteps: Array.isArray(emergency.planSteps) ? emergency.planSteps.map((step: any) => ({ ...step })) : [],
+              contextSize: Number(emergency.contextBudget?.usedChars || 0),
+              contextBudget: emergency.contextBudget || DEFAULT_CONTEXT_BUDGET,
+              compressionSnapshot: emergency.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
+              activeModelProfile: emergency.activeModelProfile || getActiveModelProfile()
+            };
+            set((prev) => ({
+              history: [recovered, ...prev.history].slice(0, MAX_HISTORY_SESSIONS),
+              currentSessionId: prev.currentSessionId || recovered.id
+            }));
+            return;
+          }
 
           const sessions: HistorySession[] = stored.map((s) => ({
             id: s.id,
@@ -1404,6 +1504,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             stack: s.stack,
             description: s.description,
             activeFile: s.activeFile,
+            fileStructure: Array.isArray(s.fileStructure) ? s.fileStructure : [],
             projectFiles: Array.isArray(s.projectFiles) ? s.projectFiles : [],
             files: buildTreeFromProjectFiles(Array.isArray(s.projectFiles) ? s.projectFiles : []),
             chatHistory: Array.isArray(s.chatHistory) ? s.chatHistory.map((m) => ({ role: m.role as any, content: m.content })) : [],
@@ -1429,7 +1530,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
           set((prev) => ({
             history: sessions.slice(0, MAX_HISTORY_SESSIONS),
-            currentSessionId: prev.currentSessionId
+            currentSessionId: prev.currentSessionId || sessions[0]?.id || null
           }));
         } catch {
           // ignore
@@ -1455,10 +1556,12 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         if (typeof session.description === 'string') projectStore.setDescription(session.description);
         projectStore.setFiles(projectFiles);
         projectStore.setFileStructure(
-          projectFiles.map((file) => ({
-            path: file.path || file.name,
-            type: 'file' as const
-          }))
+          Array.isArray(session.fileStructure) && session.fileStructure.length > 0
+            ? session.fileStructure
+            : projectFiles.map((file) => ({
+                path: file.path || file.name,
+                type: 'file' as const
+              }))
         );
 
         const nextActive = session.activeFile || projectFiles[0]?.path || projectFiles[0]?.name || null;
@@ -1535,6 +1638,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
          void useProjectStore.getState().clearDisk();
          try {
            void (window as any).__APEX_WORKSPACE_PERSIST__?.flush?.();
+           window.localStorage.removeItem(AI_EMERGENCY_SESSION_KEY);
          } catch {
            // ignore
          }

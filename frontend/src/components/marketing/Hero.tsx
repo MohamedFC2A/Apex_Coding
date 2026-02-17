@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/context/LanguageContext';
-import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { Sparkles, ArrowRight, Zap, Play } from 'lucide-react';
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 14, filter: 'blur(8px)' },
+  hidden: { opacity: 0, y: 30, filter: 'blur(10px)' },
   show: { opacity: 1, y: 0, filter: 'blur(0px)' }
 };
 
@@ -14,23 +14,22 @@ function TypingSearch({ onClick }: { onClick: () => void }) {
   const [text, setText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [loopNum, setLoopNum] = useState(0);
-  const [typingSpeed, setTypingSpeed] = useState(150);
+  const [typingSpeed, setTypingSpeed] = useState(100);
   
-  const phrases = [
-    t('search.phrase1'),
-    t('search.phrase2'),
-    t('search.phrase3'),
-    t('search.phrase4'),
-    t('search.phrase5')
-  ];
-
   useEffect(() => {
+    const phrases = [
+      t('search.phrase1') || "Create a full-stack dashboard...",
+      t('search.phrase2') || "Build a crypto trading bot...",
+      t('search.phrase3') || "Design a 3D portfolio...",
+      t('search.phrase4') || "Develop an AI chat interface..."
+    ];
+
     const handleTyping = () => {
       const i = loopNum % phrases.length;
       const fullText = phrases[i];
 
       setText(fullText.substring(0, text.length + (isDeleting ? -1 : 1)));
-      setTypingSpeed(isDeleting ? 50 : 150);
+      setTypingSpeed(isDeleting ? 40 : 100);
 
       if (!isDeleting && text === fullText) {
         setTypingSpeed(2000);
@@ -44,35 +43,32 @@ function TypingSearch({ onClick }: { onClick: () => void }) {
 
     const timer = setTimeout(handleTyping, typingSpeed);
     return () => clearTimeout(timer);
-  }, [text, isDeleting, loopNum, typingSpeed, phrases]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onClick();
-    }
-  };
+  }, [text, isDeleting, loopNum, typingSpeed, t]);
 
   return (
-    <div className="mt-6 max-w-2xl">
+    <div className="mt-8 max-w-2xl w-full mx-auto relative z-20">
+      <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 rounded-2xl opacity-75 blur-lg animate-pulse-slow"></div>
       <button
         type="button"
-        className="relative group w-full text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 rounded-2xl"
+        className="relative w-full text-start group"
         onClick={onClick}
-        onKeyDown={handleKeyDown}
         aria-label={t('hero.cta.start')}
       >
-        <div className="absolute inset-0 bg-white/5 blur-xl group-hover:blur-2xl transition-all duration-300" />
-        <div className="relative rounded-2xl border border-white/10 bg-black shadow-[0_8px_32px_rgba(0,0,0,0.8)] hover:border-white/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-          <div className="flex items-center gap-3 px-5 py-4 relative z-10">
-            <svg className="h-5 w-5 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <span className="flex-1 bg-transparent text-white/90 outline-none font-medium">
+        <div className="relative rounded-xl border border-white/10 bg-black/90 backdrop-blur-xl shadow-2xl overflow-hidden p-1">
+          <div className="flex items-center gap-4 px-6 py-5">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-white/5">
+              <Sparkles className="w-5 h-5 text-blue-400" />
+            </div>
+            
+            <span className="flex-1 text-lg md:text-xl font-medium text-white/90 font-mono tracking-tight">
               {text}
+              <span className="inline-block w-[2px] h-6 ml-1 align-middle bg-blue-400 animate-pulse"/>
             </span>
-            <span className="h-4 w-0.5 bg-white/40 animate-pulse" />
+            
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 text-xs text-white/40 font-mono">
+              <span>Generic AI</span>
+              <ArrowRight className="w-3 h-3" />
+            </div>
           </div>
         </div>
       </button>
@@ -81,97 +77,119 @@ function TypingSearch({ onClick }: { onClick: () => void }) {
 }
 
 export function Hero() {
-  const { t, isRTL } = useLanguage();
+  const { t } = useLanguage();
 
-  // Navigate to IDE when search bar is clicked
   const handleStart = () => {
     window.location.href = '/app';
   };
 
   return (
-    <div className="page-container flex min-h-[calc(100vh-56px)] flex-col justify-center pt-14 pb-12 md:pt-20 relative overflow-hidden">
-      {/* Background gradients */}
-      <div className="absolute top-0 left-1/4 w-[50%] h-[50%] bg-white/5 rounded-full blur-[120px] pointer-events-none" />
-      
-      <div
-        className={`flex flex-col gap-4 sm:items-center sm:justify-between relative z-10 ${isRTL ? 'sm:flex-row-reverse' : 'sm:flex-row'}`}
-      >
-        <a href="/" className="inline-flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl border border-white/20 bg-black shadow-lg">
-            <span className="h-5 w-5 rounded-full bg-gradient-to-br from-white via-gray-400 to-white shadow-[0_0_10px_rgba(255,255,255,0.3)]" />
-          </span>
-          <span className="text-sm font-bold tracking-widest text-white uppercase">{t('brand.name')}</span>
-        </a>
-        <div className={`flex flex-wrap items-center gap-3 ${isRTL ? 'sm:flex-row-reverse' : ''}`}>
-          <LanguageSwitcher />
-          <div className="badge border-white/20 bg-white/5">
-            <span className="h-2 w-2 rounded-full bg-white shadow-[0_0_5px_white]" />
-            <span className="text-white/80">{t('hero.badge')}</span>
-          </div>
-        </div>
+    <div className="relative min-h-[90vh] flex flex-col justify-center overflow-hidden">
+      {/* Dynamic Background */}
+      <div className="absolute inset-0 bg-[#000000]">
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 rounded-full blur-[150px] animate-float" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-purple-600/20 rounded-full blur-[150px] animate-float" style={{ animationDelay: '2s' }} />
+        <div className="absolute top-[40%] left-[50%] transform -translate-x-1/2 -translate-y-1/2 w-[80%] h-[80%] bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.05)_0%,transparent_70%)]" />
+        
+        {/* Grid overlay */}
+        <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-[0.03] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
       </div>
 
-      <motion.div
-        variants={fadeUp}
-        initial="hidden"
-        animate="show"
-        transition={{ duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
-        className="mt-10 relative z-10"
-      >
-        <h1 className="text-balance text-4xl font-bold tracking-tighter md:text-7xl">
-          <span className="silver-text">
-            {t('hero.title').split(' ').slice(0, -2).join(' ')}{' '}
-          </span>
-          <span className="gold-text">
-            {t('hero.title').split(' ').slice(-2).join(' ')}
-          </span>
-        </h1>
-        <h2 className="sr-only">Graph-Based AI IDE</h2>
-        <p className="mt-6 max-w-2xl text-pretty text-base leading-relaxed text-white/60 md:text-xl font-light">
-          {t('hero.subtitle')}
-        </p>
-        <TypingSearch onClick={handleStart} />
-        <p className="mt-4 text-[10px] text-white/40 max-w-2xl uppercase tracking-[0.2em]">
-          {t('ui.search.placeholder')}
-        </p>
-      </motion.div>
+      <div className="page-container relative z-10 pt-20 pb-12">
+        <div className="flex flex-col items-center text-center">
+          
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mb-8"
+          >
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-md shadow-lg shadow-blue-500/10 hover:border-blue-500/30 transition-colors">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              <span className="text-sm font-medium text-blue-200 tracking-wide">
+                {t('hero.badge') || "Next-Gen AI Code Editor"}
+              </span>
+            </div>
+          </motion.div>
 
-      <motion.div
-        variants={fadeUp}
-        initial="hidden"
-        animate="show"
-        transition={{ delay: 0.1, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
-        className="mt-10 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center relative z-10"
-      >
-        <a href="/app" className="btn-gold px-10 py-4 text-base">
-          {t('hero.cta.start')}
-        </a>
-        <a href="/pricing" className="btn-silver px-8 py-4 text-base">
-          {t('ui.viewPricing')}
-        </a>
-        <Link href="/demo" className="btn-outline px-8 py-4 border-white/10 hover:border-white/40 text-white/80">
-          {t('hero.cta.demo')}
-        </Link>
-      </motion.div>
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            animate="show"
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            className="max-w-5xl mx-auto"
+          >
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-6 leading-[1.1]">
+              <span className="block text-transparent bg-clip-text bg-gradient-to-b from-white to-white/60 pb-2">
+                Build the Future
+              </span>
+              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-blue-400 animate-shimmer bg-[size:200%_auto]">
+                With Apex Logic
+              </span>
+            </h1>
+            
+            <p className="mt-8 max-w-2xl mx-auto text-lg md:text-xl text-white/50 leading-relaxed font-light">
+              {t('hero.subtitle') || "Experience a graphing-based IDE that thinks like you do. Generative AI, real-time collaboration, and instant deployment."}
+            </p>
+          </motion.div>
 
-      <motion.div
-        variants={fadeUp}
-        initial="hidden"
-        animate="show"
-        transition={{ delay: 0.2, duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}
-        className="mt-16 relative z-10"
-      >
-        <div className="inline-flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-black/50 px-5 py-3 text-[10px] font-bold text-white/40 backdrop-blur-md uppercase tracking-widest">
-          <span className="text-white/20">{t('hero.powered')}</span>
-          <span className="px-3 py-1 border border-white/10 rounded-lg">
-            DeepSeek
-          </span>
-          <span className="px-3 py-1 border border-white/10 rounded-lg">
-            Convex
-          </span>
-          <span className="text-white/20">{t('ui.techStack')}</span>
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            animate="show"
+            transition={{ delay: 0.2, duration: 0.7 }}
+            className="w-full"
+          >
+            <TypingSearch onClick={handleStart} />
+          </motion.div>
+
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            animate="show"
+            transition={{ delay: 0.3, duration: 0.7 }}
+            className="mt-12 flex flex-wrap justify-center gap-4"
+          >
+            <button
+              onClick={handleStart}
+              className="group relative px-8 py-4 bg-white text-black font-bold rounded-xl hover:scale-105 transition-transform duration-200 overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-purple-400/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 fill-current" />
+                <span>{t('hero.cta.start') || "Start Coding Free"}</span>
+              </div>
+            </button>
+            
+            <Link
+              href="/demo"
+              className="px-8 py-4 rounded-xl border border-white/10 bg-white/5 text-white font-medium hover:bg-white/10 hover:border-white/20 transition-all flex items-center gap-2 backdrop-blur-sm"
+            >
+              <Play className="w-4 h-4 ml-1" />
+              <span>{t('hero.cta.demo') || "Watch Demo"}</span>
+            </Link>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8, duration: 1 }}
+            className="mt-20 pt-10 border-t border-white/5"
+          >
+            <p className="text-sm text-white/30 uppercase tracking-widest mb-6">Trusted Technology Stack</p>
+            <div className="flex flex-wrap justify-center gap-8 md:gap-16 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+              {/* Simple text placeholders for logos to keep it clean, could be SVGs */}
+              <span className="text-xl font-bold text-white flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full"/> Next.js</span>
+              <span className="text-xl font-bold text-white flex items-center gap-2"><div className="w-2 h-2 bg-cyan-500 rounded-full"/> React</span>
+              <span className="text-xl font-bold text-white flex items-center gap-2"><div className="w-2 h-2 bg-purple-500 rounded-full"/> Tailwind</span>
+              <span className="text-xl font-bold text-white flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full"/> Node.js</span>
+            </div>
+          </motion.div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,9 @@ import { apiUrl, getApiBaseUrl } from '@/services/apiBase';
 import { useSubscriptionStore } from '@/stores/subscriptionStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAIStore } from '@/stores/aiStore';
+import { usePreviewStore } from '@/stores/previewStore';
+import type { GenerationConstraints } from '@/types/constraints';
+import { buildAIOrganizationPolicyBlock, mergePromptWithConstraints } from '@/services/constraintPromptBuilder';
 
 interface AIResponse {
   plan: string;
@@ -12,6 +15,40 @@ interface AIResponse {
   stack: string;
   description: string;
 }
+
+const buildModelRoutingPayload = (thinkingMode: boolean) => {
+  return {
+    plannerProvider: 'deepseek',
+    plannerModel: 'deepseek-chat',
+    executorProvider: 'deepseek',
+    executorModel: thinkingMode ? 'deepseek-reasoner' : 'deepseek-chat',
+    fallbackPolicy: 'planner->executor->default'
+  };
+};
+
+const buildContextMetaPayload = () => {
+  const ai = useAIStore.getState();
+  return {
+    budget: ai.contextBudget,
+    compressionSummary: ai.compressionSnapshot,
+    sessionId: ai.currentSessionId
+  };
+};
+
+const summarizeTopFolders = (paths: string[]) => {
+  const buckets = new Map<string, number>();
+  for (const path of paths) {
+    const normalized = String(path || '').replace(/\\/g, '/').trim();
+    if (!normalized) continue;
+    const root = normalized.split('/')[0] || normalized;
+    buckets.set(root, (buckets.get(root) || 0) + 1);
+  }
+  return Array.from(buckets.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([name, count]) => `${name}(${count})`)
+    .join(', ');
+};
 
 const getErrorMessage = (err: any, fallback: string) => {
   return (
@@ -25,16 +62,14 @@ export const aiService = {
   async generatePlan(
     prompt: string,
     thinkingMode: boolean = false,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    projectType?: 'FULL_STACK' | 'FRONTEND_ONLY' | null,
+    constraints?: GenerationConstraints
   ): Promise<{ title?: string; description?: string; stack?: string; fileTree?: string[]; steps: Array<{ id: string; title: string; category?: string; files?: string[]; description?: string }> }> {
-    const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
-    
-    if (!canMakeRequest()) {
-      throw new Error(`Daily limit reached. You have 0 requests remaining on the ${tier} plan. Upgrade to PRO for more requests.`);
-    }
-    
     try {
       const PLAN_URL = apiUrl('/ai/plan');
+      const isAbortLike = (err: any) =>
+        err?.abortedByUser || err?.message === 'ABORTED_BY_USER' || err?.name === 'AbortError';
 
         const postOnce = async () => {
           const controller = new AbortController();
@@ -58,8 +93,8 @@ export const aiService = {
               abortSignal.addEventListener('abort', externalAbortListener, { once: true });
             }
           }
-          
-          const planningRules = `
+
+          let planningRules = `
  [SYSTEM PERSONA]
  You are Apex Coding V2.1 EXECUTION ENGINE.
 Your goal is 100% Execution Completeness.
@@ -69,17 +104,79 @@ STRICT PLANNING RULES:
 2. Execute exactly ONE task at a time.
 3. NO skipping tasks.
 4. Each task must be a single logical step.
-5. Ensure the plan covers the entire user request.
-`.trim();
+5. Ensure the plan covers the entire user request.`.trim();
 
-        const enhancedPlanPrompt = `${planningRules}\n\n[USER REQUEST]\n${prompt}`;
+          const selectedProjectType = constraints?.projectMode || projectType;
+          const normalizedProjectType = (selectedProjectType === 'FULL_STACK' ? 'FULL_STACK' : 'FRONTEND_ONLY') as GenerationConstraints['projectMode'];
+          const organizationPolicyBlock = buildAIOrganizationPolicyBlock(normalizedProjectType);
+          const enhancedRequestPrompt = constraints
+            ? mergePromptWithConstraints(prompt, constraints)
+            : prompt;
+
+          // Add projectType-specific guidelines
+          if (selectedProjectType === 'FRONTEND_ONLY') {
+            planningRules += `
+
+[PROJECT TYPE: FRONTEND ONLY]
+STRUCTURE:
+- Generate static or client-side only applications (HTML/CSS/JavaScript).
+- NO backend APIs, databases, server-side code, or authentication.
+- Prefer flat file structure: index.html, style.css, script.js.
+- ONE CSS file for all styles. ONE JS file for all logic. ONE HTML entry point.
+- Do NOT create package.json or build configs unless explicitly requested.
+
+COMPONENT DECOMPOSITION:
+- Break the UI into named sections: Header/Nav, Hero, Content Sections, Footer.
+- Each plan step must name which UI sections it builds.
+- Steps must be ordered: scaffold → structure → components → behavior → polish.
+
+FILE DEDUPLICATION:
+- NEVER create two files that serve the same purpose (e.g., styles.css AND main.css).
+- If a file already exists at a path, edit it instead of creating a new one.
+- Check for existing files before creating new ones.
+
+RESPONSIVE & ACCESSIBILITY:
+- Plan mobile-first: base styles for mobile, scale up via media queries.
+- Include responsive breakpoints: mobile ≤480px, tablet ≤768px, desktop ≥1024px.
+- Use semantic HTML5 elements (header, main, nav, section, footer).
+- Include ARIA labels for interactive elements and ensure contrast ratios.
+
+INTERACTIVITY:
+- Specify which JavaScript behaviors each step produces.
+- Plan mobile hamburger menu if nav exists.
+- Plan form validation if forms exist.
+- Plan smooth scroll navigation if multiple sections exist.
+
+QUALITY:
+- Each step must be atomic, testable, and independently verifiable in live preview.
+- Optimize for instant preview — all files must be valid, linkable HTML/CSS/JS.`;
+          } else if (selectedProjectType === 'FULL_STACK') {
+            planningRules += `
+
+[PROJECT TYPE: FULL STACK]
+- Create both frontend and backend components
+- Include API endpoints and database integration
+- Plan database schema design
+- Implement proper authentication if needed
+- Separate frontend and backend tasks logically
+- Include API documentation or integration steps`;
+          }
+
+        const enhancedPlanPrompt = `${planningRules}\n\n${organizationPolicyBlock}\n\n[USER REQUEST]\n${enhancedRequestPrompt}`;
 
           try {
             return await fetch(PLAN_URL, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               signal: controller.signal,
-              body: JSON.stringify({ prompt: enhancedPlanPrompt, thinkingMode })
+              body: JSON.stringify({
+                prompt: enhancedPlanPrompt,
+                thinkingMode,
+                projectType: selectedProjectType,
+                constraints,
+                contextMeta: buildContextMetaPayload(),
+                modelRouting: buildModelRoutingPayload(thinkingMode)
+              })
             });
           } catch (e: any) {
             if (abortedByUser) {
@@ -100,6 +197,7 @@ STRICT PLANNING RULES:
         };
 
       let response: Response | null = null;
+      let lastError: any = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           response = await postOnce();
@@ -110,7 +208,18 @@ STRICT PLANNING RULES:
           }
           break;
         } catch (e: any) {
-          if (attempt >= 2) throw new Error('Plan generation timeout - please try again');
+          if (isAbortLike(e)) throw e;
+          lastError = e;
+          if (attempt >= 2) {
+            const message = String(lastError?.message || '').toLowerCase();
+            if (message.includes('failed to fetch') || message.includes('networkerror')) {
+              throw new Error(`Cannot reach backend (${getApiBaseUrl()}). Check if API server is running.`);
+            }
+            if (message.includes('timeout') || message.includes('abort')) {
+              throw new Error('Plan generation timeout - please try again');
+            }
+            throw new Error(getErrorMessage(lastError, 'Failed to generate plan'));
+          }
           await new Promise((r) => globalThis.setTimeout(r as any, 1000));
         }
       }
@@ -130,9 +239,7 @@ STRICT PLANNING RULES:
       const description = typeof data?.description === 'string' ? data.description : undefined;
       const stack = typeof data?.stack === 'string' ? data.stack : undefined;
       const fileTree = Array.isArray(data?.fileTree) ? data.fileTree : undefined;
-      
-      incrementRequests();
-      
+
       return { title, description, stack, fileTree, steps };
     } catch (error: any) {
       console.error('Plan Error Details:', error);
@@ -177,6 +284,7 @@ STRICT PLANNING RULES:
             lastSuccessfulFile: string | null;
             lastSuccessfulLine: number;
           };
+          constraints?: GenerationConstraints;
         } = false
   ): Promise<void> {
     const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
@@ -186,14 +294,13 @@ STRICT PLANNING RULES:
       return;
     }
     
-    incrementRequests();
-    
     try {
       const options = typeof thinkingModeOrOptions === 'boolean' ? { thinkingMode: thinkingModeOrOptions } : thinkingModeOrOptions;
       const thinkingMode = Boolean(options.thinkingMode);
       const architectMode = Boolean(options.architectMode);
       const includeReasoning = Boolean(options.includeReasoning);
       const abortSignal = (options as any).abortSignal as AbortSignal | undefined;
+      const constraints = options.constraints;
       const typingMsRaw = Number(options.typingMs ?? 26);
       const typingMs = Number.isFinite(typingMsRaw) ? typingMsRaw : 26;
       const resumeContext = options.resumeContext;
@@ -201,9 +308,29 @@ STRICT PLANNING RULES:
       // Inject Deep Context
       const projectState = useProjectStore.getState();
       const aiState = useAIStore.getState();
+      const previewState = usePreviewStore.getState();
       
+      const normalizedFiles = Array.from(
+        new Set(
+          projectState.files
+            .map((f: ProjectFile) => String(f.path || f.name || '').replace(/\\/g, '/').trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b));
+
+      const selectedProjectMode: GenerationConstraints['projectMode'] =
+        constraints?.projectMode ||
+        (projectState.projectType === 'FULL_STACK' ? 'FULL_STACK' : 'FRONTEND_ONLY');
+      const foldersDigest = summarizeTopFolders(normalizedFiles);
+      const recentPreviewErrors = previewState.logs
+        .slice(-20)
+        .map((line) => String(line.message || '').trim())
+        .filter(Boolean)
+        .slice(-8);
+
       const context = {
-        files: projectState.files.map((f: ProjectFile) => f.path || f.name),
+        files: normalizedFiles,
+        foldersDigest,
         stack: projectState.stack,
         projectDescription: projectState.description,
         currentPlan: aiState.planSteps.map((s: any) => ({
@@ -211,13 +338,18 @@ STRICT PLANNING RULES:
           completed: s.completed,
           category: s.category
         })),
-        activeFile: projectState.activeFile
+        activeFile: projectState.activeFile,
+        previewRuntimeStatus: previewState.runtimeStatus,
+        previewRuntimeMessage: previewState.runtimeMessage,
+        recentPreviewErrors
       };
 
       let completedFiles = new Set<string>();
       if (resumeContext?.completedFiles) {
         completedFiles = new Set<string>(resumeContext.completedFiles);
       }
+
+      const constrainedPrompt = constraints ? mergePromptWithConstraints(prompt, constraints) : prompt;
 
       const enhancedPrompt = `
 [SYSTEM PERSONA]
@@ -238,10 +370,12 @@ EXECUTION RULES:
    - If verification fails: Repair -> Re-execute.
 
 2. **WEB PROJECT REQUIREMENTS (PREVIEW RUNNER READY)**:
-   - **STRUCTURE**: Follow strict folder structure:
-     - \`backend/\` (Node.js API)
-     - \`frontend/\` (Vite + React + TS)
-     - Root config files (\`package.json\`, \`vite.config.ts\`, etc.)
+   - **STRUCTURE**:
+     - If prompt contains "[PROJECT MODE] Frontend-only", generate frontend files only (no backend folder).
+     - Otherwise use fullstack structure:
+       - \`backend/\` (Node.js API)
+       - \`frontend/\` (Vite + React + TS)
+       - Root config files (\`package.json\`, \`vite.config.ts\`, etc.)
    - **DEPENDENCIES**: All imports must resolve. Include ALL dependencies in \`package.json\`.
    - **LIVE PREVIEW**: The project is executed in a Docker-based preview runner (not StackBlitz). Do NOT add StackBlitz/WebContainer scripts.
    - **DEV SERVER**: \`npm run dev\` must start the frontend on \`0.0.0.0:3000\` (use \`--host 0.0.0.0 --port 3000 --strictPort\` for Vite, or \`next dev -H 0.0.0.0 -p 3000\` for Next).
@@ -256,6 +390,7 @@ EXECUTION RULES:
    - CSS: Responsive, mobile-first (TailwindCSS preferred).
    - JS: Error-free, console-log debugging enabled.
    - **NO BABEL ERRORS**: Use modern ES Modules syntax.
+   - Always keep a newline after \`// comments\` before next statement; never glue comment text with code tokens.
 
 5. **AUTOMATIC RESUME**:
    - If cut off, I will send "CONTINUE [FILE] [LINE]".
@@ -266,11 +401,32 @@ EXECUTION RULES:
    - Debounce heavy input handlers.
    - Never lock user input unless VERIFIED_COMPLETE.
 
+7. **AGENT RESPONSIBILITIES (MANDATORY)**:
+   - Act as a full AI agent for this workspace: analyze architecture, write code, fix runtime issues, and refactor structure.
+   - Before declaring done, proactively validate likely preview/runtime risks and apply fixes in the same pass.
+   - Keep folders organized and avoid duplicate files with conflicting purposes.
+
+8. **FIRST-PASS QUALITY BAR (MANDATORY)**:
+   - The first delivery must be strong and complete, not a rough scaffold.
+   - Implement end-to-end behavior for the requested core use-cases.
+   - Add practical validation/error states and realistic empty/loading handling where relevant.
+   - Avoid placeholder sections or TODO comments in final output.
+   - Prefer robust defaults and clean architecture when requirements are implicit.
+
+9. **DECISION POLICY**:
+   - If the prompt is underspecified, make the best professional assumptions and proceed.
+   - Optimize for a reliable, production-ready baseline in the initial pass.
+
+${buildAIOrganizationPolicyBlock(selectedProjectMode)}
+
 [PROJECT CONTEXT]
 Project Name: ${projectState.projectName}
 Stack: ${projectState.stack || 'Not detected'}
 Description: ${projectState.description || 'None'}
 Active File: ${projectState.activeFile || 'None'}
+Top Folders: ${context.foldersDigest || 'None'}
+Context Budget: ${Number(aiState.contextBudget?.utilizationPct || 0).toFixed(1)}%
+Preview Runtime: ${context.previewRuntimeStatus}${context.previewRuntimeMessage ? ` (${context.previewRuntimeMessage})` : ''}
 
 [PLAN STATUS]
 ${context.currentPlan.map((s: any, i: number) => `${i + 1}. [${s.completed ? 'x' : ' '}] ${s.title} (${s.category || 'general'})`).join('\n')}
@@ -281,8 +437,11 @@ ${context.files.slice(0, 100).join('\n')}${context.files.length > 100 ? '\n...(t
 [COMPLETED FILES]
 ${Array.from(completedFiles).join('\n')}
 
+[RECENT PREVIEW SIGNALS]
+${context.recentPreviewErrors.length > 0 ? context.recentPreviewErrors.join('\n') : 'None'}
+
 [USER REQUEST]
-${prompt}
+${constrainedPrompt}
 `.trim();
 
       onMeta({ provider: 'vercel-backend', baseURL: getApiBaseUrl(), thinkingMode, architectMode });
@@ -323,19 +482,12 @@ ${prompt}
       const partialFiles = new Set<string>();
       let lastSuccessfulFile = resumeContext?.lastSuccessfulFile || '';
       let lastSuccessfulLine = resumeContext?.lastSuccessfulLine || 0;
+      let requestCharged = false;
 
       const countLines = (text: string) => {
         let lines = 0;
         for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lines++;
         return lines;
-      };
-
-      const getForceCloseMarker = (path: string) => {
-        const lower = (path || '').toLowerCase();
-        if (lower.endsWith('.html')) return '\n<!-- [[PARTIAL_FILE_CLOSED]] -->\n';
-        if (lower.endsWith('.css')) return '\n/* [[PARTIAL_FILE_CLOSED]] */\n';
-        if (lower.endsWith('.md')) return '\n<!-- [[PARTIAL_FILE_CLOSED]] -->\n';
-        return '\n// [[PARTIAL_FILE_CLOSED]]\n';
       };
 
       class FileMarkerParser {
@@ -442,13 +594,7 @@ ${prompt}
         }
 
         private forceClose(partial: boolean) {
-          // If partial, try to repair by appending necessary closing characters
-          // NOTE: We cannot repair perfectly here because we don't have the full content.
-          // Instead, we rely on the `partial` flag.
-          // However, to fix "Unexpected identifier", we send a COMMENT marker.
-          const marker = getForceCloseMarker(this.currentPath);
-          options.onFileEvent?.({ type: 'chunk', path: this.currentPath, mode: this.currentMode, chunk: marker, line: this.currentLine });
-          this.currentLine += countLines(marker);
+          // Keep file text untouched. Partial metadata is enough for recovery/repair.
           partialFiles.add(this.currentPath);
           options.onFileEvent?.({ type: 'end', path: this.currentPath, mode: this.currentMode, partial, line: this.currentLine });
           lastSuccessfulFile = this.currentPath;
@@ -548,7 +694,7 @@ ${prompt}
         const cutFileName = cutPath.split('/').pop() || cutPath;
         
         return [
-          prompt,
+          streamPrompt,
           '',
           '=== CRITICAL AUTO-CONTINUE INSTRUCTION ===',
           '',
@@ -599,6 +745,8 @@ ${prompt}
       const runStreamOnce = async (streamPrompt: string, resumeAppendPath?: string) => {
         const controller = new AbortController();
         let abortedByUser = false;
+        let sawAnyToken = false;
+        let sawAnyStreamSignal = false;
 
         const externalAbortListener = () => {
           abortedByUser = true;
@@ -618,13 +766,15 @@ ${prompt}
         }
 
         try {
-        const preTokenTimeoutMs = thinkingMode ? 60000 : 20000;
+        const contextFileCount = Math.max(1, Number(context?.files?.length || 1));
+        const preTokenDefault = Math.round((thinkingMode ? 80_000 : 40_000) * Math.min(2.2, Math.max(1, contextFileCount / 30)));
+        const preTokenTimeoutMs = Number((options as any).preTokenTimeoutMs ?? preTokenDefault);
         let preTokenTimer: any = null;
         const startPreTokenTimer = () => {
           if (preTokenTimer) return;
           preTokenTimer = globalThis.setTimeout(() => {
             try {
-              if (!sawAnyToken) controller.abort();
+              if (!sawAnyStreamSignal) controller.abort();
             } catch {
               // ignore
             }
@@ -650,7 +800,10 @@ ${prompt}
               architectMode,
               includeReasoning,
               context,
-              history: options.history || []
+              history: options.history || [],
+              constraints,
+              contextMeta: buildContextMetaPayload(),
+              modelRouting: buildModelRoutingPayload(thinkingMode)
             })
           });
         } catch (e: any) {
@@ -676,11 +829,11 @@ ${prompt}
         const reader = body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let sawAnyToken = false;
         let sawDoneStatus = false;
         let streamErrored = false;
 
-        const defaultStall = thinkingMode ? 120_000 : 60_000;
+        const contextMultiplier = Math.min(2.4, Math.max(1, contextFileCount / 45));
+        const defaultStall = Math.round((thinkingMode ? 120_000 : 60_000) * contextMultiplier);
         const stallMsRaw = Number((options as any).stallTimeoutMs ?? defaultStall);
         const stallMs = Number.isFinite(stallMsRaw)
           ? Math.max(thinkingMode ? 30_000 : 15_000, stallMsRaw)
@@ -692,9 +845,13 @@ ${prompt}
           lastUsefulAt = Date.now();
           if (!stallTimer) {
             stallTimer = globalThis.setInterval(() => {
-              if (!sawAnyToken) return;
+              if (!sawAnyToken && !sawAnyStreamSignal) return;
+              const writingPath = String(useAIStore.getState().writingFilePath || '').toLowerCase();
+              const fileTypeBoost = writingPath.endsWith('.svg') || writingPath.endsWith('.tsx') ? 1.35 : 1;
+              const adaptiveStall = Math.round(stallMs * fileTypeBoost);
               const idleFor = Date.now() - lastUsefulAt;
-              if (idleFor < stallMs) return;
+              const idleThreshold = sawAnyToken ? adaptiveStall : Math.round(adaptiveStall * 1.2);
+              if (idleFor < idleThreshold) return;
               try {
                 controller.abort();
               } catch {
@@ -716,6 +873,10 @@ ${prompt}
           // Filter out protocol noise from AI output (e.g., "Searching...", "Replacing...")
           const cleanedChunk = filterProtocolNoise(tokenChunk);
           if (!cleanedChunk.trim()) return; // Skip if chunk is only noise
+          if (!requestCharged) {
+            incrementRequests();
+            requestCharged = true;
+          }
           sawAnyToken = true;
           stopPreTokenTimer();
           kickStallTimer();
@@ -730,6 +891,8 @@ ${prompt}
 
             const decoded = decoder.decode(value, { stream: true });
             if (decoded.length === 0) continue;
+            sawAnyStreamSignal = true;
+            stopPreTokenTimer();
 
             const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
             if (!looksLikeSse && buffer.length === 0) {
@@ -749,6 +912,8 @@ ${prompt}
               const { eventName, dataText } = parseSseEvent(rawEvent);
               if (eventName === 'meta') {
                 onMeta({ raw: dataText });
+                sawAnyStreamSignal = true;
+                stopPreTokenTimer();
                 if (dataText.trim().length > 0) kickStallTimer();
                 continue;
               }
@@ -758,6 +923,8 @@ ${prompt}
                 const phase = idx === -1 ? 'streaming' : dataText.slice(0, idx);
                 const message = idx === -1 ? dataText : dataText.slice(idx + 1);
                 onStatus(phase, message);
+                sawAnyStreamSignal = true;
+                stopPreTokenTimer();
                 if (dataText.trim().length > 0) kickStallTimer();
                 if (phase === 'done') sawDoneStatus = true;
                 if (phase === 'error' && message) onError(message);
@@ -765,6 +932,8 @@ ${prompt}
               }
 
               if (eventName === 'thought' && includeReasoning) {
+                sawAnyStreamSignal = true;
+                stopPreTokenTimer();
                 if (dataText.trim().length > 0) kickStallTimer();
                 _onReasoning(dataText);
                 continue;
@@ -819,30 +988,36 @@ ${prompt}
         }
       };
 
-      const maxResumeAttempts = 2;
+      const maxResumeAttempts = 5;
 
       let first: { markerParser: any } | null = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 4; attempt++) {
         try {
-          first = await runStreamOnce(prompt);
+          first = await runStreamOnce(streamPrompt);
           break;
         } catch (e: any) {
           if (e?.abortedByUser || e?.message === 'ABORTED_BY_USER' || e?.name === 'AbortError') throw e;
-          if (attempt >= 2) throw e;
+          if (attempt >= 3) throw e;
           onStatus('streaming', 'Retrying…');
           await new Promise((r) => setTimeout(r, 1000));
         }
       }
       if (!first) throw new Error('Streaming failed');
-      const cut = first.markerParser.finalize();
-
-      if (cut && maxResumeAttempts > 0) {
-        onStatus('streaming', 'Resuming…');
-        onMeta({ resume: { attempt: 1, file: cut.cutPath, line: cut.cutLine } });
+      let cut = first.markerParser.finalize();
+      let resumeAttempt = 0;
+      while (cut && resumeAttempt < maxResumeAttempts) {
+        resumeAttempt += 1;
+        onStatus('recovering', `Resuming… (attempt ${resumeAttempt}/${maxResumeAttempts})`);
+        onMeta({ resume: { attempt: resumeAttempt, file: cut.cutPath, line: cut.cutLine } });
 
         const resumePrompt = buildResumePrompt(cut.cutPath, cut.cutLine);
         const resumed = await runStreamOnce(resumePrompt, cut.cutPath);
-        resumed.markerParser.finalize();
+        cut = resumed.markerParser.finalize();
+
+        if (cut && resumeAttempt < maxResumeAttempts) {
+          const backoffMs = 550 * resumeAttempt;
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
       }
 
       onJSON({

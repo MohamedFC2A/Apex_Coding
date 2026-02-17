@@ -1,72 +1,59 @@
 import React from 'react';
 import styled from 'styled-components';
-import { motion } from 'framer-motion';
 import { useAIStore } from '../../stores/aiStore';
+import { Compass } from 'lucide-react';
 
 const Root = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+  width: 100%;
+  display: flex;
   user-select: none;
 `;
 
-const Label = styled.div`
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.70);
-  white-space: nowrap;
-`;
-
-const Switch = styled.button`
-  position: relative;
-  width: 54px;
-  height: 34px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(16px);
-  box-shadow:
-    0 14px 30px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+const ToggleButton = styled.button<{ $on: boolean }>`
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid ${(p) => (p.$on ? 'rgba(34, 211, 238, 0.34)' : 'rgba(255, 255, 255, 0.14)')};
+  background: ${(p) => (p.$on ? 'rgba(34, 211, 238, 0.15)' : 'rgba(255, 255, 255, 0.04)')};
+  color: ${(p) => (p.$on ? 'rgba(255, 255, 255, 0.96)' : 'rgba(255, 255, 255, 0.8)')};
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   cursor: pointer;
-  padding: 0;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
 
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
+
+  @media (max-width: 768px) {
+    height: 42px;
+  }
 `;
 
-const TrackGlow = styled.div<{ $on: boolean }>`
-  position: absolute;
-  inset: -1px;
-  border-radius: 999px;
-  pointer-events: none;
-  background:
-    radial-gradient(120px 60px at 20% 30%, rgba(34, 211, 238, 0.25), transparent 60%),
-    radial-gradient(140px 70px at 80% 70%, rgba(168, 85, 247, 0.25), transparent 60%);
-  filter: blur(10px);
-  opacity: ${(p) => (p.$on ? 1 : 0.4)};
-  transition: opacity 200ms ease;
+const Left = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
 `;
 
-const Thumb = styled(motion.div)<{ $on: boolean }>`
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: ${(p) =>
-    p.$on
-      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.55), rgba(168, 85, 247, 0.42))'
-      : 'rgba(255, 255, 255, 0.18)'};
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+const Status = styled.span<{ $on: boolean }>`
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: ${(p) => (p.$on ? 'rgba(34, 211, 238, 0.95)' : 'rgba(255, 255, 255, 0.56)')};
 `;
 
 export interface ArchitectToggleProps {
@@ -78,22 +65,20 @@ export const ArchitectToggle: React.FC<ArchitectToggleProps> = ({ className }) =
 
   return (
     <Root className={className}>
-      <Label>Architect Mode</Label>
-      <Switch
+      <ToggleButton
+        $on={architectMode}
         type="button"
         aria-label="Architect Mode"
         aria-pressed={architectMode}
         onClick={() => setArchitectMode(!architectMode)}
         disabled={isGenerating || isPlanning}
       >
-        <TrackGlow $on={architectMode} />
-        <Thumb
-          $on={architectMode}
-          animate={{ x: architectMode ? 20 : 0 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-        />
-      </Switch>
+        <Left>
+          <Compass />
+          <span>Architect</span>
+        </Left>
+        <Status $on={architectMode}>{architectMode ? 'On' : 'Off'}</Status>
+      </ToggleButton>
     </Root>
   );
 };
-

@@ -28,6 +28,33 @@ export interface WebContainerCallbacks {
   onOutput?: (data: string) => void;
 }
 
+const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/^\/+/, '');
+
+const detectProjectCwd = (files: ProjectFile[]): string => {
+  const paths = new Set(
+    files
+      .map((f) => normalizePath(f.path || f.name || ''))
+      .filter(Boolean)
+  );
+
+  if (paths.has('package.json')) return '/';
+  if (paths.has('frontend/package.json')) return '/frontend';
+  if (paths.has('app/package.json')) return '/app';
+  if (paths.has('client/package.json')) return '/client';
+
+  const nestedManifests = Array.from(paths)
+    .filter((p) => p.endsWith('/package.json'))
+    .sort((a, b) => a.split('/').length - b.split('/').length);
+
+  if (nestedManifests.length > 0) {
+    const first = nestedManifests[0];
+    const dir = first.slice(0, -'/package.json'.length);
+    return dir ? `/${dir}` : '/';
+  }
+
+  return '/';
+};
+
 /**
  * Boot WebContainer instance (singleton)
  */
@@ -202,11 +229,12 @@ body {
  */
 export async function installDependencies(
   container: WebContainer,
+  cwd: string,
   callbacks?: WebContainerCallbacks
 ): Promise<boolean> {
-  callbacks?.onStatusChange?.('installing', 'Installing dependencies...');
-  
-  const installProcess = await container.spawn('npm', ['install']);
+  callbacks?.onStatusChange?.('installing', `Installing dependencies${cwd !== '/' ? ` in ${cwd}` : ''}...`);
+  const spawnOptions = cwd && cwd !== '/' ? ({ cwd } as any) : undefined;
+  const installProcess = await container.spawn('npm', ['install'], spawnOptions);
   
   installProcess.output.pipeTo(
     new WritableStream({
@@ -231,11 +259,12 @@ export async function installDependencies(
  */
 export async function startDevServer(
   container: WebContainer,
+  cwd: string,
   callbacks?: WebContainerCallbacks
 ): Promise<void> {
-  callbacks?.onStatusChange?.('starting', 'Starting dev server...');
-  
-  const devProcess = await container.spawn('npm', ['run', 'dev']);
+  callbacks?.onStatusChange?.('starting', `Starting dev server${cwd !== '/' ? ` in ${cwd}` : ''}...`);
+  const spawnOptions = cwd && cwd !== '/' ? ({ cwd } as any) : undefined;
+  const devProcess = await container.spawn('npm', ['run', 'dev'], spawnOptions);
   
   devProcess.output.pipeTo(
     new WritableStream({
@@ -266,6 +295,7 @@ export async function runProject(
     
     // Ensure project has required files
     const completeFiles = ensureProjectFiles(files);
+    const cwd = detectProjectCwd(completeFiles);
     
     // Mount files
     callbacks?.onStatusChange?.('mounting', 'Mounting project files...');
@@ -273,11 +303,11 @@ export async function runProject(
     await container.mount(fileSystem);
     
     // Install dependencies
-    const installed = await installDependencies(container, callbacks);
+    const installed = await installDependencies(container, cwd, callbacks);
     if (!installed) return;
     
     // Start dev server
-    await startDevServer(container, callbacks);
+    await startDevServer(container, cwd, callbacks);
     
   } catch (error) {
     callbacks?.onStatusChange?.('error', (error as Error).message);

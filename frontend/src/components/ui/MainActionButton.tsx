@@ -1,138 +1,95 @@
 import React from 'react';
-import styled, { keyframes } from 'styled-components';
-import { motion } from 'framer-motion';
-import { Sparkles, Brain, Loader2, Wrench, X, Play } from 'lucide-react';
+import styled from 'styled-components';
+import { Sparkles, Wrench, X, Play } from 'lucide-react';
 
 export type MainActionState = 'idle' | 'planning' | 'coding' | 'interrupted' | 'done';
 
-const shimmer = keyframes`
-  0% { transform: translateX(-60%) rotate(12deg); opacity: 0.0; }
-  30% { opacity: 0.9; }
-  100% { transform: translateX(120%) rotate(12deg); opacity: 0.0; }
-`;
-
-const ButtonRoot = styled(motion.button)<{ $state: MainActionState }>`
+const ButtonRoot = styled.button<{ $state: MainActionState }>`
   position: relative;
-  height: 50px;
-  padding: 0 20px;
-  border-radius: 16px;
+  height: 40px;
+  padding: 0 13px;
+  border-radius: 11px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
+  background: ${(p) => {
+    if (p.$state === 'planning' || p.$state === 'coding') return 'rgba(239, 68, 68, 0.15)';
+    if (p.$state === 'done') return 'rgba(16, 185, 129, 0.14)';
+    if (p.$state === 'interrupted') return 'rgba(59, 130, 246, 0.16)';
+    return 'rgba(34, 211, 238, 0.14)';
+  }};
   color: rgba(255, 255, 255, 0.95);
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   cursor: pointer;
   user-select: none;
-  backdrop-filter: blur(20px);
-  box-shadow:
-    0 20px 50px rgba(0, 0, 0, 0.50),
-    0 0 0 1px rgba(0, 0, 0, 0.2) inset,
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
   overflow: hidden;
-  font-size: 13px;
+  font-size: 12px;
+  min-width: 156px;
+  max-width: 100%;
+  transition: border-color 140ms ease, background 140ms ease, transform 120ms ease, opacity 140ms ease;
 
   &:disabled {
-    opacity: 0.55;
+    opacity: 0.52;
     cursor: not-allowed;
-    filter: grayscale(0.25);
+    transform: none;
   }
 
-  &::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    background: ${(p) => {
-      if (p.$state === 'planning') {
-        return `radial-gradient(160px 70px at 16% 38%, rgba(245, 158, 11, 0.40), transparent 70%),
-          radial-gradient(160px 70px at 84% 62%, rgba(255, 255, 255, 0.22), transparent 70%)`;
-      }
-      if (p.$state === 'coding') {
-        return `radial-gradient(160px 70px at 16% 38%, rgba(255, 255, 255, 0.35), transparent 70%),
-          radial-gradient(160px 70px at 84% 62%, rgba(245, 158, 11, 0.32), transparent 70%)`;
-      }
-      if (p.$state === 'done') {
-        return `radial-gradient(160px 70px at 16% 38%, rgba(34, 197, 94, 0.35), transparent 70%),
-          radial-gradient(160px 70px at 84% 62%, rgba(245, 158, 11, 0.22), transparent 70%)`;
-      }
-      return `radial-gradient(160px 70px at 16% 38%, rgba(245, 158, 11, 0.35), transparent 70%),
-        radial-gradient(160px 70px at 84% 62%, rgba(255, 255, 255, 0.22), transparent 70%)`;
-    }};
-    opacity: 0.98;
-    filter: blur(14px);
-    pointer-events: none;
+  &:not(:disabled):hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.3);
   }
-`;
 
-const Shine = styled.div<{ $active: boolean }>`
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: ${(p) => (p.$active ? 1 : 0)};
-  transition: opacity 200ms ease;
+  &:not(:disabled):active {
+    transform: translateY(0);
+  }
 
-  &::after {
-    content: '';
-    position: absolute;
-    top: -40%;
-    left: -30%;
-    width: 45%;
-    height: 180%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.30), transparent);
-    filter: blur(2px);
-    animation: ${shimmer} 1.35s linear infinite;
+  @media (max-width: 900px) {
+    min-width: 0;
+  }
+
+  @media (max-width: 768px) {
+    height: 40px;
+    padding: 0 11px;
+    font-size: 11px;
+    border-radius: 11px;
+    width: 100%;
+    min-width: 0;
   }
 `;
 
 const Label = styled.span`
-  position: relative;
-  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   white-space: nowrap;
 `;
 
-const SwapSlot = styled.span`
-  display: inline-grid;
-  grid-template-areas: 'stack';
-  align-items: center;
-  min-width: fit-content;
-`;
-
-const IconSlot = styled(SwapSlot)`
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-
-  & svg {
-    width: 22px;
-    height: 22px;
-    min-width: 22px;
-  }
-`;
-
-const SwapLayer = styled.span<{ $visible: boolean }>`
-  grid-area: stack;
+const IconSlot = styled.span`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: ${(p) => (p.$visible ? 1 : 0)};
-  transform: scale(${(p) => (p.$visible ? 1 : 0.92)});
-  transition: opacity 160ms ease, transform 160ms ease;
-  pointer-events: none;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 `;
 
-const getStateWidth = (state: MainActionState) => {
-  if (state === 'planning') return 240;
-  if (state === 'coding') return 200;
-  if (state === 'interrupted') return 200;
-  if (state === 'done') return 180;
-  return 190;
+const getLabel = (state: MainActionState) => {
+  if (state === 'planning' || state === 'coding') return 'Stop';
+  if (state === 'interrupted') return 'Continue';
+  if (state === 'done') return 'Fix / Edit';
+  return 'Generate';
+};
+
+const getIcon = (state: MainActionState) => {
+  if (state === 'planning' || state === 'coding') return <X size={16} />;
+  if (state === 'interrupted') return <Play size={16} />;
+  if (state === 'done') return <Wrench size={16} />;
+  return <Sparkles size={16} />;
 };
 
 export interface MainActionButtonProps {
@@ -163,38 +120,10 @@ export const MainActionButton: React.FC<MainActionButtonProps> = ({ state, disab
               : 'Generate'
       }
       $state={state}
-      layout
-      animate={{ width: getStateWidth(state) }}
-      whileHover={isDisabled ? undefined : { scale: 1.03, y: -2 }}
-      whileTap={isDisabled ? undefined : { scale: 0.97, y: 0 }}
-      transition={{ type: 'spring', stiffness: 450, damping: 28 }}
     >
-      <Shine $active={!isDisabled} />
       <Label>
-        <IconSlot aria-hidden="true">
-          <SwapLayer $visible={state === 'idle'}>
-            <Sparkles size={18} />
-          </SwapLayer>
-          <SwapLayer $visible={state === 'planning'}>
-            <X size={18} />
-          </SwapLayer>
-          <SwapLayer $visible={state === 'coding'}>
-            <X size={18} />
-          </SwapLayer>
-          <SwapLayer $visible={state === 'interrupted'}>
-            <Play size={18} />
-          </SwapLayer>
-          <SwapLayer $visible={state === 'done'}>
-            <Wrench size={18} />
-          </SwapLayer>
-        </IconSlot>
-        <SwapSlot aria-hidden="true">
-          <SwapLayer $visible={state === 'idle'}>Generate</SwapLayer>
-          <SwapLayer $visible={state === 'planning'}>Stop</SwapLayer>
-          <SwapLayer $visible={state === 'coding'}>Stop</SwapLayer>
-          <SwapLayer $visible={state === 'interrupted'}>Continue</SwapLayer>
-          <SwapLayer $visible={state === 'done'}>Fix / Edit</SwapLayer>
-        </SwapSlot>
+        <IconSlot aria-hidden="true">{getIcon(state)}</IconSlot>
+        <span>{getLabel(state)}</span>
       </Label>
     </ButtonRoot>
   );

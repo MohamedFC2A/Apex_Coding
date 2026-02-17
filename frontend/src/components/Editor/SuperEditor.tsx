@@ -36,6 +36,13 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const editorRef = useRef<any>(null);
 
+  const saveCurrentFile = useCallback(async () => {
+    if (!editor || !activeFileId) return;
+    
+    const content = editor.getValue();
+    updateFile(activeFileId, content);
+  }, [editor, activeFileId, updateFile]);
+
   useEffect(() => {
     const buildFileTree = (files: any[]): FileNode[] => {
       const tree: FileNode[] = [];
@@ -94,14 +101,7 @@ export const SuperEditor = forwardRef<SuperEditorHandle>((props, ref) => {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       saveCurrentFile();
     });
-  }, [settings]);
-
-  const saveCurrentFile = useCallback(async () => {
-    if (!editor || !activeFileId) return;
-    
-    const content = editor.getValue();
-    updateFile(activeFileId, content);
-  }, [editor, activeFileId, updateFile]);
+  }, [settings, saveCurrentFile]);
 
   const formatCode = useCallback(() => {
     if (!editor) return;

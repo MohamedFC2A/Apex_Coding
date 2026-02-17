@@ -1,5 +1,6 @@
 import { usePreviewStore } from '@/stores/previewStore';
 import { useAIStore } from '@/stores/aiStore';
+import { apiUrl } from '@/services/apiBase';
 
 export interface PreviewStatus {
   isConfigured: boolean;
@@ -20,6 +21,9 @@ class PreviewMonitor {
     sandboxId: null
   };
   private listeners: ((status: PreviewStatus) => void)[] = [];
+  private previewApi(path: string) {
+    return apiUrl(path.startsWith('/preview') ? path : `/preview${path}`);
+  }
 
   private constructor() {
     this.startMonitoring();
@@ -34,7 +38,7 @@ class PreviewMonitor {
 
   private async checkPreviewConfig(): Promise<boolean> {
     try {
-      const res = await fetch('/api/preview/config');
+      const res = await fetch(this.previewApi('/config'));
       if (!res.ok) {
         this.updateStatus({
           isConfigured: false,
@@ -66,7 +70,7 @@ class PreviewMonitor {
 
   private async testSandboxConnection(): Promise<boolean> {
     try {
-      const res = await fetch('/api/preview/diagnostics');
+      const res = await fetch(this.previewApi('/diagnostics'));
       if (!res.ok) {
         this.updateStatus({
           isConnected: false,

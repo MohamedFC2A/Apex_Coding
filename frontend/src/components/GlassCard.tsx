@@ -56,7 +56,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
       )}
       
       {/* Content */}
-      <div className="relative z-10">
+      <div className="relative z-10 h-full min-h-0 flex flex-col">
         {children}
       </div>
     </div>

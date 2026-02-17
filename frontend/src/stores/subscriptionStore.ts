@@ -24,7 +24,9 @@ const LIMITS = {
   PRO: 100
 };
 
-const VALID_PROMO_CODE = '88776655443322';
+const VALID_PROMO_CODE = '01224465998';
+
+const normalizePromoCode = (code: string) => String(code || '').trim().replace(/[\s-]+/g, '');
 
 export const useSubscriptionStore = create<SubscriptionState>()(
   persist(
@@ -74,11 +76,12 @@ export const useSubscriptionStore = create<SubscriptionState>()(
       },
 
       applyPromoCode: (code: string) => {
-        if (code === VALID_PROMO_CODE) {
+        const normalized = normalizePromoCode(code);
+        if (normalized === VALID_PROMO_CODE) {
           set({
             tier: 'PRO',
             dailyLimit: LIMITS.PRO,
-            promoCode: code,
+            promoCode: VALID_PROMO_CODE,
             requestsUsedToday: 0
           });
           return true;

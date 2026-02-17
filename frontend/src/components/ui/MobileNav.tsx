@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
-import { Code2, MonitorPlay, Terminal, Sparkles } from 'lucide-react';
+import { Code2, MonitorPlay, Sparkles } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
 
 const NavContainer = styled.div`
   display: none;
@@ -21,6 +22,7 @@ const NavContainer = styled.div`
     display: flex;
     justify-content: space-around;
     align-items: center;
+    height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
   }
 `;
 
@@ -64,7 +66,7 @@ const NavItem = styled.button<{ $active?: boolean }>`
   }
 
   span {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.02em;
   }
@@ -77,11 +79,13 @@ interface MobileNavProps {
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({ activeTab, onTabChange, isGenerating }) => {
+  const { t } = useLanguage();
+
   return (
     <NavContainer>
       <NavItem $active={activeTab === 'editor'} onClick={() => onTabChange('editor')}>
         <Code2 />
-        <span>Code</span>
+        <span>{t('app.mobile.tab.editor')}</span>
       </NavItem>
       
       <NavItem $active={activeTab === 'ai'} onClick={() => onTabChange('ai')}>
@@ -92,12 +96,12 @@ export const MobileNav: React.FC<MobileNavProps> = ({ activeTab, onTabChange, is
         ) : (
           <Sparkles />
         )}
-        <span>AI</span>
+        <span>{t('app.mobile.tab.ai')}</span>
       </NavItem>
 
       <NavItem $active={activeTab === 'preview'} onClick={() => onTabChange('preview')}>
         <MonitorPlay />
-        <span>Preview</span>
+        <span>{t('app.mobile.tab.preview')}</span>
       </NavItem>
     </NavContainer>
   );

@@ -1,236 +1,220 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import styled, { css, keyframes } from 'styled-components';
-import { motion } from 'framer-motion';
-import { CheckCircle2, Circle, Zap } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import styled from 'styled-components';
+import { CheckCircle2, Circle, Loader2, ListChecks, ChevronDown } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
+import type { ProjectType } from '@/stores/aiStore';
 
 export interface PlanChecklistItem {
   id: string;
   title: string;
+  description?: string;
   completed: boolean;
   category?: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment';
+  status?: 'pending' | 'in_progress' | 'completed' | 'blocked';
   files?: string[];
-  description?: string;
+  estimatedSize?: 'small' | 'medium' | 'large';
 }
-
-const pulse = keyframes`
-  0% {
-    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.45), 0 0 18px rgba(245, 158, 11, 0.18);
-  }
-  50% {
-    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.75), 0 0 26px rgba(245, 158, 11, 0.35);
-  }
-  100% {
-    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.45), 0 0 18px rgba(245, 158, 11, 0.18);
-  }
-`;
-
-const liquidFlow = keyframes`
-  0% { background-position: 0% 50%; }
-  100% { background-position: 180% 50%; }
-`;
-
-const sheen = keyframes`
-  0% { transform: translateX(-60%); opacity: 0; }
-  20% { opacity: 0.55; }
-  100% { transform: translateX(160%); opacity: 0; }
-`;
-
-const mercuryPulse = keyframes`
-  0% { opacity: 0.85; filter: saturate(1.0); }
-  50% { opacity: 1; filter: saturate(1.15); }
-  100% { opacity: 0.85; filter: saturate(1.0); }
-`;
-
-const pendingStyles = css`
-  border-color: rgba(255, 255, 255, 0.08);
-  opacity: 0.6;
-`;
-
-const activeStyles = css`
-  border-color: rgba(245, 158, 11, 0.6);
-  animation: ${pulse} 1.6s ease-in-out infinite;
-`;
-
-const doneStyles = css`
-  border-color: rgba(34, 197, 94, 0.7);
-  box-shadow: 0 0 20px rgba(34, 197, 94, 0.22);
-`;
 
 const Panel = styled.div`
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(24px);
-  box-shadow:
-    0 22px 60px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.8) 0%, rgba(15, 23, 42, 0.6) 100%);
+  backdrop-filter: blur(20px);
   overflow: hidden;
 `;
 
 const Header = styled.div`
-  height: 44px;
+  height: 42px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 0 12px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: 0 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  color: #F59E0B;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
+`;
+
+const HeaderTitle = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.9);
+`;
+
+const HeaderMeta = styled.div`
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.62);
 `;
 
 const Body = styled.div`
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-`;
-
-const ListContainer = styled.div`
-  max-height: 400px;
   overflow-y: auto;
-`;
-
-const Empty = styled.div`
-  height: 100%;
+  padding: 10px;
   display: grid;
-  place-items: center;
-  color: rgba(255, 255, 255, 0.50);
-  font-size: 13px;
-  text-align: center;
-  padding: 18px;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+
+  &::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 999px;
+    margin: 2px 0;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.4), rgba(100, 150, 200, 0.5));
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    min-height: 40px;
+    transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.15);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.65), rgba(100, 150, 200, 0.75));
+    box-shadow: 0 0 16px rgba(34, 211, 238, 0.25);
+  }
 `;
 
 const ProgressRail = styled.div`
-  height: 4px;
+  height: 6px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
 `;
 
 const ProgressFill = styled.div<{ $pct: number }>`
   height: 100%;
   width: ${(p) => `${Math.round(p.$pct * 100)}%`};
-  position: relative;
-  background: linear-gradient(
-    90deg,
-    #F59E0B,
-    #FFFFFF,
-    #F59E0B
-  );
-  background-size: 220% 100%;
-  animation: ${liquidFlow} 2.2s linear infinite, ${mercuryPulse} 2.6s ease-in-out infinite;
-  transition: width 240ms ease;
-
-  &::after {
-    content: '';
-    position: absolute;
-    top: -2px;
-    bottom: -2px;
-    left: 0;
-    width: 55%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
-    filter: blur(2px);
-    animation: ${sheen} 1.5s linear infinite;
-    opacity: 0.22;
-    pointer-events: none;
-  }
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.95), rgba(245, 158, 11, 0.95));
+  transition: width 220ms ease;
 `;
 
 const ProgressMeta = styled.div`
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.58);
 `;
 
-const Section = styled.div`
+const Empty = styled.div`
+  min-height: 110px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
   display: grid;
-  gap: 10px;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  text-align: center;
+  padding: 14px;
+`;
+
+const Section = styled.section`
+  display: grid;
+  gap: 8px;
 `;
 
 const SectionTitle = styled.div`
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.58);
 `;
 
-const ItemCard = styled(motion.div)<{ $status: 'pending' | 'active' | 'done' }>`
-  display: grid;
-  grid-template-columns: 24px 1fr auto;
-  gap: 12px;
-  align-items: center;
+const Item = styled.div<{ $state: 'pending' | 'active' | 'done' }>`
+  border-radius: 12px;
+  border: 1px solid
+    ${(p) => {
+      if (p.$state === 'done') return 'rgba(34, 197, 94, 0.3)';
+      if (p.$state === 'active') return 'rgba(56, 189, 248, 0.4)';
+      return 'rgba(255, 255, 255, 0.06)';
+    }};
+  background:
+    ${(p) => {
+      if (p.$state === 'done') return 'linear-gradient(90deg, rgba(34, 197, 94, 0.05), rgba(34, 197, 94, 0.02))';
+      if (p.$state === 'active') return 'linear-gradient(90deg, rgba(56, 189, 248, 0.08), rgba(56, 189, 248, 0.04))';
+      return 'rgba(255, 255, 255, 0.02)';
+    }};
   padding: 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.035);
-  backdrop-filter: blur(18px);
-  color: rgba(255, 255, 255, 0.86);
+  transition: all 0.2s ease;
 
-  ${(p) => p.$status === 'pending' && pendingStyles}
-  ${(p) => p.$status === 'active' && activeStyles}
-  ${(p) => p.$status === 'done' && doneStyles}
+  &:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+`;
+
+const ItemHead = styled.div`
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 8px;
+  align-items: center;
 `;
 
 const ItemTitle = styled.div`
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 1.3;
   color: rgba(255, 255, 255, 0.9);
+  line-height: 1.35;
 `;
 
-const ItemStatus = styled.div<{ $status: 'pending' | 'active' | 'done' }>`
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+const ItemStatus = styled.div<{ $state: 'pending' | 'active' | 'done' }>`
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: ${(p) => {
-    if (p.$status === 'active') return '#F59E0B';
-    if (p.$status === 'done') return 'rgba(34, 197, 94, 0.95)';
-    return 'rgba(255, 255, 255, 0.45)';
-  }};
+  color:
+    ${(p) => {
+      if (p.$state === 'done') return 'rgba(134, 239, 172, 0.95)';
+      if (p.$state === 'active') return 'rgba(125, 211, 252, 0.95)';
+      return 'rgba(255, 255, 255, 0.5)';
+    }};
 `;
 
-const StatusStack = styled.div`
-  display: grid;
-  gap: 4px;
+const ItemDescription = styled.div`
+  margin-top: 7px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.4;
 `;
 
-const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  config: { bg: 'rgba(251, 191, 36, 0.12)', border: 'rgba(251, 191, 36, 0.4)', text: 'rgba(251, 191, 36, 0.95)' },
-  frontend: { bg: 'rgba(255, 255, 255, 0.08)', border: 'rgba(255, 255, 255, 0.2)', text: 'rgba(255, 255, 255, 0.95)' },
-  backend: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.4)', text: 'rgba(245, 158, 11, 0.95)' },
-  integration: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.4)', text: 'rgba(34, 197, 94, 0.95)' },
-  testing: { bg: 'rgba(239, 68, 68, 0.12)', border: 'rgba(239, 68, 68, 0.4)', text: 'rgba(239, 68, 68, 0.95)' },
-  deployment: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.4)', text: 'rgba(245, 158, 11, 0.95)' }
-};
+const FileList = styled.div`
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+`;
 
-const getCategoryFromItem = (item: PlanChecklistItem): string => {
-  if (item.category) return item.category;
-  const lower = item.title.toLowerCase();
-  if (['config', 'setup', 'package', 'tsconfig', 'tailwind', 'dependencies'].some(h => lower.includes(h))) return 'config';
-  if (['backend', 'api', 'server', 'database', 'convex', 'auth', 'route'].some(h => lower.includes(h))) return 'backend';
-  if (['test', 'spec', 'jest', 'cypress'].some(h => lower.includes(h))) return 'testing';
-  if (['deploy', 'build', 'vercel', 'netlify'].some(h => lower.includes(h))) return 'deployment';
-  if (['connect', 'integrate', 'hook'].some(h => lower.includes(h))) return 'integration';
-  return 'frontend';
-};
+const FileChip = styled.span`
+  font-size: 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+  padding: 2px 6px;
+`;
 
 interface PlanChecklistProps {
   items: PlanChecklistItem[];
@@ -238,6 +222,33 @@ interface PlanChecklistProps {
   embedded?: boolean;
   className?: string;
 }
+
+const detectCategory = (item: PlanChecklistItem) => {
+  if (item.category) return item.category;
+  const title = String(item.title || '').toLowerCase();
+  if (/(config|setup|package|deps|dependency|tsconfig|tailwind)/.test(title)) return 'config';
+  if (/(backend|api|server|database|db|auth|route)/.test(title)) return 'backend';
+  if (/(integrat|connect|sync|hook)/.test(title)) return 'integration';
+  if (/(test|spec|qa)/.test(title)) return 'testing';
+  if (/(deploy|release|build|vercel|netlify)/.test(title)) return 'deployment';
+  return 'frontend';
+};
+
+const splitByCategory = (items: PlanChecklistItem[]) => {
+  const out: Record<string, PlanChecklistItem[]> = {
+    config: [],
+    frontend: [],
+    backend: [],
+    integration: [],
+    testing: [],
+    deployment: []
+  };
+  for (const item of items) {
+    const cat = detectCategory(item);
+    out[cat] = [...(out[cat] || []), item];
+  }
+  return out;
+};
 
 export const PlanChecklist: React.FC<PlanChecklistProps> = ({
   items,
@@ -247,181 +258,106 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
 }) => {
   const { t, isRTL } = useLanguage();
   const total = items.length;
-  const completed = items.filter((item) => item.completed).length;
-  const pct = total > 0 ? completed / total : 0;
-
-  const grouped = useMemo(() => {
-    const config: PlanChecklistItem[] = [];
-    const frontend: PlanChecklistItem[] = [];
-    const backend: PlanChecklistItem[] = [];
-    const integration: PlanChecklistItem[] = [];
-    const testing: PlanChecklistItem[] = [];
-    const deployment: PlanChecklistItem[] = [];
-
-    for (const item of items) {
-      const category = getCategoryFromItem(item);
-      switch (category) {
-        case 'config': config.push(item); break;
-        case 'backend': backend.push(item); break;
-        case 'integration': integration.push(item); break;
-        case 'testing': testing.push(item); break;
-        case 'deployment': deployment.push(item); break;
-        default: frontend.push(item);
-      }
-    }
-
-    return { config, frontend, backend, integration, testing, deployment };
-  }, [items]);
+  const doneCount = items.filter((item) => item.completed).length;
+  const progress = total > 0 ? doneCount / total : 0;
+  const grouped = useMemo(() => splitByCategory(items), [items]);
 
   const renderItem = (item: PlanChecklistItem) => {
-    const isActive = currentStepId === item.id && !item.completed;
-    const status = item.completed ? 'done' : isActive ? 'active' : 'pending';
-    const statusLabel = status === 'pending' 
-      ? t('app.plan.status.pending') 
-      : status === 'active' 
-        ? t('app.plan.status.working') 
-        : t('app.plan.status.done');
-    const category = getCategoryFromItem(item);
-    const categoryColors = CATEGORY_COLORS[category] || CATEGORY_COLORS.frontend;
+    const state: 'pending' | 'active' | 'done' =
+      item.completed ? 'done' : currentStepId === item.id ? 'active' : 'pending';
+    const statusLabel =
+      state === 'done' ? t('app.plan.status.done') : state === 'active' ? t('app.plan.status.working') : t('app.plan.status.pending');
+    const icon =
+      state === 'done' ? (
+        <CheckCircle2 size={16} color="rgba(134, 239, 172, 0.95)" />
+      ) : state === 'active' ? (
+        <Loader2 size={16} color="rgba(125, 211, 252, 0.95)" className="animate-spin" />
+      ) : (
+        <Circle size={16} color="rgba(255, 255, 255, 0.42)" />
+      );
 
     return (
-      <ItemCard
-        key={item.id}
-        $status={status}
-        initial={{ opacity: 0, x: isRTL ? 6 : -6 }}
-        animate={{ opacity: 1, x: 0 }}
-        style={{
-          gridTemplateColumns: isRTL ? 'auto 1fr 24px' : '24px 1fr auto',
-          textAlign: isRTL ? 'right' : 'left'
-        }}
-      >
-        {isRTL && <ItemStatus $status={status}>{statusLabel}</ItemStatus>}
-        
-        {!isRTL && (status === 'done' ? (
-          <CheckCircle2 size={20} color="rgba(34, 197, 94, 0.95)" />
-        ) : status === 'active' ? (
-          <Zap size={20} color="#F59E0B" />
-        ) : (
-          <Circle size={20} color="rgba(255, 255, 255, 0.4)" />
-        ))}
-
-        <StatusStack style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexDirection: isRTL ? 'row-reverse' : 'row' }}>
-            <span style={{
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              background: categoryColors.bg,
-              border: `1px solid ${categoryColors.border}`,
-              color: categoryColors.text,
-              padding: '2px 6px',
-              borderRadius: 4
-            }}>
-              {category}
-            </span>
-          </div>
+      <Item key={item.id} $state={state}>
+        <ItemHead style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+          {icon}
           <ItemTitle>{item.title}</ItemTitle>
-          {item.description && (
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
-              {item.description}
-            </div>
-          )}
-          {item.files && item.files.length > 0 && (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4, flexDirection: isRTL ? 'row-reverse' : 'row' }}>
-              {item.files.slice(0, 5).map((file, idx) => (
-                <span key={idx} style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}>
-                  📄 {file.split('/').pop()}
-                </span>
-              ))}
-              {item.files.length > 5 && (
-                <span style={{ opacity: 0.6 }}>+{item.files.length - 5} {t('app.plan.more')}</span>
-              )}
-            </div>
-          )}
-          {status === 'active' && <ItemStatus $status={status}>{t('app.plan.status.working')}...</ItemStatus>}
-        </StatusStack>
-
-        {isRTL ? (status === 'done' ? (
-          <CheckCircle2 size={20} color="rgba(34, 197, 94, 0.95)" />
-        ) : status === 'active' ? (
-          <Zap size={20} color="#F59E0B" />
-        ) : (
-          <Circle size={20} color="rgba(255, 255, 255, 0.4)" />
-        )) : (
-          <ItemStatus $status={status}>{statusLabel}</ItemStatus>
-        )}
-      </ItemCard>
+          <ItemStatus $state={state}>{statusLabel}</ItemStatus>
+        </ItemHead>
+        {item.description ? <ItemDescription>{item.description}</ItemDescription> : null}
+        {Array.isArray(item.files) && item.files.length > 0 ? (
+          <FileList style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+            {item.files.slice(0, 5).map((file) => (
+              <FileChip key={`${item.id}-${file}`}>{file.split('/').pop() || file}</FileChip>
+            ))}
+            {item.files.length > 5 ? <FileChip>+{item.files.length - 5} {t('app.plan.more')}</FileChip> : null}
+          </FileList>
+        ) : null}
+      </Item>
     );
   };
 
   const content = (
     <>
-      {total > 0 && (
-        <div style={{ display: 'grid', gap: 8, direction: isRTL ? 'rtl' : 'ltr' }}>
-          <ProgressMeta>
+      {total > 0 ? (
+        <>
+          <ProgressMeta style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
             <span>{t('app.plan.progress')}</span>
-            <span>{completed}/{total}</span>
+            <span>{doneCount}/{total}</span>
           </ProgressMeta>
-          <ProgressRail aria-hidden="true">
-            <ProgressFill $pct={pct} style={{ transformOrigin: isRTL ? 'right' : 'left' }} />
+          <ProgressRail>
+            <ProgressFill $pct={progress} style={{ transformOrigin: isRTL ? 'right' : 'left' }} />
           </ProgressRail>
-        </div>
-      )}
+        </>
+      ) : null}
+
       {total === 0 ? (
         <Empty>{t('app.plan.empty')}</Empty>
       ) : (
-        <ListContainer className="scrollbar-thin scrollbar-glass plan-container" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
-          {grouped.config.length > 0 && (
+        <>
+          {grouped.config.length > 0 ? (
             <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>⚙️ {t('app.plan.category.config')}</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.config')}</SectionTitle>
               {grouped.config.map(renderItem)}
             </Section>
-          )}
-          {grouped.frontend.length > 0 && (
+          ) : null}
+          {grouped.frontend.length > 0 ? (
             <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🎨 {t('app.plan.category.frontend')}</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.frontend')}</SectionTitle>
               {grouped.frontend.map(renderItem)}
             </Section>
-          )}
-          {grouped.backend.length > 0 && (
+          ) : null}
+          {grouped.backend.length > 0 ? (
             <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🔧 {t('app.plan.category.backend')}</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.backend')}</SectionTitle>
               {grouped.backend.map(renderItem)}
             </Section>
-          )}
-          {grouped.integration.length > 0 && (
+          ) : null}
+          {grouped.integration.length > 0 ? (
             <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🔗 {t('app.plan.category.integration')}</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.integration')}</SectionTitle>
               {grouped.integration.map(renderItem)}
             </Section>
-          )}
-          {grouped.testing.length > 0 && (
+          ) : null}
+          {grouped.testing.length > 0 ? (
             <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🧪 {t('app.plan.category.testing')}</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.testing')}</SectionTitle>
               {grouped.testing.map(renderItem)}
             </Section>
-          )}
-          {grouped.deployment.length > 0 && (
+          ) : null}
+          {grouped.deployment.length > 0 ? (
             <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>🚀 {t('app.plan.category.deployment')}</SectionTitle>
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.deployment')}</SectionTitle>
               {grouped.deployment.map(renderItem)}
             </Section>
-          )}
-          {items.length > 0 && grouped.config.length === 0 && grouped.frontend.length === 0 && grouped.backend.length === 0 && (
-            <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>📋 {t('app.plan.category.tasks')}</SectionTitle>
-              {items.map(renderItem)}
-            </Section>
-          )}
-        </ListContainer>
+          ) : null}
+        </>
       )}
     </>
   );
 
   if (embedded) {
     return (
-      <div className={className} style={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+      <div className={className} style={{ height: '100%', minHeight: 0 }}>
         <Body>{content}</Body>
       </div>
     );
@@ -429,9 +365,12 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
 
   return (
     <Panel className={className}>
-      <Header style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
-        <Zap size={14} />
-        {t('app.plan.title')}
+      <Header style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+        <HeaderTitle>
+          <ListChecks size={14} />
+          {t('app.plan.title')}
+        </HeaderTitle>
+        <HeaderMeta>{doneCount}/{total}</HeaderMeta>
       </Header>
       <Body>{content}</Body>
     </Panel>

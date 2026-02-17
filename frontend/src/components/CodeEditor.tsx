@@ -1,392 +1,328 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { Monaco, OnMount } from '@monaco-editor/react';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAIStore } from '@/stores/aiStore';
 import { shallow } from 'zustand/shallow';
 import { GlassCard } from './GlassCard';
 import { FileTree } from './FileTree';
-import { X, Play, Download, Sparkles } from 'lucide-react';
+import { Play, Download, Sparkles, FolderOpen, X } from 'lucide-react';
 import { downloadService } from '@/services/downloadService';
 import { usePreviewStore } from '@/stores/previewStore';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 import type * as monaco from 'monaco-editor';
 import { useLanguage } from '@/context/LanguageContext';
+import { useEditorAutoFollow } from '@/hooks/useEditorAutoFollow';
+import { useStreamingEditorBridge } from '@/hooks/useStreamingEditorBridge';
+import { LanguageIconBadge } from '@/components/files/LanguageIconBadge';
+import { Content, Description, Heading, Popover, Trigger } from '@/components/ui/InstructionPopover';
 
 interface CodeEditorProps {
   showFileTree?: boolean;
+  isVisible?: boolean;
 }
 
-export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) => {
+export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isVisible = true }) => {
   const { t, isRTL } = useLanguage();
-  const { 
-    files, 
-    activeFile, 
-    setActiveFile, 
-    updateFile, 
-    projectName,
-    isHydrating
-  } = useProjectStore();
+  const { files, activeFile, setActiveFile, updateFile, projectName, isHydrating } = useProjectStore();
 
   const [isGenerating, streamText, modelMode, isPlanning, writingFilePath, setIsPreviewOpen] = useAIStore(
-    (state) => [state.isGenerating, state.streamText, state.modelMode, state.isPlanning, state.writingFilePath, state.setIsPreviewOpen],
+    (state) => [
+      state.isGenerating,
+      state.streamText,
+      state.modelMode,
+      state.isPlanning,
+      state.writingFilePath,
+      state.setIsPreviewOpen
+    ],
     shallow
   );
-  
+
   const { addLog } = usePreviewStore();
-  const [openTabs, setOpenTabs] = React.useState<string[]>([]);
-  const [editorTheme, setEditorTheme] = React.useState<'vs-dark' | 'nord' | 'dracula' | 'apex-gold'>('apex-gold');
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isCompactMobile, setIsCompactMobile] = useState(false);
+  const [isMobileExplorerOpen, setIsMobileExplorerOpen] = useState(false);
+  const [svgSourcePath, setSvgSourcePath] = useState<string | null>(null);
+  const [mountedEditor, setMountedEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const [editorRenderValue, setEditorRenderValue] = useState('');
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
+  const autoPickedNonEmptyRef = useRef(false);
+  const editorViewportRef = useRef<HTMLDivElement | null>(null);
 
-  const currentFile = files.find(f => f.path === activeFile);
+  const { syncValueToEditor, resetBridge } = useStreamingEditorBridge();
+  const { followState, notifyContentAppended } = useEditorAutoFollow(mountedEditor);
+
+  const currentFile = files.find((f) => (f.path || f.name) === activeFile);
+  const currentFilePath = currentFile?.path || currentFile?.name || '';
+  const showSvgSource = Boolean(svgSourcePath && svgSourcePath === currentFilePath);
+  const currentFileName = currentFilePath ? currentFilePath.split('/').pop() || currentFilePath : '';
+  const isSvgFile = Boolean(currentFilePath && currentFilePath.toLowerCase().endsWith('.svg'));
   const currentFileLanguage = currentFile
     ? currentFile.language || getLanguageFromExtension(currentFile.path || currentFile.name || '')
     : 'plaintext';
-  const typingTimerRef = useRef<number | null>(null);
-  const targetContentRef = useRef('');
-  const [typedValue, setTypedValue] = React.useState('');
+
+  const isStreamingView =
+    isGenerating &&
+    streamText.length > 0 &&
+    (!currentFile || (currentFile.content || '').length === 0);
+
+  const sourceEditorValue = isStreamingView ? streamText : currentFile?.content ?? '';
+
+  const isActiveWritingFile = Boolean(
+    writingFilePath &&
+      currentFilePath &&
+      writingFilePath === currentFilePath
+  );
+
+  const tabPaths = useMemo(() => {
+    const unique = Array.from(new Set(files.map((f) => f.path || f.name).filter(Boolean)));
+    if (!activeFile || !unique.includes(activeFile)) return unique;
+    return [activeFile, ...unique.filter((p) => p !== activeFile)];
+  }, [files, activeFile]);
+  const nonEmptyFileCandidates = useMemo(
+    () =>
+      files.filter((file) => {
+        const path = (file.path || file.name || '').toLowerCase();
+        const content = String(file.content || '');
+        if (content.trim().length === 0) return false;
+        if (path.startsWith('backend/')) return false;
+        if (!/\.(html?|css|js|jsx|ts|tsx|json|md|svg)$/i.test(path)) return false;
+        return true;
+      }),
+    [files]
+  );
+  const isCurrentFileEmpty = Boolean(currentFile && String(currentFile.content || '').trim().length === 0);
+
+  const lineCount = useMemo(() => {
+    const content = currentFile?.content || '';
+    if (!content) return 0;
+    return content.split('\n').length;
+  }, [currentFile?.content]);
+
+  const charCount = useMemo(() => (currentFile?.content || '').length, [currentFile?.content]);
+  const modeLabel = useMemo(() => {
+    if (modelMode === 'thinking') return t('app.mode.thinking');
+    return t('app.mode.fast');
+  }, [modelMode, t]);
+  const svgDataUrl = useMemo(() => {
+    if (!isSvgFile || !currentFile?.content) return '';
+    const raw = String(currentFile.content || '').trim();
+    if (!raw.includes('<svg')) return '';
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`;
+  }, [currentFile, isSvgFile]);
+  const shouldRenderSvgPreview = Boolean(
+    isSvgFile &&
+    !isStreamingView &&
+    !isActiveWritingFile &&
+    !showSvgSource &&
+    svgDataUrl
+  );
 
   useEffect(() => {
-    if (!activeFile) return;
-    setOpenTabs((prev) => (prev.includes(activeFile) ? prev : [...prev, activeFile]));
-  }, [activeFile]);
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(max-width: 768px)');
+    const apply = () => {
+      const isMobile = media.matches;
+      setIsMobileViewport(isMobile);
+      setIsCompactMobile(isMobile && window.innerHeight <= 760);
+      if (!isMobile) setIsMobileExplorerOpen(false);
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', apply);
+    media.addEventListener('change', apply);
+    return () => {
+      media.removeEventListener('change', apply);
+      window.removeEventListener('resize', apply);
+      window.removeEventListener('orientationchange', apply);
+    };
+  }, []);
 
   useEffect(() => {
     if (files.length === 0) return;
-    const activeExists = Boolean(activeFile && files.some((file) => file.path === activeFile));
+    const activeExists = Boolean(activeFile && files.some((file) => (file.path || file.name) === activeFile));
     if (activeExists) return;
-    const firstFile = files[0];
-    const nextPath = firstFile.path || firstFile.name;
+    const preferredFile =
+      files.find((file) => {
+        const path = (file.path || file.name || '').toLowerCase();
+        return path.includes('frontend/index.html');
+      }) ||
+      files.find((file) => {
+        const path = (file.path || file.name || '').toLowerCase();
+        return path.endsWith('/index.html') || path === 'index.html';
+      }) ||
+      nonEmptyFileCandidates[0] ||
+      files[0];
+    const nextPath = preferredFile.path || preferredFile.name;
     if (nextPath) setActiveFile(nextPath);
-  }, [activeFile, files, setActiveFile]);
+  }, [activeFile, files, nonEmptyFileCandidates, setActiveFile]);
 
-  const handleEditorDidMount: OnMount = React.useCallback((editor, monaco) => {
+  useEffect(() => {
+    if (autoPickedNonEmptyRef.current) return;
+    if (!currentFile) return;
+    const shouldSwitchFromBackend = currentFilePath.toLowerCase().startsWith('backend/');
+    if (!shouldSwitchFromBackend && !isCurrentFileEmpty) return;
+    if (nonEmptyFileCandidates.length === 0) return;
+    const best = nonEmptyFileCandidates[0];
+    const bestPath = best.path || best.name;
+    if (!bestPath || bestPath === currentFilePath) return;
+    autoPickedNonEmptyRef.current = true;
+    setActiveFile(bestPath);
+  }, [currentFile, currentFilePath, isCurrentFileEmpty, nonEmptyFileCandidates, setActiveFile]);
+
+  useEffect(() => {
+    if (!mountedEditor) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEditorRenderValue(sourceEditorValue);
+      return;
+    }
+
+    const isLiveAppendMode = Boolean(isGenerating && isActiveWritingFile && !isStreamingView);
+    if (isLiveAppendMode) {
+      const changed = syncValueToEditor(mountedEditor, sourceEditorValue, { preferIncremental: true });
+      if (changed) notifyContentAppended();
+      return;
+    }
+
+    setEditorRenderValue(sourceEditorValue);
+    syncValueToEditor(mountedEditor, sourceEditorValue, { preferIncremental: false });
+    resetBridge(sourceEditorValue);
+  }, [
+    isActiveWritingFile,
+    isGenerating,
+    isStreamingView,
+    mountedEditor,
+    notifyContentAppended,
+    resetBridge,
+    sourceEditorValue,
+    syncValueToEditor
+  ]);
+
+  useEffect(() => {
+    if (!mountedEditor || !isVisible) return;
+    const raf1 = window.requestAnimationFrame(() => {
+      mountedEditor.layout();
+    });
+    const raf2 = window.requestAnimationFrame(() => {
+      mountedEditor.layout();
+    });
+    const timer = window.setTimeout(() => {
+      mountedEditor.layout();
+    }, 120);
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+      window.clearTimeout(timer);
+    };
+  }, [activeFile, isVisible, mountedEditor]);
+
+  useEffect(() => {
+    if (!mountedEditor || !isVisible) return;
+    const host = editorViewportRef.current;
+    if (!host || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      mountedEditor.layout();
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [isVisible, mountedEditor]);
+
+  const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    setMountedEditor(editor);
 
-    // Define Apex Gold theme (Enhanced Professional)
-    monaco.editor.defineTheme('apex-gold', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
-        { token: 'keyword', foreground: 'F59E0B', fontStyle: 'bold' },
-        { token: 'keyword.control', foreground: 'F59E0B', fontStyle: 'bold' },
-        { token: 'string', foreground: 'FBBF24' },
-        { token: 'string.escape', foreground: 'FCD34D' },
-        { token: 'number', foreground: 'FCD34D' },
-        { token: 'type', foreground: 'F59E0B' },
-        { token: 'type.identifier', foreground: '60A5FA' },
-        { token: 'function', foreground: 'FFFFFF', fontStyle: 'bold' },
-        { token: 'function.declaration', foreground: '60A5FA', fontStyle: 'bold' },
-        { token: 'variable', foreground: 'E5E7EB' },
-        { token: 'variable.parameter', foreground: 'FCD34D' },
-        { token: 'operator', foreground: 'F59E0B' },
-        { token: 'delimiter', foreground: '9CA3AF' },
-        { token: 'tag', foreground: 'F87171' },
-        { token: 'attribute.name', foreground: 'FBBF24' },
-        { token: 'attribute.value', foreground: 'A5B4FC' },
-      ],
-      colors: {
-        'editor.background': '#0a0a0f',
-        'editor.foreground': '#e5e7eb',
-        'editor.lineHighlightBackground': '#1f293766',
-        'editor.lineHighlightBorder': '#f59e0b22',
-        'editor.selectionBackground': '#f59e0b44',
-        'editor.selectionHighlightBackground': '#f59e0b22',
-        'editorCursor.foreground': '#f59e0b',
-        'editorLineNumber.foreground': '#4b5563',
-        'editorLineNumber.activeForeground': '#f59e0b',
-        'editorGutter.background': '#0a0a0f',
-        'editorGutter.addedBackground': '#22c55e',
-        'editorGutter.modifiedBackground': '#3b82f6',
-        'editorGutter.deletedBackground': '#ef4444',
-        'scrollbarSlider.background': '#f59e0b22',
-        'scrollbarSlider.hoverBackground': '#f59e0b44',
-        'scrollbarSlider.activeBackground': '#f59e0b66',
-        'editorBracketMatch.background': '#f59e0b33',
-        'editorBracketMatch.border': '#f59e0b',
-        'editorIndentGuide.background1': '#374151',
-        'editorIndentGuide.activeBackground1': '#f59e0b44',
-        'editorWhitespace.foreground': '#374151',
-        'minimap.background': '#0a0a0f',
-        'minimap.selectionHighlight': '#f59e0b44',
-        'editorOverviewRuler.border': '#1f2937',
-        'stickyScroll.background': '#0d0d12',
-        'stickyScrollHover.background': '#1f2937',
-      },
-    });
+    monaco.editor.setTheme('vs-dark');
 
-    // Define Nord theme
-    monaco.editor.defineTheme('nord', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: 'comment', foreground: '616e88', fontStyle: 'italic' },
-        { token: 'keyword', foreground: '81a1c1' },
-        { token: 'string', foreground: 'a3be8c' },
-        { token: 'number', foreground: 'b48ead' },
-        { token: 'type', foreground: '8fbcbb' },
-        { token: 'function', foreground: '88c0d0' },
-      ],
-      colors: {
-        'editor.background': '#2e3440',
-        'editor.foreground': '#d8dee9',
-        'editor.lineHighlightBackground': '#3b4252',
-        'editor.selectionBackground': '#434c5e',
-        'editorCursor.foreground': '#d8dee9',
-      },
-    });
-
-    monaco.editor.setTheme('apex-gold');
-
-    // Configure TypeScript
     monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
       target: monaco.languages.typescript.ScriptTarget.ESNext,
       allowNonTsExtensions: true,
       moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
       module: monaco.languages.typescript.ModuleKind.CommonJS,
       noEmit: true,
-      jsx: monaco.languages.typescript.JsxEmit.React,
+      jsx: monaco.languages.typescript.JsxEmit.React
     });
 
-    // Add format on save shortcut
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       editor.getAction('editor.action.formatDocument')?.run();
     });
-  }, []);
+  };
 
-  useEffect(() => {
-    if (monacoRef.current) {
-      monacoRef.current.editor.setTheme('apex-gold');
-    }
-  }, []);
+  const editorOptions: monaco.editor.IStandaloneEditorConstructionOptions = useMemo(
+    () => ({
+      readOnly: isGenerating && (isStreamingView || isActiveWritingFile),
+      automaticLayout: true,
+      fontSize: isMobileViewport ? 16 : 15,
+      lineHeight: isMobileViewport ? 24 : 21,
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+      fontLigatures: true,
+      lineNumbers: isMobileViewport ? 'on' : 'on',
+      lineNumbersMinChars: isMobileViewport ? 3 : 4,
+      glyphMargin: false,
+      folding: true,
+      renderWhitespace: 'selection',
+      renderLineHighlight: 'all',
+      scrollBeyondLastLine: false,
+      scrollBeyondLastColumn: 3,
+      minimap: {
+        enabled: !isMobileViewport && !isStreamingView,
+        side: 'right',
+        showSlider: 'always',
+        renderCharacters: false,
+        maxColumn: 80
+      },
+      scrollbar: {
+        vertical: 'visible',
+        horizontal: 'hidden',
+        useShadows: true,
+        verticalScrollbarSize: isMobileViewport ? 10 : 12,
+        horizontalScrollbarSize: 0
+      },
+      formatOnPaste: true,
+      formatOnType: false,
+      tabSize: 2,
+      insertSpaces: true,
+      wordWrap: 'bounded',
+      wordWrapColumn: isMobileViewport ? 64 : 110,
+      wrappingIndent: 'indent',
+      wrappingStrategy: 'advanced',
+      smoothScrolling: true,
+      padding: { top: isMobileViewport ? 12 : 10, bottom: isMobileViewport ? 14 : 10 },
+      bracketPairColorization: { enabled: true, independentColorPoolPerBracketType: true },
+      guides: {
+        bracketPairs: true,
+        indentation: true,
+        highlightActiveIndentation: true,
+        highlightActiveBracketPair: true
+      },
+      stickyScroll: { enabled: !isMobileViewport, maxLineCount: 4 },
+      contextmenu: true
+    }),
+    [isActiveWritingFile, isGenerating, isMobileViewport, isStreamingView]
+  );
 
   const handleEditorChange = (value: string | undefined) => {
-    if (isGenerating) return;
-    if (activeFile && value !== undefined) {
-      updateFile(activeFile, value);
-    }
+    if (value === undefined) return;
+    if (isGenerating && isActiveWritingFile) return;
+    setEditorRenderValue(value);
+    if (activeFile) updateFile(activeFile, value);
   };
 
-  const closeTab = (path: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newTabs = openTabs.filter(t => t !== path);
-    setOpenTabs(newTabs);
-    if (activeFile === path && newTabs.length > 0) {
-      setActiveFile(newTabs[newTabs.length - 1]);
-    }
-  };
-
-  const handleRun = async () => {
+  const handleRun = () => {
     if (files.length === 0) return;
     setIsPreviewOpen(true);
-    addLog({
-      timestamp: Date.now(),
-      type: 'info',
-      message: 'Opening preview...'
-    });
+    addLog({ timestamp: Date.now(), type: 'info', message: 'Opening preview...' });
   };
 
   const handleDownload = async () => {
     if (files.length === 0) return;
     try {
       await downloadService.downloadAsZip(files, projectName || 'apex-project');
-      addLog({
-        timestamp: Date.now(),
-        type: 'success',
-        message: 'Project downloaded successfully!'
-      });
-    } catch (error: any) {
-      addLog({
-        timestamp: Date.now(),
-        type: 'error',
-        message: 'Failed to download project'
-      });
+      addLog({ timestamp: Date.now(), type: 'success', message: 'Project downloaded successfully!' });
+    } catch {
+      addLog({ timestamp: Date.now(), type: 'error', message: 'Failed to download project' });
     }
-  };
-
-  const isStreamingView = isGenerating && files.length === 0 && streamText.length > 0;
-  const storeContent = currentFile?.content ?? '';
-
-  useEffect(() => {
-    targetContentRef.current = storeContent;
-  }, [storeContent]);
-
-  useEffect(() => {
-    if (!currentFile) {
-      setTypedValue('');
-      return;
-    }
-
-    if (!isGenerating) {
-      if (typingTimerRef.current) {
-        window.clearInterval(typingTimerRef.current);
-        typingTimerRef.current = null;
-      }
-      setTypedValue(storeContent);
-      return;
-    }
-
-    setTypedValue((prev) => (targetContentRef.current.startsWith(prev) ? prev : targetContentRef.current));
-
-    if (!typingTimerRef.current) {
-      typingTimerRef.current = window.setInterval(() => {
-        setTypedValue((prev) => {
-          const target = targetContentRef.current;
-          if (prev === target) return prev;
-          const step = 140;
-          const nextBoundary = target.indexOf('\n', prev.length);
-          const maxNext = Math.min(prev.length + step, target.length);
-          const nextLen =
-            nextBoundary !== -1 && nextBoundary < maxNext
-              ? Math.min(nextBoundary + 1, target.length)
-              : maxNext;
-          return target.slice(0, nextLen);
-        });
-      }, 22);
-    }
-
-    return () => {
-      if (typingTimerRef.current) {
-        window.clearInterval(typingTimerRef.current);
-        typingTimerRef.current = null;
-      }
-    };
-  }, [activeFile, currentFile, isGenerating, storeContent]);
-
-  // Auto-scroll to bottom during generation
-  useEffect(() => {
-    if (isGenerating && editorRef.current) {
-      const editor = editorRef.current;
-      const model = editor.getModel();
-      if (model) {
-        const lastLine = model.getLineCount();
-        const lastColumn = model.getLineMaxColumn(lastLine);
-        editor.revealPosition(
-          { lineNumber: lastLine, column: lastColumn },
-          0 // Smooth scrolling
-        );
-      }
-    }
-  }, [typedValue, isGenerating]);
-
-  const editorValue = useMemo(() => {
-    if (isStreamingView) return streamText;
-    if (!currentFile) return undefined;
-    return isGenerating ? typedValue : storeContent;
-  }, [currentFile, isGenerating, isStreamingView, storeContent, streamText, typedValue]);
-
-  // ENHANCED PROFESSIONAL IDE OPTIONS
-  const editorOptions: monaco.editor.IStandaloneEditorConstructionOptions = {
-    readOnly: isStreamingView,
-    automaticLayout: true,
-    fontSize: 14,
-    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
-    fontLigatures: true,
-    lineNumbers: 'on',
-    lineNumbersMinChars: 4,
-    glyphMargin: true,
-    folding: true,
-    foldingHighlight: true,
-    foldingStrategy: 'indentation',
-    showFoldingControls: 'always',
-    renderWhitespace: 'selection',
-    renderLineHighlight: 'all',
-    renderLineHighlightOnlyWhenFocus: false,
-    scrollBeyondLastLine: false,
-    scrollbar: {
-      vertical: 'visible',
-      horizontal: 'visible',
-      useShadows: true,
-      verticalScrollbarSize: 12,
-      horizontalScrollbarSize: 12,
-      arrowSize: 0,
-    },
-    minimap: {
-      enabled: true,
-      side: 'right',
-      showSlider: 'always',
-      renderCharacters: false,
-      maxColumn: 80,
-      scale: 1,
-    },
-    suggest: {
-      showMethods: true,
-      showFunctions: true,
-      showConstructors: true,
-      showFields: true,
-      showVariables: true,
-      showClasses: true,
-      showKeywords: true,
-      showSnippets: true,
-    },
-    quickSuggestions: {
-      other: true,
-      comments: false,
-      strings: true,
-    },
-    parameterHints: {
-      enabled: true,
-      cycle: true,
-    },
-    hover: {
-      enabled: true,
-      delay: 300,
-      sticky: true,
-    },
-    bracketPairColorization: {
-      enabled: true,
-      independentColorPoolPerBracketType: true,
-    },
-    guides: {
-      bracketPairs: true,
-      indentation: true,
-      highlightActiveIndentation: true,
-      highlightActiveBracketPair: true,
-    },
-    stickyScroll: {
-      enabled: true,
-      maxLineCount: 5,
-    },
-    matchBrackets: 'always',
-    autoClosingBrackets: 'always',
-    autoClosingQuotes: 'always',
-    autoIndent: 'full',
-    formatOnPaste: true,
-    formatOnType: true,
-    tabSize: 2,
-    insertSpaces: true,
-    detectIndentation: true,
-    trimAutoWhitespace: true,
-    wordWrap: 'on',
-    wrappingIndent: 'indent',
-    wrappingStrategy: 'advanced',
-    cursorBlinking: 'smooth',
-    cursorSmoothCaretAnimation: 'on',
-    cursorStyle: 'line',
-    smoothScrolling: true,
-    mouseWheelZoom: true,
-    multiCursorModifier: 'alt',
-    padding: {
-      top: 12,
-      bottom: 12,
-    },
-    links: true,
-    colorDecorators: true,
-    contextmenu: true,
-    snippetSuggestions: 'inline',
-    suggestOnTriggerCharacters: true,
-    acceptSuggestionOnCommitCharacter: true,
-    acceptSuggestionOnEnter: 'on',
-    wordBasedSuggestions: 'matchingDocuments',
-    occurrencesHighlight: 'singleFile',
-    selectionHighlight: true,
-    codeLens: true,
-    lightbulb: {
-      enabled: true,
-    },
   };
 
   if (isHydrating && files.length === 0) {
@@ -395,7 +331,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
         <div className="flex-1 min-h-0 p-4">
           <div className="h-full rounded-xl border border-cyan-500/10 bg-cyan-500/5 backdrop-blur-2xl animate-pulse flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
+              <div className="w-10 h-10 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
               <p className="text-cyan-500/60 font-medium">{t('app.editor.loading')}</p>
             </div>
           </div>
@@ -405,123 +341,251 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true }) =
   }
 
   return (
-    <GlassCard className={`h-full min-h-[600px] flex flex-col overflow-hidden ${isRTL ? 'rtl' : 'ltr'}`}>
+    <GlassCard className={`h-full min-h-0 flex flex-col overflow-hidden ${isRTL ? 'rtl' : 'ltr'}`}>
       <div className={`flex-1 min-h-0 flex ${isRTL ? 'flex-col md:flex-row-reverse' : 'flex-col md:flex-row'}`}>
-        {showFileTree && (
-          <div className={`w-full md:w-64 min-h-0 border-b md:border-b-0 ${isRTL ? 'md:border-l' : 'md:border-r'} border-white/10 glass-panel`}>
-            <div className={`p-3 border-b border-white/10 ${isRTL ? 'text-right' : 'text-left'}`}>
-              <h3 className="text-sm font-semibold text-white/80">{t('app.sidebar.files')}</h3>
+        {showFileTree && !isMobileViewport && (
+          <aside className={`w-64 min-h-0 border-b md:border-b-0 ${isRTL ? 'md:border-l' : 'md:border-r'} border-white/10 bg-black/25`}>
+            <div className={`h-11 px-3 border-b border-white/10 flex items-center ${isRTL ? 'justify-end' : 'justify-start'}`}>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-white/75">{t('app.sidebar.files')}</h3>
             </div>
             <FileTree />
-          </div>
+          </aside>
         )}
-        
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className={`flex items-center border-b border-white/10 glass-panel ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-            <div className={`flex items-center gap-2 px-3 flex-shrink-0 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
 
-              <button
-                onClick={() => setEditorTheme(t => t === 'vs-dark' ? 'nord' : t === 'nord' ? 'dracula' : 'vs-dark')}
-                className="glass-button px-3 py-1.5 rounded text-xs font-medium"
-                title="Toggle theme"
-              >
-                {editorTheme === 'vs-dark' ? '🌙' : editorTheme === 'nord' ? '❄️' : '🧛'}
-              </button>
-              <button
-                onClick={handleRun}
-                className="glass-button px-3 py-1.5 rounded flex items-center justify-center gap-2 text-sm font-semibold"
-                disabled={files.length === 0 || isGenerating || Boolean(writingFilePath)}
-                title="Run project (Ctrl/Cmd + R)"
-                style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
-              >
-                <Play className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('app.editor.run')}</span>
-              </button>
-              <button
-                onClick={handleDownload}
-                className="glass-button px-3 py-1.5 rounded flex items-center justify-center gap-2 text-sm font-semibold"
-                disabled={files.length === 0}
-                title="Download as ZIP"
-                style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('app.editor.download')}</span>
-              </button>
-            </div>
-            
-            <div className={`flex-1 flex overflow-x-auto scrollbar-thin min-w-0 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-              {openTabs.map(path => (
-                <div
-                  key={path}
-                  className={`flex items-center gap-2 px-3 py-2 border-r border-white/5 cursor-pointer transition-all duration-200 whitespace-nowrap min-w-0 ${
-                    activeFile === path
-                      ? 'bg-white/10 text-cyan-400 border-b-2 border-b-cyan-500 shadow-[inset_0_-10px_20px_rgba(34,211,238,0.05)]'
-                      : 'hover:bg-white/5 text-white/40 hover:text-white/70'
+        <section className="flex-1 flex flex-col min-h-0 relative">
+          {showFileTree && isMobileViewport && (
+            <>
+              <div className="h-10 px-3 border-b border-white/10 bg-black/20 flex items-center justify-between gap-2">
+                <Popover>
+                  <Trigger>
+                    <button
+                      type="button"
+                      onClick={() => setIsMobileExplorerOpen(true)}
+                      className="h-8 px-3 rounded-md border border-white/15 bg-white/5 text-white/85 text-xs font-semibold inline-flex items-center gap-2"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                      {t('app.sidebar.files')}
+                    </button>
+                  </Trigger>
+                  <Content>
+                    <Heading>Files</Heading>
+                    <Description>Open project files. On mobile, hold to view this help and release to hide.</Description>
+                  </Content>
+                </Popover>
+                <div className="text-xs text-white/70 truncate max-w-[55vw] inline-flex items-center gap-2">
+                  {currentFilePath ? <LanguageIconBadge size="sm" language={currentFileLanguage} /> : null}
+                  <span>{currentFileName || t('app.editor.title')}</span>
+                </div>
+              </div>
+
+              {isMobileExplorerOpen && (
+                <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm">
+                  <div className={`h-full w-[82%] max-w-[320px] bg-[#0b0f17] border-white/10 ${isRTL ? 'ml-auto border-l' : 'border-r'}`}>
+                    <div className="h-11 px-3 border-b border-white/10 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-white/80 uppercase tracking-wide">{t('app.sidebar.files')}</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsMobileExplorerOpen(false)}
+                        className="h-8 w-8 rounded-md border border-white/15 bg-white/5 text-white/70 inline-flex items-center justify-center"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <FileTree />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          <div
+            className={`border-b border-white/10 bg-black/20 flex items-center gap-2 px-2 ${
+              isMobileViewport ? 'h-9' : 'h-11'
+            } ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
+          >
+            <Popover>
+              <Trigger>
+                <button
+                  type="button"
+                  onClick={handleRun}
+                  disabled={files.length === 0 || isGenerating || Boolean(writingFilePath)}
+                  className={`rounded-md border border-white/15 bg-white/5 text-white/85 text-xs font-semibold inline-flex items-center disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isMobileViewport ? 'h-8 w-8 justify-center px-0' : 'h-8 px-3 gap-2'
                   }`}
-                  onClick={() => setActiveFile(path)}
-                  style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
+                  title="Run project"
                 >
-                  <span className="text-sm truncate max-w-[120px]">
-                    {path.split('/').pop()}
-                  </span>
-                  <X
-                    className="w-3 h-3 hover:text-red-400 flex-shrink-0"
-                    onClick={(e) => closeTab(path, e)}
+                  <Play className="w-4 h-4" />
+                  {!isMobileViewport ? t('app.editor.run') : null}
+                </button>
+              </Trigger>
+              <Content>
+                <Heading>Run Preview</Heading>
+                <Description>Builds and opens the live preview for your current files.</Description>
+              </Content>
+            </Popover>
+
+            <Popover>
+              <Trigger>
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={files.length === 0}
+                  className={`rounded-md border border-white/15 bg-white/5 text-white/85 text-xs font-semibold inline-flex items-center disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isMobileViewport ? 'h-8 w-8 justify-center px-0' : 'h-8 px-3 gap-2'
+                  }`}
+                  title="Download ZIP"
+                >
+                  <Download className="w-4 h-4" />
+                  {!isMobileViewport ? t('app.editor.download') : null}
+                </button>
+              </Trigger>
+              <Content>
+                <Heading>Download</Heading>
+                <Description>Export the full project as a ZIP archive.</Description>
+              </Content>
+            </Popover>
+          </div>
+
+          <div
+            className={`border-b border-white/10 bg-black/10 flex items-center overflow-x-auto scrollbar-thin ${
+              isMobileViewport ? 'h-8' : 'h-10'
+            } ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
+          >
+              {tabPaths.map((path) => {
+                const active = activeFile === path;
+                const lang = getLanguageFromExtension(path);
+                return (
+                  <button
+                    key={path}
+                    type="button"
+                    onClick={() => setActiveFile(path)}
+                    className={`h-full whitespace-nowrap border-r border-white/8 transition-colors inline-flex items-center gap-2 ${
+                      isMobileViewport ? 'px-2 text-[10.5px]' : 'px-3 text-xs'
+                    } ${
+                      active ? 'text-cyan-300 bg-cyan-400/10' : 'text-white/55 hover:text-white/85 hover:bg-white/5'
+                    }`}
+                  >
+                    <LanguageIconBadge size="sm" language={lang} />
+                    <span className={isMobileViewport ? 'max-w-[110px] truncate' : ''}>{path.split('/').pop()}</span>
+                  </button>
+                );
+              })}
+          </div>
+
+          <div className="flex-1 overflow-hidden min-h-0 bg-[#0a0a0f] relative">
+            {shouldRenderSvgPreview ? (
+              <div className="h-full w-full flex flex-col items-center justify-center gap-4 px-4">
+                <div className="text-xs uppercase tracking-[0.12em] text-white/55 font-semibold">SVG Visual</div>
+                <div className="rounded-2xl border border-white/15 bg-white/5 p-6 max-w-full max-h-[60%] overflow-auto">
+                  <img
+                    src={svgDataUrl}
+                    alt={currentFileName || 'SVG preview'}
+                    className="max-w-full max-h-[240px] md:max-h-[320px] object-contain"
                   />
                 </div>
-              ))}
-            </div>
-          </div>
-          
-          <div className="flex-1 overflow-hidden min-h-[400px] bg-[#0a0a0f] relative">
-            {isStreamingView || currentFile ? (
-              <Editor
-                height="100%"
-                language={isStreamingView ? 'markdown' : currentFileLanguage}
-                value={editorValue}
-                onChange={handleEditorChange}
-                onMount={handleEditorDidMount}
-                theme={editorTheme}
-                options={{
-                  ...editorOptions,
-                  theme: 'vs-dark' // Force dark theme for better glass integration
-                }}
-                loading={
-                  <div className="flex items-center justify-center h-full">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
+                <button
+                  type="button"
+                  onClick={() => setSvgSourcePath(currentFilePath)}
+                  className="h-8 px-3 rounded-md border border-white/20 bg-white/10 text-white/80 text-xs font-semibold hover:bg-white/15"
+                >
+                  View SVG Code
+                </button>
+              </div>
+            ) : isStreamingView || currentFile ? (
+              <>
+                {isCurrentFileEmpty && nonEmptyFileCandidates.length > 0 ? (
+                  <div className="absolute left-3 right-3 top-3 z-20 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3 py-2">
+                    <div className="text-[11px] font-semibold text-amber-100/90">
+                      Current file is empty. Open a file with code:
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {nonEmptyFileCandidates.slice(0, 3).map((candidate) => {
+                        const path = candidate.path || candidate.name || '';
+                        return (
+                          <button
+                            key={path}
+                            type="button"
+                            onClick={() => setActiveFile(path)}
+                            className="h-7 px-2 rounded-md border border-white/20 bg-black/40 text-[11px] text-white/90"
+                          >
+                            {path.split('/').pop()}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                }
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-white/20 gap-6 text-center px-6">
-                <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-cyan-500/10 to-purple-500/10 border border-white/10 flex items-center justify-center shadow-[0_0_60px_rgba(34,211,238,0.1)] backdrop-blur-xl">
-                  <Sparkles size={40} className="text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
+                ) : null}
+                {isSvgFile && svgDataUrl && !isStreamingView && !isActiveWritingFile && showSvgSource ? (
+                  <div className="absolute top-3 right-3 z-20">
+                    <button
+                      type="button"
+                      onClick={() => setSvgSourcePath(null)}
+                      className="h-8 px-3 rounded-md border border-white/20 bg-black/55 text-white/80 text-xs font-semibold hover:bg-black/70"
+                    >
+                      Show SVG Visual
+                    </button>
+                  </div>
+                ) : null}
+                <div
+                  ref={editorViewportRef}
+                  className="h-full w-full min-h-0"
+                  style={isMobileViewport ? { minHeight: isCompactMobile ? 260 : 300 } : undefined}
+                >
+                  <Editor
+                    height="100%"
+                    language={isStreamingView ? 'markdown' : currentFileLanguage}
+                    value={editorRenderValue}
+                    onChange={handleEditorChange}
+                    onMount={handleEditorDidMount}
+                    theme="vs-dark"
+                    options={editorOptions}
+                    loading={
+                      <div className="flex items-center justify-center h-full">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
+                      </div>
+                    }
+                  />
                 </div>
-                <div className="space-y-2">
-                  <h3 className="text-lg font-bold text-white/80 tracking-wide">{t('app.editor.welcome')}</h3>
-                  <p className="text-sm leading-relaxed max-w-xs text-white/40">
-                    {t('app.editor.welcomeDesc')}
-                  </p>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-white/25 gap-4 text-center px-6">
+                <div className="w-20 h-20 rounded-2xl bg-cyan-500/8 border border-white/10 flex items-center justify-center">
+                  <Sparkles size={34} className="text-cyan-300" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white/80">{t('app.editor.welcome')}</h3>
+                  <p className="text-sm text-white/45 mt-1">{t('app.editor.welcomeDesc')}</p>
                 </div>
               </div>
             )}
           </div>
 
-          <div className={`h-9 flex items-center justify-between px-3 border-t border-white/10 glass-panel ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-            <div className="text-xs text-white/70 font-medium tracking-wide">
+          <div
+            className={`px-3 border-t border-white/10 bg-black/20 flex items-center justify-between ${
+              isMobileViewport ? (isCompactMobile ? 'h-7' : 'h-8') : 'h-9'
+            } ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
+          >
+            <div className="text-xs text-white/70">
               {isPlanning
-                ? t('app.plan.status.working') + '...'
+                ? `${t('app.plan.status.working')}...`
                 : isGenerating
-                  ? t('app.plan.status.working') + '...'
+                  ? `${t('app.plan.status.working')}...`
                   : t('app.editor.ready')}
             </div>
-            <div className={`text-xs text-white/50 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-              <span className="text-cyan-400/80 font-semibold shadow-cyan-500/20 drop-shadow-sm">{modelMode === 'thinking' ? t('app.mode.thinking') : t('app.mode.fast')}</span>
+            <div className={`text-xs text-white/55 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+              {!isMobileViewport ? <span>{t('app.status.line')} {lineCount}</span> : null}
+              {!isMobileViewport ? <span className="opacity-30">•</span> : null}
+              {!isMobileViewport ? <span>{charCount} {t('app.status.chars')}</span> : null}
+              {isMobileViewport ? <span className="truncate max-w-[100px]">{currentFileName || t('app.editor.title')}</span> : null}
               <span className="opacity-30">•</span>
-              <span>{editorTheme}</span>
+              <span className={followState.mode === 'following' ? 'text-emerald-300/85' : 'text-amber-300/85'}>
+                {followState.mode === 'following' ? 'Auto-follow' : 'Paused follow'}
+              </span>
+              <span className="opacity-30">•</span>
+              <span className="text-cyan-300/80 font-semibold">{modeLabel}</span>
             </div>
           </div>
-        </div>
+        </section>
       </div>
     </GlassCard>
   );

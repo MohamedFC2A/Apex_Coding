@@ -6,6 +6,10 @@ type WorkspaceMetaRecord = {
   updatedAt: number;
   projectId: string;
   projectName: string;
+  projectType: 'FULL_STACK' | 'FRONTEND_ONLY' | null;
+  selectedFeatures: string[];
+  customFeatureTags: string[];
+  constraintsEnforcement: 'hard';
   stack: string;
   description: string;
   activeFile: string | null;
@@ -96,6 +100,10 @@ export const applyWorkspaceDelta = async (delta: {
         updatedAt,
         projectId: delta.meta.projectId ?? '',
         projectName: delta.meta.projectName ?? '',
+        projectType: delta.meta.projectType ?? 'FRONTEND_ONLY',
+        selectedFeatures: Array.isArray(delta.meta.selectedFeatures) ? delta.meta.selectedFeatures : [],
+        customFeatureTags: Array.isArray(delta.meta.customFeatureTags) ? delta.meta.customFeatureTags : [],
+        constraintsEnforcement: delta.meta.constraintsEnforcement ?? 'hard',
         stack: delta.meta.stack ?? '',
         description: delta.meta.description ?? '',
         activeFile: delta.meta.activeFile ?? null,

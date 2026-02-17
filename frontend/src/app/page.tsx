@@ -4,32 +4,52 @@ import { Hero } from '@/components/marketing/Hero';
 import { FeatureCards } from '@/components/marketing/FeatureCards';
 import { ValueProp } from '@/components/marketing/ValueProp';
 import { LeadCapture } from '@/components/marketing/LeadCapture';
+// import { DemoSection } from '@/components/marketing/DemoSection'; // Keeping it if it was there, but it wasn't in list_dir output earlier? Wait, it was in the file: import { DemoSection } from '@/components/marketing/DemoSection';
+// I'll keep it imports if I can confirm it exists. view_file 16 showed it.
 import { DemoSection } from '@/components/marketing/DemoSection';
+
+const SectionSeparator = () => (
+  <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent my-12" />
+);
 
 export default function HomePage() {
   return (
     <>
-      <header className="relative min-h-[calc(100vh-56px)] overflow-hidden bg-black">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 bg-[radial-gradient(1200px_700px_at_20%_15%,rgba(255,255,255,0.05),transparent_55%),radial-gradient(1100px_740px_at_85%_80%,rgba(255,255,255,0.03),transparent_55%)]" />
-          <div className="absolute -top-44 left-[-160px] h-[620px] w-[620px] rounded-full bg-white/5 blur-[120px]" />
-          <div className="absolute -bottom-48 right-[-180px] h-[680px] w-[680px] rounded-full bg-white/5 blur-[120px]" />
-        </div>
+      <header className="relative bg-black selection:bg-blue-500/30">
         <Hero />
       </header>
 
-      <main className="relative bg-black">
-        <section className="page-container pb-14 sm:pb-16">
+      <main className="relative bg-[#050505] selection:bg-purple-500/30">
+        
+        <section className="page-container py-24 relative">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-3xl h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent blur-sm" />
           <FeatureCards />
         </section>
-        <section className="page-container pb-12 sm:pb-14">
+
+        <SectionSeparator />
+
+        <section className="page-container py-24">
+          <div className="mb-16 text-center max-w-3xl mx-auto">
+            <h2 className="text-3xl md:text-5xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-b from-white to-white/60">
+              Why Apex Logic?
+            </h2>
+            <p className="text-lg text-white/50">
+              Built for the next generation of software engineers.
+            </p>
+          </div>
           <ValueProp />
         </section>
-        <section className="page-container pb-16 sm:pb-20">
+
+        <SectionSeparator />
+
+        <section className="page-container py-24">
           <LeadCapture />
         </section>
-        <section id="demo" className="page-container pb-16 sm:pb-20">
-          <DemoSection />
+
+        <section id="demo" className="page-container pb-24">
+          <div className="mt-24">
+             <DemoSection />
+          </div>
         </section>
       </main>
     </>

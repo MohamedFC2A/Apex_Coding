@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/context/LanguageContext';
+import { GitBranch, Database, MessageSquare } from 'lucide-react';
 
 export function FeatureCards() {
   const { t } = useLanguage();
@@ -9,18 +10,21 @@ export function FeatureCards() {
   const cards = [
     {
       key: 'graph',
-      title: t('feature.graph.title'),
-      body: t('feature.graph.body')
+      icon: GitBranch,
+      title: t('feature.graph.title') || "Graph-Based Logic",
+      body: t('feature.graph.body') || "Visualize your code flow with our proprietary node graph engine."
     },
     {
       key: 'persistence',
-      title: t('feature.persistence.title'),
-      body: t('feature.persistence.body')
+      icon: Database,
+      title: t('feature.persistence.title') || "Smart Persistence",
+      body: t('feature.persistence.body') || "Never lose a thought. State is persisted automatically across sessions."
     },
     {
       key: 'feedback',
-      title: t('feature.feedback.title'),
-      body: t('feature.feedback.body')
+      icon: MessageSquare,
+      title: t('feature.feedback.title') || "AI Pair Programming",
+      body: t('feature.feedback.body') || "Get real-time feedback and suggestions as you type."
     }
   ];
   
@@ -31,31 +35,40 @@ export function FeatureCards() {
       viewport={{ once: true, amount: 0.25 }}
       variants={{
         hidden: { opacity: 0 },
-        show: { opacity: 1, transition: { staggerChildren: 0.08 } }
+        show: { opacity: 1, transition: { staggerChildren: 0.1 } }
       }}
-      className="grid gap-6 md:grid-cols-3"
+      className="grid gap-8 md:grid-cols-3 relative z-10"
     >
-      {cards.map((card, index) => (
-        <motion.div
-          key={card.key}
-          variants={{
-            hidden: { opacity: 0, y: 14, filter: 'blur(8px)' },
-            show: { opacity: 1, y: 0, filter: 'blur(0px)' }
-          }}
-          transition={{ duration: 0.65, ease: [0.2, 0.8, 0.2, 1] }}
-          className={`relative group p-8 rounded-3xl border transition-all duration-300 hover:translate-y-[-4px] ${
-            index === 0 
-              ? 'border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-transparent shadow-[0_0_40px_rgba(245,158,11,0.05)] hover:border-amber-500/40' 
-              : 'border-white/5 bg-white/5 hover:border-white/20 hover:shadow-[0_0_30px_rgba(255,255,255,0.05)]'
-          }`}
-        >
-          <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none rounded-3xl" />
-          <div className="relative z-10">
-            <div className={`text-xl font-bold tracking-tight mb-4 ${index === 0 ? 'gold-text' : 'silver-text'}`}>{card.title}</div>
-            <div className="text-sm leading-relaxed text-white/50 font-light">{card.body}</div>
-          </div>
-        </motion.div>
-      ))}
+      {cards.map((card) => {
+        const Icon = card.icon;
+        return (
+          <motion.div
+            key={card.key}
+            variants={{
+              hidden: { opacity: 0, y: 20, filter: 'blur(10px)' },
+              show: { opacity: 1, y: 0, filter: 'blur(0px)' }
+            }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            className="group relative p-8 rounded-3xl border border-white/10 bg-black/40 backdrop-blur-xl transition-all duration-300 hover:border-blue-500/30 hover:shadow-2xl hover:shadow-blue-500/10 hover:-translate-y-1 overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            
+            <div className="relative z-10">
+              <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-6 text-blue-400 group-hover:scale-110 group-hover:bg-blue-500/20 group-hover:border-blue-500/30 transition-all duration-300">
+                <Icon className="w-6 h-6" />
+              </div>
+              
+              <h3 className="text-xl font-bold tracking-tight mb-3 text-white group-hover:text-blue-200 transition-colors">
+                {card.title}
+              </h3>
+              
+              <p className="text-base leading-relaxed text-white/50 font-light group-hover:text-white/70 transition-colors">
+                {card.body}
+              </p>
+            </div>
+          </motion.div>
+        );
+      })}
     </motion.div>
   );
 }

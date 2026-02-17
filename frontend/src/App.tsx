@@ -23,10 +23,19 @@ import { MainActionButton, MainActionState } from './components/ui/MainActionBut
 import { PreviewWindow } from './components/ui/PreviewWindow';
 import { BrainConsole } from './components/ui/BrainConsole';
 import { PlanChecklist } from './components/ui/PlanChecklist';
-import { SuperWorkflow } from './components/ui/SuperWorkflow';
 import { Content, Description, Heading, Popover, Trigger } from './components/ui/InstructionPopover';
+import { ToolsPanel } from './components/ui/ToolsPanel';
 import { GlobalStyles } from './styles/GlobalStyles';
 import { MobileNav } from './components/ui/MobileNav';
+import type { ProjectType } from './stores/projectStore';
+import { recommendProjectMode } from './services/projectModeAdvisor';
+import {
+  buildConstraintsRepairPrompt,
+  buildGenerationConstraintsBlock,
+  mergePromptWithConstraints
+} from './services/constraintPromptBuilder';
+import { validateConstraints } from './services/constraintValidator';
+import type { GenerationConstraints } from './types/constraints';
 
 // ============================================================================
 // GLOBAL AUTOSAVE - INDEPENDENT OF CHAT/COMPONENT LIFECYCLE
@@ -34,6 +43,12 @@ import { MobileNav } from './components/ui/MobileNav';
 let globalAutosaveTimer: number | null = null;
 
 const globalWriteAutosaveNow = () => {
+  try {
+    useAIStore.getState().saveCurrentSession();
+  } catch (e) {
+    console.warn('[HistorySave] Failed:', e);
+  }
+
   try {
     (window as any).__APEX_WORKSPACE_PERSIST__?.flush?.();
   } catch (e) {
@@ -55,7 +70,7 @@ if (typeof window !== 'undefined') {
 }
 
 const Root = styled.div`
-  width: 100vw;
+  width: 100%;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
@@ -68,27 +83,32 @@ const Root = styled.div`
   -moz-osx-font-smoothing: grayscale;
 `;
 
-const Container = styled.div`
+const Container = styled.div<{ $reserveConsole: boolean }>`
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
-  padding-bottom: calc(20px + 40px);
+  gap: 14px;
+  padding: 16px;
+  padding-bottom: calc(16px + 40px);
   min-height: 0;
   max-width: 100%;
+  width: 100%;
 
   @media (max-width: 1024px) {
-    padding: 16px;
-    padding-bottom: calc(16px + 40px);
-    gap: 14px;
+    padding: 12px;
+    padding-bottom: calc(12px + 40px);
+    gap: 12px;
   }
 
   @media (max-width: 768px) {
     padding: 12px;
-    padding-bottom: calc(var(--mobile-nav-height) + var(--brain-console-collapsed-height) + env(safe-area-inset-bottom));
+    padding-bottom: calc(
+      var(--mobile-nav-height) +
+      env(safe-area-inset-bottom) +
+      ${(p) => (p.$reserveConsole ? 'var(--brain-console-collapsed-height)' : '0px')}
+    );
     gap: 12px;
   }
 `;
@@ -105,13 +125,13 @@ const HeaderArea = styled.div`
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-radius: 20px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
     0 4px 30px rgba(0, 0, 0, 0.1),
     inset 0 0 0 1px rgba(255, 255, 255, 0.05);
     
-  padding: 0 24px;
+  padding: 0 16px;
   flex-wrap: nowrap;
   transition: all 0.3s ease;
 
@@ -122,16 +142,16 @@ const HeaderArea = styled.div`
   }
 
   @media (max-width: 1024px) {
-    gap: 14px;
-    padding: 0 16px;
+    gap: 12px;
+    padding: 0 12px;
   }
 
   @media (max-width: 768px) {
     min-height: auto;
-    padding: 10px 12px;
-    gap: 10px;
+    padding: 8px 10px;
+    gap: 8px;
     flex-wrap: wrap;
-    border-radius: 16px;
+    border-radius: 14px;
   }
 `;
 
@@ -147,9 +167,11 @@ const HeaderLeft = styled.div`
   }
 
   @media (max-width: 768px) {
-    width: 100%;
+    width: auto;
+    flex: 1;
+    min-width: 0;
     gap: 10px;
-    justify-content: space-between;
+    justify-content: flex-start;
   }
 `;
 
@@ -157,16 +179,25 @@ const HeaderRight = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 
   @media (max-width: 1024px) {
     gap: 10px;
   }
 
   @media (max-width: 768px) {
-    width: 100%;
+    width: auto;
+    max-width: 100%;
     gap: 8px;
-    justify-content: space-between;
+    justify-content: flex-end;
     flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
   }
 `;
 
@@ -215,6 +246,12 @@ const HeaderIconButton = styled.button`
     width: 36px;
     height: 36px;
     border-radius: 10px;
+  }
+`;
+
+const DesktopOnly = styled.div`
+  @media (max-width: 768px) {
+    display: none;
   }
 `;
 
@@ -299,8 +336,7 @@ const FloatingPlanWrap = styled.div<{ $open: boolean }>`
     `}
 
   @media (max-width: 768px) {
-    right: 12px;
-    bottom: calc(var(--mobile-nav-height) + var(--brain-console-collapsed-height) + 12px + env(safe-area-inset-bottom));
+    display: none;
   }
 `;
 
@@ -462,6 +498,10 @@ const StatusPill = styled.div<{ $active?: boolean }>`
     padding: 6px 12px;
     font-size: 10px;
   }
+
+  @media (max-width: 560px) {
+    display: none;
+  }
 `;
 
 const MobileMenuButton = styled.button`
@@ -492,32 +532,115 @@ const InputArea = styled.div<{ $mobileHidden?: boolean }>`
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  align-items: center;
-  padding-top: 8px;
+  gap: 10px;
+  align-items: stretch;
+  padding-top: 0;
+  width: 100%;
+  min-width: 0;
 
   @media (max-width: 768px) {
     display: ${(p) => (p.$mobileHidden ? 'none' : 'flex')};
     gap: 10px;
-    padding-top: 20px;
+    padding-top: 0;
     height: 100%;
-    justify-content: center;
+    min-height: 0;
+    justify-content: flex-start;
+    align-items: stretch;
+    overflow: hidden;
   }
+`;
+
+const MobileAIBoard = styled.div`
+  display: none;
+
+  @media (max-width: 768px) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    height: 100%;
+  }
+`;
+
+const MobileAIIntro = styled.div`
+  display: none;
+
+  @media (max-width: 768px) {
+    display: block;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    padding: 10px 12px;
+  }
+`;
+
+const MobileAITitle = styled.div`
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.9);
+`;
+
+const MobileAISubtitle = styled.div`
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.35;
+`;
+
+const MobilePlanPane = styled.div`
+  display: none;
+
+  @media (max-width: 768px) {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(16, 18, 24, 0.72);
+    backdrop-filter: blur(20px);
+  }
+`;
+
+const MobilePlanBody = styled.div`
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
 `;
 
 const MainWorkspace = styled.div<{ $previewOpen: boolean; $mobileHidden?: boolean }>`
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: grid;
   grid-template-columns: ${(p) =>
-    p.$previewOpen ? '280px minmax(0, 1fr) minmax(0, 1fr)' : '280px minmax(0, 1fr)'};
-  grid-template-rows: 1fr;
-  gap: 16px;
+    p.$previewOpen
+      ? 'minmax(var(--ide-sidebar-width), 18vw) minmax(var(--ide-editor-min-width), 1.15fr) minmax(var(--ide-preview-min-width), 0.95fr)'
+      : 'minmax(var(--ide-sidebar-width), 18vw) minmax(var(--ide-editor-min-width), 1fr)'};
+  grid-template-rows: minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+
+  @media (max-width: 1280px) {
+    grid-template-columns: ${(p) =>
+      p.$previewOpen
+        ? 'minmax(248px, 17vw) minmax(620px, 1.1fr) minmax(410px, 0.9fr)'
+        : 'minmax(248px, 17vw) minmax(620px, 1fr)'};
+  }
 
   @media (max-width: 1024px) {
+    width: 100%;
+    overflow-x: hidden;
     grid-template-columns: ${(p) =>
-      p.$previewOpen ? '240px minmax(0, 1fr) minmax(0, 1fr)' : '240px minmax(0, 1fr)'};
-    gap: 14px;
+      p.$previewOpen ? '240px minmax(0, 1fr) minmax(0, 0.95fr)' : '240px minmax(0, 1fr)'};
+    gap: 10px;
   }
 
   @media (max-width: 768px) {
@@ -525,7 +648,229 @@ const MainWorkspace = styled.div<{ $previewOpen: boolean; $mobileHidden?: boolea
     grid-template-columns: 1fr;
     gap: 0;
     position: relative;
+    min-height: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    height: 100%;
+    width: 100%;
   }
+`;
+
+const DesktopLayout = styled.div`
+  display: none;
+
+  @media (min-width: 769px) {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    grid-template-columns: minmax(320px, 0.27fr) minmax(0, 0.73fr);
+    gap: 12px;
+    width: 100%;
+  }
+`;
+
+const ChatColumn = styled.div`
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 60fr) minmax(0, 40fr);
+  gap: 10px;
+`;
+
+const ChatPanel = styled.div`
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(10, 14, 22, 0.62);
+  backdrop-filter: blur(20px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+`;
+
+const ChatHeader = styled.div`
+  flex-shrink: 0;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+`;
+
+const ChatHeaderTitle = styled.div`
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.86);
+`;
+
+const ChatHeaderMeta = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+`;
+
+const ContextBarTrack = styled.div`
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.09);
+`;
+
+const ContextBarFill = styled.div<{ $status: 'ok' | 'warning' | 'critical'; $width: number }>`
+  height: 100%;
+  width: ${(p) => `${Math.max(0, Math.min(100, p.$width))}%`};
+  border-radius: inherit;
+  background: ${(p) => (
+    p.$status === 'critical'
+      ? 'linear-gradient(90deg, #ef4444, #f97316)'
+      : p.$status === 'warning'
+        ? 'linear-gradient(90deg, #f59e0b, #eab308)'
+        : 'linear-gradient(90deg, #22d3ee, #3b82f6)'
+  )};
+  transition: width 220ms ease;
+`;
+
+const ChatScroll = styled.div`
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
+const ChatBubble = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
+  align-self: ${(p) => (p.$role === 'user' ? 'flex-end' : 'flex-start')};
+  width: fit-content;
+  max-width: 92%;
+  border-radius: 12px;
+  padding: 9px 11px;
+  border: 1px solid ${(p) => (
+    p.$role === 'user'
+      ? 'rgba(34, 211, 238, 0.34)'
+      : p.$role === 'assistant'
+        ? 'rgba(34, 197, 94, 0.28)'
+        : 'rgba(255, 255, 255, 0.12)'
+  )};
+  background: ${(p) => (
+    p.$role === 'user'
+      ? 'rgba(34, 211, 238, 0.14)'
+      : p.$role === 'assistant'
+        ? 'rgba(34, 197, 94, 0.11)'
+        : 'rgba(255, 255, 255, 0.05)'
+  )};
+`;
+
+const ChatBubbleRole = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  color: ${(p) => (
+    p.$role === 'user'
+      ? 'rgba(103, 232, 249, 0.95)'
+      : p.$role === 'assistant'
+        ? 'rgba(134, 239, 172, 0.95)'
+        : 'rgba(255, 255, 255, 0.74)'
+  )};
+`;
+
+const ChatBubbleText = styled.div`
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: pre-wrap;
+  word-break: break-word;
+`;
+
+const ChatEmpty = styled.div`
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.45;
+`;
+
+const ChatComposerWrap = styled.div`
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+`;
+
+const WorkbenchColumn = styled.div`
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
+const WorkbenchTabs = styled.div`
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  width: fit-content;
+`;
+
+const WorkbenchTab = styled.button<{ $active: boolean }>`
+  height: 32px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.34)' : 'rgba(255, 255, 255, 0.1)')};
+  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.16)' : 'rgba(255, 255, 255, 0.03)')};
+  color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 0.98)' : 'rgba(255, 255, 255, 0.72)')};
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+`;
+
+const WorkbenchBody = styled.div`
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(250px, 0.28fr) minmax(0, 0.72fr);
+  gap: 12px;
+
+  @media (max-width: 1220px) {
+    grid-template-columns: minmax(220px, 0.28fr) minmax(0, 0.72fr);
+    gap: 10px;
+  }
+`;
+
+const WorkbenchSidebar = styled.div`
+  min-height: 0;
+  min-width: 0;
+`;
+
+const WorkbenchPanel = styled.div`
+  min-height: 0;
+  min-width: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 14, 20, 0.65);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 `;
 
 const IDEFooter = styled.div`
@@ -555,12 +900,9 @@ const DesktopSidebar = styled.div`
   min-height: 0;
   min-width: 0;
   height: 100%;
-  width: 280px;
+  width: 100%;
   flex-shrink: 0;
-
-  @media (max-width: 1024px) {
-    width: 240px;
-  }
+  padding-right: 0;
 
   @media (max-width: 768px) {
     display: none;
@@ -642,17 +984,21 @@ const PanelSlot = styled.div<{ $mobileActive?: boolean; $desktopHidden?: boolean
   min-height: 0;
   min-width: 0;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 14, 20, 0.65);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 
   @media (min-width: 769px) {
-    display: ${(p) => (p.$desktopHidden ? 'none' : 'block')};
+    display: ${(p) => (p.$desktopHidden ? 'none' : 'flex')};
   }
 
   @media (max-width: 768px) {
-    position: absolute;
-    inset: 0;
-    opacity: ${(p) => (p.$mobileActive ? 1 : 0)};
-    pointer-events: ${(p) => (p.$mobileActive ? 'auto' : 'none')};
-    transition: opacity 200ms ease;
+    display: ${(p) => (p.$mobileActive ? 'flex' : 'none')};
+    position: relative;
   }
 `;
 
@@ -675,6 +1021,166 @@ const ErrorToast = styled.div`
   box-shadow: 0 12px 40px rgba(239, 68, 68, 0.25);
 `;
 
+const normalizePlanStepsForProfile = <T extends { title?: string; category?: string; files?: string[] }>(
+  steps: T[],
+  projectMode: ProjectType
+) => {
+  const backendHints = /(backend|server|api|database|db|auth|middleware|route)/i;
+  const baseFiltered = steps.filter((step) => {
+    const category = String(step.category || '').toLowerCase();
+    if (projectMode === 'FRONTEND_ONLY' && category === 'backend') return false;
+    const title = String(step.title || '');
+    if (projectMode === 'FRONTEND_ONLY' && backendHints.test(title)) return false;
+    if (
+      projectMode === 'FRONTEND_ONLY' &&
+      Array.isArray(step.files) &&
+      step.files.some((f) => backendHints.test(String(f || '')))
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const normalizeText = (text: string) =>
+    String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\u0600-\u06ff\s]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const seen = new Set<string>();
+  const deduped = baseFiltered.filter((step) => {
+    const titleKey = normalizeText(String(step.title || ''));
+    const filesKey = (Array.isArray(step.files) ? step.files : [])
+      .map((f) => String(f || '').trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join('|');
+    const key = `${titleKey || 'untitled'}::${filesKey || 'nofiles'}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const phaseScore = (step: T) => {
+    const text = normalizeText(`${step.title || ''} ${step.category || ''} ${(step.files || []).join(' ')}`);
+    if (/(init|setup|scaffold|config|install|bootstrap|foundation|structure)/i.test(text)) return 0;
+    if (/(layout|routing|state|store|schema|service|api|client)/i.test(text)) return 1;
+    if (/(component|feature|logic|form|interaction|ui|page)/i.test(text)) return 2;
+    if (/(test|qa|fix|refactor|optimi|polish|a11y|seo|performance)/i.test(text)) return 3;
+    return 4;
+  };
+
+  const ordered = deduped
+    .map((step, index) => ({ step, index, phase: phaseScore(step) }))
+    .sort((a, b) => {
+      if (a.phase !== b.phase) return a.phase - b.phase;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.step)
+    .slice(0, 8);
+
+  if (ordered.length > 0) return ordered;
+
+  return steps.slice(0, 4).map((step) => ({
+    ...step,
+    category: projectMode === 'FRONTEND_ONLY' ? 'frontend' : step.category
+  }));
+};
+
+const FULLSTACK_TEMP_LOCK = true;
+const SUPER_MODE_TEMP_DISABLED = true;
+
+type CompletionSuggestion = {
+  id: string;
+  question: string;
+  actionLabel: string;
+  prompt: string;
+};
+
+const PREVIEW_ERROR_PATTERN = /(TypeError|ReferenceError|SyntaxError|Unexpected token|Cannot read|is not defined|Uncaught|Failed to fetch|<path> attribute d|missing \) after argument list)/i;
+
+const extractTopFolders = (paths: string[]) => {
+  const buckets = new Map<string, number>();
+  for (const path of paths) {
+    const normalized = String(path || '').replace(/\\/g, '/').trim();
+    if (!normalized) continue;
+    const root = normalized.split('/')[0] || normalized;
+    buckets.set(root, (buckets.get(root) || 0) + 1);
+  }
+  return Array.from(buckets.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([name, count]) => `${name}(${count})`)
+    .join(', ');
+};
+
+const buildCompletionSuggestion = (args: {
+  selectedFeatures: string[];
+  projectMode: ProjectType;
+  files: Array<{ path?: string; name?: string; content?: string }>;
+  lastPrompt: string;
+}): CompletionSuggestion | null => {
+  const { selectedFeatures, projectMode, files, lastPrompt } = args;
+  const textSample = files
+    .slice(0, 40)
+    .map((f) => String(f.content || '').slice(0, 1500))
+    .join('\n')
+    .toLowerCase();
+
+  if (!selectedFeatures.includes('responsive-mobile-first')) {
+    return {
+      id: 'responsive-mobile-first',
+      question: 'اقتراح: هل تريد إضافة تحسين Mobile-first كامل للواجهات؟',
+      actionLabel: 'Add Mobile UX',
+      prompt: 'Please improve the project with a complete mobile-first responsive pass, optimize spacing/typography for phones, and fix overflow issues across all key screens.'
+    };
+  }
+
+  if (!selectedFeatures.includes('a11y-landmarks')) {
+    return {
+      id: 'a11y-landmarks',
+      question: 'اقتراح: هل تضيف تحسينات Accessibility احترافية (A11y)؟',
+      actionLabel: 'Add A11y',
+      prompt: 'Apply a full accessibility pass: semantic landmarks, aria labels, keyboard navigation, focus states, and color contrast fixes without breaking current UI.'
+    };
+  }
+
+  if (!selectedFeatures.includes('performance-optimized-assets')) {
+    return {
+      id: 'performance-optimized-assets',
+      question: 'اقتراح: هل تريد تحسين أداء التحميل والـ assets؟',
+      actionLabel: 'Optimize Perf',
+      prompt: 'Run a performance optimization pass: lazy-load heavy sections/assets, reduce unnecessary re-renders, and optimize images/SVG loading while keeping behavior unchanged.'
+    };
+  }
+
+  if (!selectedFeatures.includes('seo-meta-og') && /<html|<head|meta/i.test(textSample)) {
+    return {
+      id: 'seo-meta-og',
+      question: 'اقتراح: هل تضيف SEO + Open Graph جاهز للنشر؟',
+      actionLabel: 'Add SEO',
+      prompt: 'Add complete SEO metadata and Open Graph tags for all relevant pages, including title/description/canonical and social preview metadata.'
+    };
+  }
+
+  if (projectMode === 'FRONTEND_ONLY' && !selectedFeatures.includes('api-integration-ready')) {
+    return {
+      id: 'api-integration-ready',
+      question: 'اقتراح: هل تجهز المشروع لربط API بشكل منظم؟',
+      actionLabel: 'Prepare API',
+      prompt: 'Prepare the frontend for API integration with a clean service layer, typed request helpers, loading states, retry handling, and consistent error boundaries.'
+    };
+  }
+
+  return {
+    id: 'quality-pass',
+    question: 'اقتراح ذكي: هل تنفذ Quality pass شامل قبل التسليم؟',
+    actionLabel: 'Run Quality Pass',
+    prompt: `Do a final quality pass for the project built from this request: "${lastPrompt}". Focus on reliability, code organization, edge-case handling, and production readiness.`
+  };
+};
+
 function App() {
   const { t, isRTL } = useLanguage();
   const {
@@ -686,14 +1192,28 @@ function App() {
     isPlanning,
     lastTokenAt,
     planSteps,
+    projectType,
+    selectedFeatures,
+    customFeatureTags,
+    constraintsEnforcement,
+    chatHistory,
     thinkingContent,
     systemConsoleContent,
     isPreviewOpen,
+    writingFilePath,
+    contextBudget,
+    brainEvents,
     setPrompt,
+    setProjectType,
+    setSelectedFeatures,
+    setCustomFeatureTags,
+    setConstraintsEnforcement,
+    setModelMode,
     setIsGenerating,
     setInteractionMode,
     setSections,
     setStreamText,
+    appendStreamText,
     updateLastToken,
     clearThinkingContent,
     appendThinkingContent,
@@ -708,7 +1228,6 @@ function App() {
     resetFiles,
     resolveFilePath,
     upsertFileNode,
-    appendToFileNode,
     setFilesFromProjectFiles,
     addChatMessage,
     error,
@@ -716,7 +1235,9 @@ function App() {
     setIsPreviewOpen,
     recoverSession,
     executionPhase,
-    setExecutionPhase
+    setExecutionPhase,
+    addBrainEvent,
+    clearBrainEvents
   } = useAIStore();
 
   useEffect(() => {
@@ -735,6 +1256,10 @@ function App() {
     files,
     activeFile,
     projectName,
+    projectType: storedProjectType,
+    selectedFeatures: storedSelectedFeatures,
+    customFeatureTags: storedCustomFeatureTags,
+    constraintsEnforcement: storedConstraintsEnforcement,
     stack,
     description,
     reset: resetProject,
@@ -744,21 +1269,30 @@ function App() {
     updateFile,
     upsertFile,
     appendToFile,
+    setProjectType: setProjectStoreType,
+    setSelectedFeatures: setProjectStoreSelectedFeatures,
+    setCustomFeatureTags: setProjectStoreCustomFeatureTags,
+    setConstraintsEnforcement: setProjectStoreConstraintsEnforcement,
     setStack,
-    setDescription,
-    setProjectId,
     setProjectName
   } = useProjectStore();
-  const { setPreviewUrl, addLog, logs, runtimeStatus, runtimeMessage } = usePreviewStore();
+  const { setPreviewUrl, logs, runtimeStatus, runtimeMessage } = usePreviewStore();
 
   const [thinkingStatus, setThinkingStatus] = useState('');
   const [brainOpen, setBrainOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview' | 'ai'>('editor');
+  const [desktopWorkbenchTab, setDesktopWorkbenchTab] = useState<'editor' | 'preview'>('editor');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [constraintsPanelOpen, setConstraintsPanelOpen] = useState(false);
+  const [completionSuggestion, setCompletionSuggestion] = useState<CompletionSuggestion | null>(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [chatAutoFollow, setChatAutoFollow] = useState(true);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const chatResumeTimerRef = useRef<number | null>(null);
   const fileFlushTimerRef = useRef<number | null>(null);
   const fileChunkBuffersRef = useRef<Map<string, string>>(new Map());
   const tokenBeatTimerRef = useRef<number | null>(null);
@@ -766,8 +1300,13 @@ function App() {
   const reasoningBufferRef = useRef('');
   const streamCharCountRef = useRef(0);
   const streamLastLogAtRef = useRef(0);
+  const lastStatusLogRef = useRef<{ message: string; at: number }>({ message: '', at: 0 });
+  const lastChunkEventAtRef = useRef<Record<string, number>>({});
   const autoDebugRef = useRef<{ signature: string; attempts: number }>({ signature: '', attempts: 0 });
+  const completionWatchRef = useRef<{ at: number; prompt: string }>({ at: 0, prompt: '' });
   const generationAbortRef = useRef<AbortController | null>(null);
+  const pendingEditRequestsRef = useRef<string[]>([]);
+  const completionSummaryRef = useRef<{ phase: string; key: string }>({ phase: '', key: '' });
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
@@ -778,8 +1317,218 @@ function App() {
   }, [executionPhase, files.length, isGenerating, isPlanning]);
 
   const currentPlanStepId = useMemo(() => planSteps.find((step) => !step.completed)?.id, [planSteps]);
+  const isConsoleVisible = isMobileViewport
+    ? mobileTab === 'ai'
+    : true;
+  const requestedProjectType: ProjectType = projectType || 'FRONTEND_ONLY';
+  const effectiveProjectType: ProjectType = FULLSTACK_TEMP_LOCK ? 'FRONTEND_ONLY' : requestedProjectType;
+  const modeRecommendation = useMemo(() => {
+    const suggested = recommendProjectMode(prompt, effectiveProjectType);
+    if (!suggested) return null;
+    if (FULLSTACK_TEMP_LOCK && suggested.recommendedMode === 'FULL_STACK') return null;
+    return {
+      mode: suggested.recommendedMode,
+      reason: `${t('app.prompt.projectMode.recommend').replace('{{mode}}', suggested.recommendedMode === 'FULL_STACK'
+        ? t('app.workspace.projectType.fullstack')
+        : t('app.workspace.projectType.frontend'))} - ${suggested.reason}`
+    };
+  }, [effectiveProjectType, prompt, t]);
 
-  const isConsoleVisible = true;
+  const chatMessageCountText = useMemo(() => {
+    const messageCount = chatHistory.length;
+    if (messageCount <= 0) return 'No messages yet';
+    return `${messageCount} message${messageCount === 1 ? '' : 's'}`;
+  }, [chatHistory.length]);
+
+  const handleChatScroll = useCallback(() => {
+    const node = chatScrollRef.current;
+    if (!node) return;
+    const distanceToBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    const nearBottom = distanceToBottom < 36;
+    if (nearBottom) {
+      setChatAutoFollow(true);
+      if (chatResumeTimerRef.current) {
+        window.clearTimeout(chatResumeTimerRef.current);
+        chatResumeTimerRef.current = null;
+      }
+      return;
+    }
+
+    setChatAutoFollow(false);
+    if (chatResumeTimerRef.current) window.clearTimeout(chatResumeTimerRef.current);
+    chatResumeTimerRef.current = window.setTimeout(() => {
+      setChatAutoFollow(true);
+      chatResumeTimerRef.current = null;
+    }, 2000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (chatResumeTimerRef.current) {
+        window.clearTimeout(chatResumeTimerRef.current);
+        chatResumeTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isMobileViewport) return;
+    if (!chatAutoFollow) return;
+    const node = chatScrollRef.current;
+    if (!node) return;
+    const raf = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [chatAutoFollow, chatHistory.length, isMobileViewport]);
+
+  useEffect(() => {
+    if (!projectType || (FULLSTACK_TEMP_LOCK && projectType !== 'FRONTEND_ONLY')) {
+      setProjectType('FRONTEND_ONLY');
+    }
+  }, [projectType, setProjectType]);
+
+  useEffect(() => {
+    if (constraintsEnforcement !== 'hard') {
+      setConstraintsEnforcement('hard');
+    }
+  }, [constraintsEnforcement, setConstraintsEnforcement]);
+
+  useEffect(() => {
+    if (!SUPER_MODE_TEMP_DISABLED) return;
+    if (modelMode !== 'super') return;
+    setModelMode('thinking');
+  }, [modelMode, setModelMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(max-width: 768px)');
+    const apply = () => setIsMobileViewport(media.matches);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileViewport) return;
+    if (mobileTab === 'ai') return;
+    setBrainOpen(false);
+  }, [isMobileViewport, mobileTab]);
+
+  const handleProjectTypeSelect = useCallback((type: ProjectType) => {
+    const normalized = FULLSTACK_TEMP_LOCK ? 'FRONTEND_ONLY' : type;
+    setProjectType(normalized);
+    setProjectStoreType(normalized);
+    if (error) setError(null);
+  }, [error, setError, setProjectType, setProjectStoreType]);
+
+  useEffect(() => {
+    setProjectStoreType(effectiveProjectType);
+    setProjectStoreSelectedFeatures(selectedFeatures);
+    setProjectStoreCustomFeatureTags(customFeatureTags);
+    setProjectStoreConstraintsEnforcement(constraintsEnforcement);
+  }, [
+    constraintsEnforcement,
+    customFeatureTags,
+    effectiveProjectType,
+    selectedFeatures,
+    setProjectStoreConstraintsEnforcement,
+    setProjectStoreCustomFeatureTags,
+    setProjectStoreSelectedFeatures,
+    setProjectStoreType
+  ]);
+
+  useEffect(() => {
+    const normalizedStoredType: ProjectType = FULLSTACK_TEMP_LOCK
+      ? 'FRONTEND_ONLY'
+      : (storedProjectType || 'FRONTEND_ONLY');
+
+    if (storedProjectType && storedProjectType !== normalizedStoredType) {
+      setProjectStoreType(normalizedStoredType);
+    }
+
+    if (projectType !== normalizedStoredType) {
+      setProjectType(normalizedStoredType);
+    }
+    if (selectedFeatures.length === 0 && storedSelectedFeatures.length > 0) {
+      setSelectedFeatures(storedSelectedFeatures);
+    }
+    if (customFeatureTags.length === 0 && storedCustomFeatureTags.length > 0) {
+      setCustomFeatureTags(storedCustomFeatureTags);
+    }
+    if (constraintsEnforcement !== storedConstraintsEnforcement) {
+      setConstraintsEnforcement(storedConstraintsEnforcement);
+    }
+  }, [
+    constraintsEnforcement,
+    customFeatureTags,
+    projectType,
+    selectedFeatures,
+    setConstraintsEnforcement,
+    setCustomFeatureTags,
+    setProjectStoreType,
+    setProjectType,
+    setSelectedFeatures,
+    storedConstraintsEnforcement,
+    storedCustomFeatureTags,
+    storedProjectType,
+    storedSelectedFeatures
+  ]);
+
+  const handleToggleFeature = useCallback(
+    (featureId: string) => {
+      const exists = selectedFeatures.includes(featureId);
+      const next = exists ? selectedFeatures.filter((id) => id !== featureId) : [...selectedFeatures, featureId];
+      setSelectedFeatures(next);
+    },
+    [selectedFeatures, setSelectedFeatures]
+  );
+
+  const handleAddCustomFeatureTag = useCallback(
+    (tag: string) => {
+      const cleaned = String(tag || '').trim();
+      if (!cleaned) return;
+      if (customFeatureTags.includes(cleaned)) return;
+      setCustomFeatureTags([...customFeatureTags, cleaned]);
+    },
+    [customFeatureTags, setCustomFeatureTags]
+  );
+
+  const handleRemoveCustomFeatureTag = useCallback(
+    (tag: string) => {
+      setCustomFeatureTags(customFeatureTags.filter((entry) => entry !== tag));
+    },
+    [customFeatureTags, setCustomFeatureTags]
+  );
+
+  const constraintsSummary = useMemo(() => {
+    const selected = selectedFeatures.length;
+    const custom = customFeatureTags.length;
+    if (selected === 0 && custom === 0) return t('app.tools.selected.none');
+    return `${selected} selected • ${custom} custom`;
+  }, [customFeatureTags.length, selectedFeatures.length, t]);
+
+  const constraintsPanelNode = (
+    <ToolsPanel
+      inline
+      selectedFeatures={selectedFeatures}
+      customFeatureTags={customFeatureTags}
+      onToggleFeature={handleToggleFeature}
+      onAddCustomTag={handleAddCustomFeatureTag}
+      onRemoveCustomTag={handleRemoveCustomFeatureTag}
+    />
+  );
+
+  const handleApplyCompletionSuggestion = useCallback(() => {
+    if (!completionSuggestion?.prompt) return;
+    setPrompt(completionSuggestion.prompt);
+    setCompletionSuggestion(null);
+    requestAnimationFrame(() => promptRef.current?.focus());
+  }, [completionSuggestion, setPrompt]);
+
+  const handleDismissCompletionSuggestion = useCallback(() => {
+    setCompletionSuggestion(null);
+  }, []);
 
   const systemHealth = useMemo(() => {
     const now = Date.now();
@@ -794,18 +1543,130 @@ function App() {
 
   const stamp = () => new Date().toLocaleTimeString([], { hour12: false });
   const logSystem = useCallback(
-    (message: string) => {
+    (message: string, source: 'system' | 'stream' | 'file' | 'preview' | 'user' = 'system') => {
+      const now = Date.now();
+      const trimmed = String(message || '').trim();
+      const isStatus = trimmed.startsWith('[STATUS]');
+      if (isStatus) {
+        const last = lastStatusLogRef.current;
+        if (last.message === trimmed && now - last.at < 900) {
+          return;
+        }
+        lastStatusLogRef.current = { message: trimmed, at: now };
+      }
       appendSystemConsoleContent(`${stamp()} ${message}\n`);
+      const level = /\b(error|failed|interrupt|timeout)\b/i.test(trimmed)
+        ? 'error'
+        : /\bwarn|degraded|partial\b/i.test(trimmed)
+          ? 'warn'
+          : /\bcomplete|ready|fixed|applied|ok\b/i.test(trimmed)
+            ? 'success'
+            : 'info';
+      addBrainEvent({
+        source,
+        level,
+        message: trimmed
+      });
     },
-    [appendSystemConsoleContent]
+    [addBrainEvent, appendSystemConsoleContent]
   );
 
   useEffect(() => {
+    addBrainEvent({
+      source: 'system',
+      level: executionPhase === 'interrupted' ? 'warn' : executionPhase === 'completed' ? 'success' : 'info',
+      message: `Execution phase → ${executionPhase}`,
+      phase: executionPhase
+    });
+  }, [addBrainEvent, executionPhase]);
+
+  useEffect(() => {
+    addBrainEvent({
+      source: 'preview',
+      level: runtimeStatus === 'error' ? 'error' : runtimeStatus === 'ready' ? 'success' : 'info',
+      message: `Preview runtime → ${runtimeStatus}`
+    });
+  }, [addBrainEvent, runtimeStatus]);
+
+  useEffect(() => {
+    if (isGenerating || isPlanning) return;
+    if (executionPhase !== 'completed' && executionPhase !== 'interrupted') return;
+    if (!lastTokenAt || Date.now() - lastTokenAt > 120000) return;
+
+    const completedFiles = useAIStore.getState().completedFiles || [];
+    const fallbackRecent = files
+      .slice(-5)
+      .map((f) => f.path || f.name || '')
+      .filter(Boolean);
+    const recent = (completedFiles.slice(-5).length > 0 ? completedFiles.slice(-5) : fallbackRecent).slice(-5);
+    const planTotal = planSteps.length;
+    const planDone = planSteps.filter((step) => step.completed).length;
+    const defaultFollowUp =
+      executionPhase === 'completed'
+        ? 'هل تريد أن أنفذ تحسين جودة نهائي (Quality pass) قبل التسليم النهائي؟'
+        : 'هل تريد مني الاستكمال من آخر نقطة مستقرة أم تعديل المطلوب أولاً؟';
+    const followUpQuestion = completionSuggestion?.question || defaultFollowUp;
+    const summaryKey = [
+      executionPhase,
+      files.length,
+      planDone,
+      planTotal,
+      recent.join('|'),
+      followUpQuestion
+    ].join('::');
+    if (completionSummaryRef.current.phase === executionPhase && completionSummaryRef.current.key === summaryKey) {
+      return;
+    }
+    completionSummaryRef.current = { phase: executionPhase, key: summaryKey };
+
+    if (executionPhase === 'completed') {
+      addChatMessage({
+        role: 'assistant',
+        content: [
+          'تم تنفيذ المهمة بنجاح.',
+          `- عدد الملفات التي تم إنشاؤها/تحديثها: ${files.length}.`,
+          planTotal > 0 ? `- التقدّم في الخطة: ${planDone}/${planTotal}.` : '',
+          recent.length > 0 ? `- آخر الملفات المتأثرة: ${recent.join(', ')}.` : '',
+          `- حالة المعاينة الحالية: ${runtimeStatus}${runtimeMessage ? ` (${runtimeMessage})` : ''}.`,
+          '',
+          `سؤال متابعة: ${followUpQuestion}`
+        ]
+          .filter(Boolean)
+          .join('\n')
+      });
+      return;
+    }
+
+    addChatMessage({
+      role: 'assistant',
+      content: [
+        'التنفيذ توقف قبل الاكتمال.',
+        recent.length > 0 ? `- آخر الملفات التي تم العمل عليها: ${recent.join(', ')}.` : '',
+        `- حالة المعاينة الحالية: ${runtimeStatus}${runtimeMessage ? ` (${runtimeMessage})` : ''}.`,
+        '',
+        `سؤال متابعة: ${followUpQuestion}`
+      ]
+        .filter(Boolean)
+        .join('\n')
+    });
+  }, [
+    addChatMessage,
+    completionSuggestion,
+    executionPhase,
+    files,
+    isGenerating,
+    isPlanning,
+    lastTokenAt,
+    planSteps,
+    runtimeMessage,
+    runtimeStatus
+  ]);
+
+  useEffect(() => {
     if (!architectMode) return;
-    if (modelMode === 'super') return;
     if (planSteps.length === 0) return;
     setPlanOpen(true);
-  }, [architectMode, modelMode, planSteps.length]);
+  }, [architectMode, planSteps.length]);
 
   useEffect(() => {
     if (isGenerating) return;
@@ -943,6 +1804,60 @@ function App() {
     flushReasoningBuffer();
   }, [flushFileBuffers, flushReasoningBuffer, logSystem, setExecutionPhase]);
 
+  const getGenerationConstraints = useCallback((): GenerationConstraints => {
+    return {
+      projectMode: effectiveProjectType,
+      selectedFeatures,
+      customFeatureTags,
+      enforcement: constraintsEnforcement
+    };
+  }, [constraintsEnforcement, customFeatureTags, effectiveProjectType, selectedFeatures]);
+
+  const buildAgentContextBlock = useCallback((requestPrompt: string) => {
+    const projectState = useProjectStore.getState();
+    const aiState = useAIStore.getState();
+    const previewState = usePreviewStore.getState();
+
+    const paths = projectState.files
+      .map((f) => String(f.path || f.name || '').replace(/\\/g, '/').trim())
+      .filter(Boolean);
+    const foldersDigest = extractTopFolders(paths);
+    const recentLogTail = previewState.logs
+      .slice(-12)
+      .map((entry) => String(entry.message || '').trim())
+      .filter(Boolean)
+      .join(' | ')
+      .slice(0, 2200);
+    const frontendCompletionTarget =
+      effectiveProjectType === 'FRONTEND_ONLY'
+        ? [
+            '[FRONTEND COMPLETION TARGET]',
+            '- Build full UI flow with coherent visual design and complete sections.',
+            '- Return runnable frontend files only with clean structure and no backend files.',
+            '- Guarantee simple preview health before final completion.'
+          ].join('\n')
+        : '';
+
+    return [
+      '[AGENT WORKSPACE INTELLIGENCE]',
+      `User Intent: ${requestPrompt || '(empty)'}`,
+      `Project Mode: ${effectiveProjectType}`,
+      `Project Name: ${projectState.projectName || '(untitled)'}`,
+      `Stack: ${projectState.stack || '(auto)'}`,
+      `Known Files Count: ${paths.length}`,
+      `Top Folders: ${foldersDigest || '(none)'}`,
+      `Active File: ${projectState.activeFile || '(none)'}`,
+      `Execution Phase: ${aiState.executionPhase}`,
+      `Context Utilization: ${Number(aiState.contextBudget?.utilizationPct || 0).toFixed(1)}%`,
+      `Preview Runtime: ${previewState.runtimeStatus}${previewState.runtimeMessage ? ` (${previewState.runtimeMessage})` : ''}`,
+      recentLogTail ? `Recent Preview Logs: ${recentLogTail}` : 'Recent Preview Logs: (none)',
+      frontendCompletionTarget,
+      'Agent Duties: diagnose, implement, self-verify, and auto-heal preview/runtime issues before finalizing.'
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }, [effectiveProjectType]);
+
   const handleGenerate = useCallback(async (
     promptOverride?: string,
     options?: { skipPlanning?: boolean; preserveProjectMeta?: boolean; resume?: boolean }
@@ -952,6 +1867,11 @@ function App() {
     const fallbackPrompt = requestedResume ? String(useAIStore.getState().lastPlannedPrompt || '').trim() : '';
     const basePrompt = (rawPrompt || fallbackPrompt).trim();
     if (!basePrompt || isPlanning || isGenerating) return;
+    const generationConstraints = getGenerationConstraints();
+    const constraintsBlock = buildGenerationConstraintsBlock(generationConstraints);
+    const scopedPrompt = mergePromptWithConstraints(basePrompt, generationConstraints);
+    const agentContextBlock = buildAgentContextBlock(basePrompt);
+    const scopedPromptWithAgentContext = `${scopedPrompt}\n\n${agentContextBlock}`.trim();
 
     useAIStore.getState().saveCurrentSession();
 
@@ -960,10 +1880,13 @@ function App() {
     const preserveProjectMeta = options?.preserveProjectMeta === true || isResuming;
 
     autoDebugRef.current = { signature: '', attempts: 0 };
+    completionWatchRef.current = { at: 0, prompt: '' };
+    setCompletionSuggestion(null);
 
     const abortController = new AbortController();
     generationAbortRef.current = abortController;
 
+    clearBrainEvents();
     setIsGenerating(true);
     setExecutionPhase(architectMode && !skipPlanning && !isResuming ? 'planning' : 'executing');
     setError(null);
@@ -982,6 +1905,9 @@ function App() {
     setWritingFilePath(null);
     if (!preserveProjectMeta) resetProject();
     if (!preserveProjectMeta) resetFiles();
+    if (!preserveProjectMeta) {
+      setStack(effectiveProjectType === 'FRONTEND_ONLY' ? 'Frontend (HTML/CSS/JS)' : 'Fullstack (Frontend + Backend)');
+    }
 
     if (fileFlushTimerRef.current) {
       window.clearTimeout(fileFlushTimerRef.current);
@@ -1021,8 +1947,8 @@ function App() {
         : null;
 
       const baseStreamPrompt = partialFile
-        ? `CONTINUE ${partialFile} FROM LINE ${Number(resumeSnapshot.lastSuccessfulLine || 0) + 1}.\n\nOriginal Request: ${basePrompt}`
-        : basePrompt;
+        ? `CONTINUE ${partialFile} FROM LINE ${Number(resumeSnapshot.lastSuccessfulLine || 0) + 1}.\n\nOriginal Request: ${scopedPromptWithAgentContext}`
+        : scopedPromptWithAgentContext;
 
       // Use global autosave function (defined outside for independence)
       const scheduleAutosave = globalScheduleAutosave;
@@ -1137,6 +2063,138 @@ function App() {
         });
       };
 
+      const repairCommentKeywordGlue = (input: string) => {
+        const lines = String(input || '').split('\n');
+        let changed = false;
+        const repaired = lines.flatMap((line) => {
+          const trimmed = line.trimStart();
+          if (!trimmed.startsWith('//')) return [line];
+
+          const match = line.match(/\b(const|let|var|function|class)\b/);
+          if (!match || typeof match.index !== 'number') return [line];
+          const idx = match.index;
+          if (idx <= 0) return [line];
+          const prevChar = line[idx - 1];
+          if (/\s/.test(prevChar)) return [line];
+
+          changed = true;
+          return [line.slice(0, idx), line.slice(idx)];
+        });
+
+        if (!changed) return input;
+        return repaired.join('\n');
+      };
+
+      const analyzeScriptIntegrity = (source: string, extension: string) => {
+        const text = String(source || '');
+        if (!text.trim()) return { ok: true as const, reason: '' };
+
+        let brace = 0;
+        let paren = 0;
+        let bracket = 0;
+        let inSingle = false;
+        let inDouble = false;
+        let inTemplate = false;
+        let inLineComment = false;
+        let inBlockComment = false;
+        let escaped = false;
+
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          const next = text[i + 1];
+
+          if (inLineComment) {
+            if (ch === '\n') inLineComment = false;
+            continue;
+          }
+
+          if (inBlockComment) {
+            if (ch === '*' && next === '/') {
+              inBlockComment = false;
+              i += 1;
+            }
+            continue;
+          }
+
+          if (inSingle) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '\'') inSingle = false;
+            continue;
+          }
+
+          if (inDouble) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inDouble = false;
+            continue;
+          }
+
+          if (inTemplate) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '`') inTemplate = false;
+            continue;
+          }
+
+          if (ch === '/' && next === '/') {
+            inLineComment = true;
+            i += 1;
+            continue;
+          }
+
+          if (ch === '/' && next === '*') {
+            inBlockComment = true;
+            i += 1;
+            continue;
+          }
+
+          if (ch === '\'') {
+            inSingle = true;
+            continue;
+          }
+          if (ch === '"') {
+            inDouble = true;
+            continue;
+          }
+          if (ch === '`') {
+            inTemplate = true;
+            continue;
+          }
+
+          if (ch === '{') brace += 1;
+          else if (ch === '}') brace -= 1;
+          else if (ch === '(') paren += 1;
+          else if (ch === ')') paren -= 1;
+          else if (ch === '[') bracket += 1;
+          else if (ch === ']') bracket -= 1;
+
+          if (brace < 0 || paren < 0 || bracket < 0) {
+            return { ok: false as const, reason: 'Unexpected closing token sequence' };
+          }
+        }
+
+        if (inSingle || inDouble || inTemplate || inBlockComment) {
+          return { ok: false as const, reason: 'Unterminated string/template/comment' };
+        }
+
+        if (brace !== 0 || paren !== 0 || bracket !== 0) {
+          return { ok: false as const, reason: 'Unbalanced brackets/parentheses/braces' };
+        }
+
+        const isPlainScript = extension === 'js' && !/^\s*(import|export)\s/m.test(text);
+        if (isPlainScript) {
+          try {
+            // eslint-disable-next-line no-new-func
+            new Function(text);
+          } catch (err: any) {
+            return { ok: false as const, reason: err?.message || 'Syntax check failed' };
+          }
+        }
+
+        return { ok: true as const, reason: '' };
+      };
+
       const parseSearchReplaceBlocks = (raw: string) => {
         const text = String(raw || '');
         const blocks: Array<{ search: string; replace: string }> = [];
@@ -1213,8 +2271,16 @@ function App() {
         if (event.type === 'start') {
           const label = event.mode === 'edit' ? 'Editing' : 'Writing';
           logSystem(`[STATUS] ${label} ${resolvedPath}...`);
+          addBrainEvent({
+            source: 'file',
+            level: 'info',
+            message: `${label} ${resolvedPath}`,
+            path: resolvedPath,
+            phase: 'writing'
+          });
           setThinkingStatus(`Writing ${resolvedPath.split('/').pop() || resolvedPath}…`);
           setFileStatus(resolvedPath, 'writing');
+          setStreamText('');
 
           upsertFileNode(resolvedPath);
           const name = resolvedPath.split('/').pop() || resolvedPath;
@@ -1260,6 +2326,12 @@ function App() {
           setActiveFile(resolvedPath);
           setMobileTab('editor');
           setBrainOpen(true);
+          if (effectiveProjectType === 'FRONTEND_ONLY') {
+            const lower = resolvedPath.toLowerCase();
+            if (/\.(html|css|js|jsx|ts|tsx)$/i.test(lower) || lower.endsWith('index.html')) {
+              setIsPreviewOpen(true);
+            }
+          }
           return;
         }
 
@@ -1268,6 +2340,18 @@ function App() {
           if (chunk.length === 0) return;
           fileChunkBuffersRef.current.set(resolvedPath, (fileChunkBuffersRef.current.get(resolvedPath) || '') + chunk);
           scheduleFileFlush();
+          const now = Date.now();
+          const last = Number(lastChunkEventAtRef.current[resolvedPath] || 0);
+          if (now - last > 1800) {
+            lastChunkEventAtRef.current[resolvedPath] = now;
+            addBrainEvent({
+              source: 'file',
+              level: 'info',
+              message: `Streaming chunk → ${resolvedPath}`,
+              path: resolvedPath,
+              phase: 'executing'
+            });
+          }
           return;
         }
 
@@ -1275,7 +2359,8 @@ function App() {
           flushFileBuffers({ onlyPath: resolvedPath, force: true });
           fileChunkBuffersRef.current.delete(resolvedPath);
           const currentStatus = useAIStore.getState().fileStatuses?.[resolvedPath];
-          if (event.partial) setFileStatus(resolvedPath, 'partial');
+          let effectivePartial = Boolean(event.partial);
+          if (effectivePartial) setFileStatus(resolvedPath, 'partial');
           else if (currentStatus !== 'compromised') setFileStatus(resolvedPath, 'ready');
           if (useAIStore.getState().writingFilePath === resolvedPath) setWritingFilePath(null);
 
@@ -1283,35 +2368,99 @@ function App() {
             useAIStore.getState().setExecutionCursor(resolvedPath, event.line);
           }
 
+          let latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '';
+          const extension = resolvedPath.includes('.') ? (resolvedPath.split('.').pop() || '').toLowerCase() : '';
+
           if (event.mode === 'edit') {
             const original = editOriginalByPath.get(resolvedPath) ?? '';
-            const latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '';
             const blocks = parseSearchReplaceBlocks(latest);
             if (blocks.length > 0) {
               const next = applySearchReplaceBlocks(original, blocks);
               updateFile(resolvedPath, next);
               upsertFileNode(resolvedPath, next);
               upsertFile({ name: resolvedPath.split('/').pop() || resolvedPath, path: resolvedPath, content: next, language: getLanguageFromExtension(resolvedPath) });
+              latest = next;
+            }
+          }
+
+          if (!effectivePartial && extension === 'js') {
+            const healed = repairCommentKeywordGlue(latest);
+            if (healed !== latest) {
+              latest = healed;
+              updateFile(resolvedPath, healed);
+              upsertFileNode(resolvedPath, healed);
+              upsertFile({
+                name: resolvedPath.split('/').pop() || resolvedPath,
+                path: resolvedPath,
+                content: healed,
+                language: getLanguageFromExtension(resolvedPath)
+              });
+              logSystem(`[REPAIR] Fixed glued comment/code boundary in ${resolvedPath}`);
+            }
+          }
+
+          if (
+            !effectivePartial &&
+            ['js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx'].includes(extension)
+          ) {
+            const integrity = analyzeScriptIntegrity(latest, extension);
+            if (!integrity.ok) {
+              effectivePartial = true;
+              setFileStatus(resolvedPath, 'partial');
+              const repaired = repairTruncatedContent(latest, resolvedPath);
+              if (repaired !== latest) {
+                latest = repaired;
+                updateFile(resolvedPath, repaired);
+                upsertFileNode(resolvedPath, repaired);
+                upsertFile({
+                  name: resolvedPath.split('/').pop() || resolvedPath,
+                  path: resolvedPath,
+                  content: repaired,
+                  language: getLanguageFromExtension(resolvedPath)
+                });
+              }
+              logSystem(`[STATUS] Integrity check failed for ${resolvedPath}: ${integrity.reason}. Marked as partial for auto-resume.`);
+              addBrainEvent({
+                source: 'file',
+                level: 'warn',
+                message: `Integrity mismatch in ${resolvedPath} -> auto-resume`,
+                path: resolvedPath,
+                phase: 'recovering'
+              });
             }
           }
 
           if (resolvedPath.toLowerCase().endsWith('.html')) {
-            finalizeHtmlFile(resolvedPath, Boolean(event.partial));
+            finalizeHtmlFile(resolvedPath, effectivePartial);
+            latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || latest;
           }
 
           // Keep the AI file tree in sync without per-chunk updates.
           if (event.mode !== 'edit') {
-            const latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '';
             upsertFileNode(resolvedPath, latest);
           }
 
-          if (event.partial) {
+          if (effectivePartial) {
             partialPaths.add(resolvedPath);
             const msg = `Stream interrupted: ${resolvedPath} cut at line ${event.line || '?'}`;
             logSystem(`[STATUS] ${msg} (healed & auto-resuming)`);
+            addBrainEvent({
+              source: 'file',
+              level: 'warn',
+              message: msg,
+              path: resolvedPath,
+              phase: 'recovering'
+            });
           } else {
             partialPaths.delete(resolvedPath);
             logSystem(`[STATUS] Completed ${resolvedPath}`);
+            addBrainEvent({
+              source: 'file',
+              level: 'success',
+              message: `Completed ${resolvedPath}`,
+              path: resolvedPath,
+              phase: 'executing'
+            });
             useAIStore.getState().addCompletedFile(resolvedPath);
             scheduleAutosave();
           }
@@ -1323,13 +2472,14 @@ function App() {
       };
 
       let reasoningChars = 0;
-      const isThinkingMode = modelMode === 'thinking' || modelMode === 'super';
+      const isThinkingMode = modelMode === 'thinking';
       let openedBrain = false;
 
       const runStream = async (streamPrompt: string) => {
         await aiService.generateCodeStream(
           streamPrompt,
           (token) => {
+            appendStreamText(token);
             streamCharCountRef.current += token.length;
             const now = Date.now();
             if (now - streamLastLogAtRef.current > 900) {
@@ -1340,6 +2490,15 @@ function App() {
             scheduleTokenBeat();
           },
           (phase, message) => {
+            if (phase === 'heartbeat') {
+              addBrainEvent({
+                source: 'stream',
+                level: 'info',
+                message: 'Heartbeat',
+                phase: 'heartbeat'
+              });
+              return;
+            }
             const writing = useAIStore.getState().writingFilePath;
             if (writing && phase === 'streaming') {
               setThinkingStatus(`Writing ${writing.split('/').pop() || writing}…`);
@@ -1347,8 +2506,17 @@ function App() {
             else if (phase === 'streaming') setThinkingStatus('Generating…');
             else if (phase === 'validating') setThinkingStatus('Validating…');
             else if (phase === 'done') setThinkingStatus('Complete');
+            else if (phase === 'recovering') setThinkingStatus('Recovering…');
             else setThinkingStatus(message);
             if (message) logSystem(`[STATUS] ${message}`);
+            if (message) {
+              addBrainEvent({
+                source: 'stream',
+                level: phase === 'error' ? 'error' : phase === 'recovering' ? 'warn' : 'info',
+                message,
+                phase: (phase as any) || 'executing'
+              });
+            }
           },
           (meta) => {
             if (meta?.resume?.attempt) {
@@ -1357,9 +2525,14 @@ function App() {
             if (meta?.raw) logSystem(`[STATUS] ${String(meta.raw)}`);
           },
           (payload) => {
-            const protocol = payload?.metadata?.protocol;
-            if (protocol === 'file-marker') {
-              logSystem('[STATUS] File-Marker stream finished.');
+            try {
+              const protocol = payload?.metadata?.protocol;
+              if (protocol === 'file-marker') {
+                logSystem('[STATUS] File-Marker stream finished.');
+              }
+            } catch (e) {
+              // Silently handle payload parsing errors
+              console.debug('Payload parsing error (non-critical):', e);
             }
           },
           (err) => {
@@ -1389,28 +2562,39 @@ function App() {
             typingMs: 26,
             onFileEvent: handleFileEvent,
             abortSignal: abortController.signal,
-            resumeContext
+            resumeContext,
+            constraints: generationConstraints
           }
         );
       };
 
-      if (modelMode === 'super') {
+      if (!SUPER_MODE_TEMP_DISABLED && modelMode === 'super') {
         setExecutionPhase('planning');
         logSystem('[SUPER-THINKING] Initializing Fast-Mode Blueprint...');
-        const data = await aiService.generatePlan(basePrompt, false, abortController.signal);
+        const data = await aiService.generatePlan(
+          scopedPrompt,
+          false,
+          abortController.signal,
+          generationConstraints.projectMode,
+          generationConstraints
+        );
         const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
-        const planStepsLocal = rawSteps
+        const generatedSteps = rawSteps
           .map((s, i) => ({
             id: String(s?.id ?? i + 1),
             title: String(s?.title ?? s?.text ?? s?.step ?? '').trim(),
             completed: false,
             category: (s?.category || 'frontend') as any,
+            status: 'pending' as const,
             files: Array.isArray(s?.files) ? s.files : [],
-            description: String(s?.description ?? '')
+            description: String(s?.description ?? ''),
+            estimatedSize: (s?.estimatedSize || 'medium') as 'small' | 'medium' | 'large',
+            depends_on: Array.isArray(s?.depends_on) ? s.depends_on : []
           }))
           .filter((s) => s.title.length > 0);
+        const planStepsLocal = normalizePlanStepsForProfile(generatedSteps, effectiveProjectType);
         setPlanSteps(planStepsLocal);
-        setLastPlannedPrompt(basePrompt);
+        setLastPlannedPrompt(scopedPrompt);
         logSystem('[WORKFLOW] Mapping automated logic nodes...');
         setExecutionPhase('executing');
         logSystem('[SUPER-THINKING] Deep-Thinking Engine Engaged...');
@@ -1427,6 +2611,8 @@ function App() {
 Project: ${projectName}
 Stack: ${stack}
 Description: ${description}
+${constraintsBlock}
+${agentContextBlock}
 
 [CURRENT PLAN]
 ${planStepsLocal.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
@@ -1447,17 +2633,21 @@ Output ONLY the code for these files.
         const currentSteps = useAIStore.getState().planSteps;
         const lastPlanned = useAIStore.getState().lastPlannedPrompt;
         
-        if (!isResuming && (currentSteps.length === 0 || lastPlanned !== basePrompt)) {
-           await generatePlan(basePrompt, abortController.signal);
+        if (!isResuming && (currentSteps.length === 0 || lastPlanned !== scopedPrompt)) {
+           await generatePlan(scopedPrompt, abortController.signal);
         }
         
-        const steps = useAIStore.getState().planSteps;
+        const rawPlannedSteps = useAIStore.getState().planSteps;
+        const steps = normalizePlanStepsForProfile(rawPlannedSteps, effectiveProjectType);
+        if (steps.length !== rawPlannedSteps.length) {
+          setPlanSteps(steps);
+        }
         if (steps.length === 0) {
           setExecutionPhase('executing');
           await runStream(baseStreamPrompt);
         } else {
         
-          if (!isResuming && lastPlanned !== basePrompt) {
+          if (!isResuming && lastPlanned !== scopedPrompt) {
                setPlanSteps(steps.map(s => ({...s, completed: false})));
           }
 
@@ -1474,10 +2664,12 @@ Output ONLY the code for these files.
               
               logSystem(`[PLAN] Executing step: ${step.title}`);
               const stepPrompt = `
- [PROJECT CONTEXT]
+[PROJECT CONTEXT]
  Project: ${projectName}
  Stack: ${stack}
  Description: ${description}
+ ${constraintsBlock}
+ ${agentContextBlock}
 
 [CURRENT PLAN]
 ${updatedSteps.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
@@ -1502,10 +2694,32 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         await runStream(baseStreamPrompt);
       }
 
+      if (useAIStore.getState().executionPhase !== 'interrupted' && partialPaths.size === 0) {
+        const currentFiles = useProjectStore.getState().files;
+        if (generationConstraints.enforcement === 'hard' && generationConstraints.selectedFeatures.length > 0) {
+          const { missingFeatures } = validateConstraints(currentFiles, generationConstraints);
+          if (missingFeatures.length > 0) {
+            logSystem(`[constraints] Missing features detected: ${missingFeatures.join(', ')}. Applying one auto-fix pass...`);
+            const repairPrompt = buildConstraintsRepairPrompt(missingFeatures, generationConstraints);
+            await runStream(repairPrompt);
+          }
+        }
+      }
+
       if (useAIStore.getState().executionPhase !== 'interrupted') {
         setExecutionPhase('completed');
-        generationSucceeded = useProjectStore.getState().files.length > 0;
+        const generatedFiles = useProjectStore.getState().files;
+        generationSucceeded = generatedFiles.length > 0;
         if (generationSucceeded) {
+          completionWatchRef.current = { at: Date.now(), prompt: basePrompt };
+          setCompletionSuggestion(
+            buildCompletionSuggestion({
+              selectedFeatures: generationConstraints.selectedFeatures,
+              projectMode: generationConstraints.projectMode,
+              files: generatedFiles,
+              lastPrompt: basePrompt
+            })
+          );
           if (partialPaths.size > 0) {
             logSystem(`[preview] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume…`);
           } else {
@@ -1533,9 +2747,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     }
   }, [
     architectMode,
-    addLog,
-    appendThinkingContent,
+    appendStreamText,
+    addBrainEvent,
+    clearBrainEvents,
     clearThinkingContent,
+    clearSystemConsoleContent,
     clearFileStatuses,
     flushFileBuffers,
     flushReasoningBuffer,
@@ -1551,18 +2767,13 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     scheduleReasoningFlush,
     scheduleTokenBeat,
     setActiveFile,
-    setDescription,
     setError,
     setFileStatus,
-    setFileStructure,
-    setFiles,
-    setFilesFromProjectFiles,
     setIsGenerating,
     setIsPreviewOpen,
+    setLastPlannedPrompt,
     setPreviewUrl,
     setPlanSteps,
-    setProjectId,
-    setProjectName,
     setSections,
     setStack,
     setStreamText,
@@ -1573,6 +2784,9 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     upsertFileNode,
     logSystem,
     setExecutionPhase,
+    getGenerationConstraints,
+    buildAgentContextBlock,
+    effectiveProjectType,
     projectName,
     stack,
     description
@@ -1580,6 +2794,9 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
   const buildFixPrompt = useCallback(
     (request: string) => {
+      const constraints = getGenerationConstraints();
+      const constraintsBlock = buildGenerationConstraintsBlock(constraints);
+      const agentContextBlock = buildAgentContextBlock(request);
       const paths = files
         .map((file) => file.path || file.name || '')
         .filter((p) => p.length > 0)
@@ -1620,6 +2837,8 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         '2. NEVER output messages like "Searching...", "Replacing...", "Found X", "Replaced X with Y"',
         '3. Output ONLY file markers and actual code content',
         '',
+        constraintsBlock,
+        '',
         'Use ONLY these markers:',
         '  - [[EDIT_NODE: path/to/file.ext]] ... [[END_FILE]] for edits',
         '  - [[START_FILE: path/to/file.ext]] ... [[END_FILE]] for new files',
@@ -1634,6 +2853,8 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         '  [[END_FILE]]',
         continueInstructions,
         '',
+        agentContextBlock,
+        '',
         `USER REQUEST: ${request}`,
         '',
         'PROJECT STRUCTURE (you know EXACTLY where every file is):',
@@ -1645,24 +2866,42 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         'Output ONLY markers + file contents. NO explanations. NO filler. NO status messages.'
       ].join('\n');
     },
-    [activeFile, files]
+    [activeFile, buildAgentContextBlock, files, getGenerationConstraints]
   );
+
+  const enqueueEditRequest = useCallback((request: string) => {
+    const trimmed = String(request || '').trim();
+    if (!trimmed) return;
+    if (pendingEditRequestsRef.current.length >= 3) {
+      pendingEditRequestsRef.current.shift();
+    }
+    pendingEditRequestsRef.current.push(trimmed);
+  }, []);
+
+  useEffect(() => {
+    if (isGenerating || isPlanning) return;
+    const next = pendingEditRequestsRef.current.shift();
+    if (!next) return;
+    addChatMessage({ role: 'user', content: next });
+    const fixPrompt = buildFixPrompt(next);
+    void handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
+  }, [addChatMessage, buildFixPrompt, handleGenerate, isGenerating, isPlanning]);
 
   useEffect(() => {
     if (!isPreviewOpen) return;
     if (isGenerating || isPlanning) return;
+    if (executionPhase !== 'completed') return;
+
+    const watch = completionWatchRef.current;
+    if (!watch.at) return;
+    if (Date.now() - watch.at > 90_000) return;
 
     const last = logs[logs.length - 1];
-    if (!last) return;
-
-    const message = String(last.message || '');
-    if (!message.includes('TypeError')) return;
-
-    const signature = `typeerror:${message.slice(0, 500)}`;
-    const attempts = autoDebugRef.current.signature === signature ? autoDebugRef.current.attempts : 0;
-    if (attempts >= 1) return;
-
-    autoDebugRef.current = { signature, attempts: attempts + 1 };
+    const message = String(last?.message || '').trim();
+    const runtimeMsg = String(runtimeMessage || '').trim();
+    const previewIsBroken = runtimeStatus === 'error';
+    const hasKnownErrorPattern = PREVIEW_ERROR_PATTERN.test(`${runtimeMsg}\n${message}`);
+    if (!previewIsBroken && !hasKnownErrorPattern) return;
 
     const tail = logs
       .slice(-45)
@@ -1672,18 +2911,36 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       })
       .join('\n');
 
-    logSystem('[STATUS] Auto-fix triggered: TypeError detected.');
+    const signature = `preview-fail:${runtimeStatus}:${runtimeMsg.slice(0, 260)}:${message.slice(0, 260)}`;
+    const attempts = autoDebugRef.current.signature === signature ? autoDebugRef.current.attempts : 0;
+    if (attempts >= 1) return;
+    autoDebugRef.current = { signature, attempts: attempts + 1 };
+
+    logSystem('[STATUS] Auto-fix triggered: preview/runtime issue detected.');
     const requestText = [
-      'AUTO-FIX: A TypeError appeared in the terminal/console. Fix the code so the preview runs without throwing.',
-      message ? `Error: ${message}` : '',
-      tail ? `Recent logs:\n${tail}` : ''
+      'AUTO-FIX: Preview has runtime/compile issue. Repair project so preview starts clean with no runtime errors.',
+      runtimeMsg ? `Runtime: ${runtimeMsg}` : '',
+      message ? `Latest Error: ${message}` : '',
+      tail ? `Recent logs:\n${tail}` : '',
+      `Original request summary: ${watch.prompt || '(not available)'}`
     ]
       .filter(Boolean)
       .join('\n\n');
 
     const fixPrompt = buildFixPrompt(requestText);
     void handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
-  }, [autoDebugRef, buildFixPrompt, handleGenerate, isGenerating, isPlanning, isPreviewOpen, logSystem, logs]);
+  }, [
+    buildFixPrompt,
+    executionPhase,
+    handleGenerate,
+    isGenerating,
+    isPlanning,
+    isPreviewOpen,
+    logSystem,
+    logs,
+    runtimeMessage,
+    runtimeStatus
+  ]);
 
 
   const handleMainActionClick = useCallback(() => {
@@ -1698,38 +2955,131 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     }
 
     if (mainActionState === 'done') {
-      if (interactionMode !== 'edit') {
-        setInteractionMode('edit');
-        setPrompt('');
-        requestAnimationFrame(() => promptRef.current?.focus());
-        return;
-      }
-
       const request = prompt.trim();
       if (!request) {
+        if (interactionMode !== 'edit') setInteractionMode('edit');
         requestAnimationFrame(() => promptRef.current?.focus());
         return;
       }
 
-      addChatMessage({ role: 'user', content: request });
+      if (interactionMode !== 'edit') setInteractionMode('edit');
+      enqueueEditRequest(request);
       setPrompt('');
-
-      const fixPrompt = buildFixPrompt(request);
+      if (isGenerating || isPlanning) return;
+      const next = pendingEditRequestsRef.current.shift();
+      if (!next) return;
+      addChatMessage({ role: 'user', content: next });
+      const fixPrompt = buildFixPrompt(next);
       handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
       return;
+    }
+    const request = prompt.trim();
+    if (request) {
+      addChatMessage({ role: 'user', content: request });
     }
     handleGenerate();
   }, [
     addChatMessage,
     buildFixPrompt,
+    enqueueEditRequest,
     stopGeneration,
     handleGenerate,
     interactionMode,
+    isGenerating,
+    isPlanning,
     mainActionState,
     prompt,
     setInteractionMode,
     setPrompt
   ]);
+
+  const desktopPromptControls = (
+    <>
+      <Popover>
+        <Trigger>
+          <ArchitectToggle />
+        </Trigger>
+        <Content>
+          <Heading>Architect Mode</Heading>
+          <Description>Generate a step-by-step implementation plan, then execute it.</Description>
+        </Content>
+      </Popover>
+      <Popover>
+        <Trigger>
+          <ModeToggle />
+        </Trigger>
+        <Content>
+          <Heading>Mode</Heading>
+          <Description>Switch between Fast generation and DeepSeek Reasoner “Thinking” mode.</Description>
+        </Content>
+      </Popover>
+      <Popover>
+        <Trigger>
+          <MainActionButton
+            state={mainActionState}
+            onClick={handleMainActionClick}
+            disabled={
+              (mainActionState === 'idle' && !prompt.trim()) ||
+              (mainActionState === 'done' && interactionMode === 'edit' && !prompt.trim())
+            }
+          />
+        </Trigger>
+        <Content>
+          <Heading>{mainActionState === 'done' ? 'Fix / Edit' : 'Generate'}</Heading>
+          <Description>
+            {mainActionState === 'done'
+              ? interactionMode === 'edit'
+                ? 'Describe what you want to change and apply it with full context.'
+                : 'Switch to Edit mode to apply changes with full project context.'
+              : architectMode
+                ? 'Plan then write code.'
+                : 'Write code immediately.'}
+          </Description>
+        </Content>
+      </Popover>
+    </>
+  );
+
+  const mobilePromptControls = (
+    <>
+      <Popover>
+        <Trigger>
+          <MainActionButton
+            state={mainActionState}
+            onClick={handleMainActionClick}
+            disabled={
+              (mainActionState === 'idle' && !prompt.trim()) ||
+              (mainActionState === 'done' && interactionMode === 'edit' && !prompt.trim())
+            }
+          />
+        </Trigger>
+        <Content>
+          <Heading>{mainActionState === 'done' ? 'Fix / Edit' : 'Generate'}</Heading>
+          <Description>
+            Hold on mobile to show this tip. Release to hide.
+          </Description>
+        </Content>
+      </Popover>
+      <Popover>
+        <Trigger>
+          <ModeToggle />
+        </Trigger>
+        <Content>
+          <Heading>Mode</Heading>
+          <Description>Fast for speed, Think/Super for deeper reasoning.</Description>
+        </Content>
+      </Popover>
+      <Popover>
+        <Trigger>
+          <ArchitectToggle />
+        </Trigger>
+        <Content>
+          <Heading>Architect Mode</Heading>
+          <Description>Build a step-by-step plan before code generation.</Description>
+        </Content>
+      </Popover>
+    </>
+  );
 
   return (
     <>
@@ -1762,7 +3112,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         </ErrorToast>
       )}
 
-      <Container>
+      <Container $reserveConsole={isConsoleVisible}>
         <HeaderArea style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
           <HeaderLeft style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
             <BrandStack style={{ alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
@@ -1774,34 +3124,42 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
             </StatusPill>
           </HeaderLeft>
           <HeaderRight style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
-            <SubscriptionIndicator />
+            <DesktopOnly>
+              <SubscriptionIndicator />
+            </DesktopOnly>
             <div style={{ marginLeft: isRTL ? '0' : '4px', marginRight: isRTL ? '4px' : '0' }}>
               <LanguageSwitcher />
             </div>
-            <HeaderIconButton
-              type="button"
-              onClick={() => {
-                const shouldOpen = !isPreviewOpen;
-                setIsPreviewOpen(shouldOpen);
-              }}
-              aria-label={isPreviewOpen ? t('app.header.preview.close') : t('app.header.preview.open')}
-              title={isPreviewOpen ? t('app.header.preview.close') : t('app.header.preview.open')}
-              style={{
-                borderColor: isPreviewOpen ? 'rgba(245, 158, 11, 0.30)' : undefined,
-                background: isPreviewOpen ? 'rgba(245, 158, 11, 0.12)' : undefined,
-              }}
-            >
-              {isPreviewOpen ? <EyeOff size={18} /> : <Eye size={18} />}
-            </HeaderIconButton>
-            <HeaderIconButton
-              type="button"
-              onClick={() => setHistoryOpen((v) => !v)}
-              aria-label="View history"
-              title="View history"
-            >
-              <History size={18} />
-            </HeaderIconButton>
-            {modelMode !== 'super' && (
+            <DesktopOnly>
+              <HeaderIconButton
+                type="button"
+                onClick={() => {
+                  const shouldOpen = !isPreviewOpen;
+                  setIsPreviewOpen(shouldOpen);
+                  if (shouldOpen) setDesktopWorkbenchTab('preview');
+                  if (!shouldOpen && desktopWorkbenchTab === 'preview') setDesktopWorkbenchTab('editor');
+                }}
+                aria-label={isPreviewOpen ? t('app.header.preview.close') : t('app.header.preview.open')}
+                title={isPreviewOpen ? t('app.header.preview.close') : t('app.header.preview.open')}
+                style={{
+                  borderColor: isPreviewOpen ? 'rgba(245, 158, 11, 0.30)' : undefined,
+                  background: isPreviewOpen ? 'rgba(245, 158, 11, 0.12)' : undefined,
+                }}
+              >
+                {isPreviewOpen ? <EyeOff size={18} /> : <Eye size={18} />}
+              </HeaderIconButton>
+            </DesktopOnly>
+            <DesktopOnly>
+              <HeaderIconButton
+                type="button"
+                onClick={() => setHistoryOpen((v) => !v)}
+                aria-label="View history"
+                title="View history"
+              >
+                <History size={18} />
+              </HeaderIconButton>
+            </DesktopOnly>
+            <DesktopOnly>
               <HeaderIconButton
                 type="button"
                 onClick={() => setPlanOpen((v) => !v)}
@@ -1810,83 +3168,202 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
               >
                 <ListTodo size={18} />
               </HeaderIconButton>
-            )}
+            </DesktopOnly>
             <MobileMenuButton type="button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
               <Menu size={18} />
             </MobileMenuButton>
           </HeaderRight>
         </HeaderArea>
 
-        <InputArea $mobileHidden={mobileTab !== 'ai'}>
-          <PromptInput
-            ref={promptRef}
-            onSubmit={handleMainActionClick}
-            controls={
-              <>
-                <Popover>
-                  <Trigger>
-                    <ArchitectToggle />
-                  </Trigger>
-                  <Content>
-                    <Heading>Architect Mode</Heading>
-                    <Description>Generate a step-by-step implementation plan, then execute it.</Description>
-                  </Content>
-                </Popover>
-                <Popover>
-                  <Trigger>
-                    <ModeToggle />
-                  </Trigger>
-                  <Content>
-                    <Heading>Mode</Heading>
-                    <Description>Switch between Fast generation and DeepSeek Reasoner “Thinking” mode.</Description>
-                  </Content>
-                </Popover>
-                <Popover>
-                  <Trigger>
-                    <MainActionButton
-                      state={mainActionState}
-                      onClick={handleMainActionClick}
-                      disabled={
-                        (mainActionState === 'idle' && !prompt.trim()) ||
-                        (mainActionState === 'done' && interactionMode === 'edit' && !prompt.trim())
-                      }
+        {!isMobileViewport ? (
+          <DesktopLayout>
+            <ChatColumn>
+              <ChatPanel>
+                <ChatHeader>
+                  <ChatHeaderTitle>{t('app.workspace.title')}</ChatHeaderTitle>
+                  <ChatHeaderMeta>
+                    <span>{chatMessageCountText}</span>
+                    <span>{Math.round(contextBudget.utilizationPct)}%</span>
+                  </ChatHeaderMeta>
+                  <ContextBarTrack>
+                    <ContextBarFill $status={contextBudget.status} $width={contextBudget.utilizationPct} />
+                  </ContextBarTrack>
+                </ChatHeader>
+                <ChatScroll
+                  ref={chatScrollRef}
+                  onScroll={handleChatScroll}
+                  className="scrollbar-thin scrollbar-glass"
+                >
+                  {chatHistory.length === 0 ? (
+                    <ChatEmpty>
+                      Start by writing a prompt below. This panel shows only your conversation and the final AI delivery summary.
+                    </ChatEmpty>
+                  ) : null}
+
+                  {chatHistory.map((message, index) => {
+                    const roleLabel =
+                      message.role === 'user' ? 'You' : message.role === 'assistant' ? 'AI' : 'System';
+                    return (
+                      <ChatBubble
+                        key={`${message.role}-${index}-${message.content.slice(0, 32)}`}
+                        $role={message.role}
+                      >
+                        <ChatBubbleRole $role={message.role}>{roleLabel}</ChatBubbleRole>
+                        <ChatBubbleText>{message.content}</ChatBubbleText>
+                      </ChatBubble>
+                    );
+                  })}
+
+                </ChatScroll>
+              </ChatPanel>
+
+              <ChatComposerWrap>
+                <PromptInput
+                  ref={promptRef}
+                  onSubmit={handleMainActionClick}
+                  controls={desktopPromptControls}
+                  projectMode={effectiveProjectType}
+                  onProjectModeChange={handleProjectTypeSelect}
+                  recommendation={modeRecommendation}
+                  onApplyRecommendation={() => {
+                    if (!modeRecommendation) return;
+                    handleProjectTypeSelect(modeRecommendation.mode);
+                  }}
+                  labels={{
+                    projectModeLabel: t('app.prompt.projectMode.label'),
+                    frontendLabel: t('app.prompt.projectMode.frontend'),
+                    fullstackLabel: t('app.prompt.projectMode.fullstack'),
+                    applyLabel: t('app.prompt.projectMode.apply')
+                  }}
+                  fullstackLocked={FULLSTACK_TEMP_LOCK}
+                  constraintsPanel={constraintsPanelNode}
+                  constraintsPanelOpen={constraintsPanelOpen}
+                  onToggleConstraintsPanel={() => setConstraintsPanelOpen((v) => !v)}
+                  constraintsSummary={constraintsSummary}
+                  constraintsLabel={t('app.tools.title')}
+                  completionSuggestion={completionSuggestion ? { question: completionSuggestion.question, actionLabel: completionSuggestion.actionLabel } : null}
+                  onApplyCompletionSuggestion={handleApplyCompletionSuggestion}
+                  onDismissCompletionSuggestion={handleDismissCompletionSuggestion}
+                />
+              </ChatComposerWrap>
+            </ChatColumn>
+
+            <WorkbenchColumn>
+              <WorkbenchTabs>
+                <WorkbenchTab
+                  type="button"
+                  $active={desktopWorkbenchTab === 'editor'}
+                  onClick={() => setDesktopWorkbenchTab('editor')}
+                >
+                  Editor
+                </WorkbenchTab>
+                <WorkbenchTab
+                  type="button"
+                  $active={desktopWorkbenchTab === 'preview'}
+                  onClick={() => {
+                    setDesktopWorkbenchTab('preview');
+                    setIsPreviewOpen(true);
+                  }}
+                >
+                  Live Preview
+                </WorkbenchTab>
+              </WorkbenchTabs>
+
+              <WorkbenchBody>
+                <WorkbenchSidebar>
+                  <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+                </WorkbenchSidebar>
+
+                <WorkbenchPanel>
+                  {desktopWorkbenchTab === 'editor' ? (
+                    <CodeEditor showFileTree={false} isVisible />
+                  ) : (
+                    <PreviewWindow
+                      enabled={isPreviewOpen}
+                      projectProfile={effectiveProjectType === 'FULL_STACK' ? 'fullstack' : 'frontend'}
                     />
-                  </Trigger>
-                  <Content>
-                    <Heading>{mainActionState === 'done' ? 'Fix / Edit' : 'Generate'}</Heading>
-                    <Description>
-                      {mainActionState === 'done'
-                        ? interactionMode === 'edit'
-                          ? 'Describe what you want to change and apply it with full context.'
-                          : 'Switch to Edit mode to apply changes with full project context.'
-                        : architectMode
-                          ? 'Plan then write code.'
-                          : 'Write code immediately.'}
-                    </Description>
-                  </Content>
-                </Popover>
-              </>
-            }
-          />
-        </InputArea>
+                  )}
+                </WorkbenchPanel>
+              </WorkbenchBody>
+            </WorkbenchColumn>
+          </DesktopLayout>
+        ) : (
+          <>
+            <InputArea $mobileHidden={mobileTab !== 'ai'}>
+              <MobileAIBoard>
+                <MobileAIIntro>
+                  <MobileAITitle>{t('app.mobile.workspace.title')}</MobileAITitle>
+                  <MobileAISubtitle>{t('app.mobile.workspace.subtitle')}</MobileAISubtitle>
+                </MobileAIIntro>
+                <PromptInput
+                  ref={promptRef}
+                  onSubmit={handleMainActionClick}
+                  controls={isMobileViewport ? mobilePromptControls : desktopPromptControls}
+                  projectMode={effectiveProjectType}
+                  onProjectModeChange={handleProjectTypeSelect}
+                  recommendation={modeRecommendation}
+                  onApplyRecommendation={() => {
+                    if (!modeRecommendation) return;
+                    handleProjectTypeSelect(modeRecommendation.mode);
+                  }}
+                  labels={{
+                    projectModeLabel: t('app.prompt.projectMode.label'),
+                    frontendLabel: t('app.prompt.projectMode.frontend'),
+                    fullstackLabel: t('app.prompt.projectMode.fullstack'),
+                    applyLabel: t('app.prompt.projectMode.apply')
+                  }}
+                  fullstackLocked={FULLSTACK_TEMP_LOCK}
+                  constraintsPanel={constraintsPanelNode}
+                  constraintsPanelOpen={constraintsPanelOpen}
+                  onToggleConstraintsPanel={() => setConstraintsPanelOpen((v) => !v)}
+                  constraintsSummary={constraintsSummary}
+                  constraintsLabel={t('app.tools.title')}
+                  completionSuggestion={completionSuggestion ? { question: completionSuggestion.question, actionLabel: completionSuggestion.actionLabel } : null}
+                  onApplyCompletionSuggestion={handleApplyCompletionSuggestion}
+                  onDismissCompletionSuggestion={handleDismissCompletionSuggestion}
+                />
+                {(architectMode || planSteps.length > 0) && (
+                  <MobilePlanPane>
+                    <MobilePlanBody>
+                      {planSteps.length > 0 ? (
+                        <PlanChecklist
+                          items={planSteps}
+                          currentStepId={isGenerating ? currentPlanStepId : undefined}
+                          embedded
+                        />
+                      ) : (
+                        <div style={{ padding: 12, color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
+                          {t('app.plan.empty')}
+                        </div>
+                      )}
+                    </MobilePlanBody>
+                  </MobilePlanPane>
+                )}
+              </MobileAIBoard>
+            </InputArea>
 
-        <MainWorkspace $previewOpen={isPreviewOpen} $mobileHidden={mobileTab === 'ai'}>
-          <DesktopSidebar>
-            <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
-          </DesktopSidebar>
-          <PanelSlot $mobileActive={mobileTab === 'editor'}>
-            <CodeEditor showFileTree={false} />
-          </PanelSlot>
-          <PanelSlot $mobileActive={mobileTab === 'preview'} $desktopHidden={!isPreviewOpen}>
-            <PreviewWindow enabled={isPreviewOpen || mobileTab === 'preview'} />
-          </PanelSlot>
-        </MainWorkspace>
+            <MainWorkspace $previewOpen={isPreviewOpen} $mobileHidden={mobileTab === 'ai'}>
+              <DesktopSidebar>
+                <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+              </DesktopSidebar>
+              <PanelSlot $mobileActive={mobileTab === 'editor'}>
+                <CodeEditor showFileTree={isMobileViewport} isVisible={!isMobileViewport || mobileTab === 'editor'} />
+              </PanelSlot>
+              <PanelSlot $mobileActive={mobileTab === 'preview'} $desktopHidden={!isPreviewOpen}>
+                <PreviewWindow
+                  enabled={isPreviewOpen || mobileTab === 'preview'}
+                  projectProfile={effectiveProjectType === 'FULL_STACK' ? 'fullstack' : 'frontend'}
+                />
+              </PanelSlot>
+            </MainWorkspace>
 
-        <MobileNav 
-          activeTab={mobileTab} 
-          onTabChange={setMobileTab} 
-          isGenerating={isGenerating} 
-        />
+            <MobileNav
+              activeTab={mobileTab}
+              onTabChange={setMobileTab}
+              isGenerating={isGenerating}
+            />
+          </>
+        )}
       </Container>
 
       <DrawerScrim $open={sidebarOpen} onClick={() => setSidebarOpen(false)} />
@@ -1907,6 +3384,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
           setSettingsOpen(false);
         }}
       />
+
       <OverlayPanel $open={historyOpen}>
         <OverlayHeader>
           History
@@ -2042,7 +3520,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         </OverlayBody>
       </OverlayPanel>
 
-      {modelMode !== 'super' && architectMode && planSteps.length > 0 && (
+      {architectMode && planSteps.length > 0 && (
         <FloatingPlanWrap $open={planOpen}>
           {planOpen ? (
             <FloatingPlanPanel>
@@ -2068,25 +3546,9 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
           )}
         </FloatingPlanWrap>
       )}
-      
-      {modelMode === 'super' && (
-        <FloatingPlanWrap $open={true}>
-          <FloatingPlanPanel>
-            <FloatingPlanHeader type="button" onClick={() => {}} aria-label="Workflow">
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <ListTodo size={16} />
-                Deep-Thinking Workflow
-              </span>
-              <span style={{ opacity: 0.7 }}>✨</span>
-            </FloatingPlanHeader>
-            <FloatingPlanBody>
-              <SuperWorkflow />
-            </FloatingPlanBody>
-          </FloatingPlanPanel>
-        </FloatingPlanWrap>
-      )}
 
       <IDEFooter>© 2026 Apex Coding | AI-Powered Developer Platform</IDEFooter>
+
       <BrainConsole
         visible={isConsoleVisible}
         open={brainOpen}
@@ -2096,6 +3558,13 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         status={thinkingStatus}
         error={error}
         logs={systemConsoleContent}
+        events={brainEvents}
+        executionPhase={executionPhase}
+        writingFilePath={writingFilePath}
+        contextUtilizationPct={contextBudget.utilizationPct}
+        contextStatus={contextBudget.status}
+        runtimeStatus={runtimeStatus}
+        lastTokenAt={lastTokenAt}
         canFixResume={false}
       />
       </Root>

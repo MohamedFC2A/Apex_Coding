@@ -1,5 +1,6 @@
 import type { FileStructure, ProjectFile } from '@/types';
 import { loadWorkspace } from '@/utils/workspaceDb';
+import type { ActiveModelProfile, CompressionSnapshot, ContextBudgetState } from '@/types/context';
 
 type StoredChatRole = 'system' | 'user' | 'assistant';
 
@@ -13,8 +14,11 @@ export type StoredPlanStep = {
   title: string;
   completed: boolean;
   category?: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment';
+  status?: 'pending' | 'in_progress' | 'completed' | 'blocked';
   files?: string[];
   description?: string;
+  estimatedSize?: 'small' | 'medium' | 'large';
+  depends_on?: string[];
 };
 
 export type StoredHistorySession = {
@@ -23,6 +27,10 @@ export type StoredHistorySession = {
   updatedAt: number;
   title: string;
   projectName: string;
+  projectType: 'FULL_STACK' | 'FRONTEND_ONLY' | null;
+  selectedFeatures: string[];
+  customFeatureTags: string[];
+  constraintsEnforcement: 'hard';
   stack: string;
   description: string;
   activeFile: string | null;
@@ -32,6 +40,9 @@ export type StoredHistorySession = {
   plan: string;
   planSteps: StoredPlanStep[];
   contextSize: number;
+  contextBudget: ContextBudgetState;
+  compressionSnapshot: CompressionSnapshot;
+  activeModelProfile: ActiveModelProfile;
 };
 
 const DB_NAME = 'apex-coding-workspace';
@@ -117,7 +128,24 @@ export const deleteSessionFromDisk = async (sessionId: string) => {
   });
 };
 
-export const archiveCurrentWorkspaceAsSession = async (session: Omit<StoredHistorySession, 'projectFiles' | 'fileStructure' | 'activeFile' | 'projectName' | 'stack' | 'description'>) => {
+export const archiveCurrentWorkspaceAsSession = async (
+  session: Omit<
+    StoredHistorySession,
+    | 'projectFiles'
+    | 'fileStructure'
+    | 'activeFile'
+    | 'projectName'
+    | 'projectType'
+    | 'selectedFeatures'
+    | 'customFeatureTags'
+    | 'constraintsEnforcement'
+    | 'contextBudget'
+    | 'compressionSnapshot'
+    | 'activeModelProfile'
+    | 'stack'
+    | 'description'
+  >
+) => {
   const workspace = await loadWorkspace().catch(() => ({ meta: null as any, files: [] as any[] }));
   const projectFiles: ProjectFile[] = Array.isArray(workspace.files)
     ? workspace.files.map((f: any) => ({
@@ -132,11 +160,33 @@ export const archiveCurrentWorkspaceAsSession = async (session: Omit<StoredHisto
   const record: StoredHistorySession = {
     ...session,
     projectName: String(meta?.projectName || ''),
+    projectType: (meta?.projectType ?? 'FRONTEND_ONLY') as 'FULL_STACK' | 'FRONTEND_ONLY' | null,
+    selectedFeatures: Array.isArray(meta?.selectedFeatures) ? meta.selectedFeatures : [],
+    customFeatureTags: Array.isArray(meta?.customFeatureTags) ? meta.customFeatureTags : [],
+    constraintsEnforcement: (meta?.constraintsEnforcement || 'hard') as 'hard',
     stack: String(meta?.stack || ''),
     description: String(meta?.description || ''),
     activeFile: (meta?.activeFile ?? null) as string | null,
     fileStructure: Array.isArray(meta?.fileStructure) ? meta.fileStructure : [],
-    projectFiles
+    projectFiles,
+    contextBudget: {
+      maxChars: 160_000,
+      maxEstimatedTokens: 32_000,
+      usedChars: Number(session.contextSize || 0),
+      usedEstimatedTokens: Math.ceil(Number(session.contextSize || 0) / 4),
+      utilizationPct: 0,
+      status: 'ok'
+    },
+    compressionSnapshot: {
+      level: 0,
+      compressedMessagesCount: 0,
+      summaryBlocks: [],
+      lastCompressedAt: 0
+    },
+    activeModelProfile: {
+      plannerModel: 'planner:auto',
+      executorModel: 'executor:auto'
+    }
   };
 
   await saveSessionToDisk(record);

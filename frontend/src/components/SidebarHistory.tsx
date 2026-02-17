@@ -1,10 +1,11 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import styled from 'styled-components';
-import { History, Trash2, FolderOpen } from 'lucide-react';
-import { useAIStore, HistorySession } from '@/stores/aiStore';
+import { History, FolderOpen } from 'lucide-react';
+import { useAIStore, selectContextBudget } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { FileSystem, ProjectFile } from '@/types';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
+import { ContextPreview } from '@/components/ContextPreview';
 
 const Wrapper = styled.div`
   height: 100%;
@@ -80,6 +81,13 @@ const SessionCard = styled.button`
   }
 `;
 
+const SessionCardBody = styled.div`
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+`;
+
 const SessionMain = styled.div`
   flex: 1;
   min-width: 0;
@@ -111,6 +119,30 @@ const RightMeta = styled.div`
   color: rgba(255, 255, 255, 0.55);
   font-size: 11px;
   white-space: nowrap;
+`;
+
+const ContextMeter = styled.div`
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+`;
+
+const ContextFill = styled.div<{ $pct: number; $status: 'ok' | 'warning' | 'critical' }>`
+  height: 100%;
+  width: ${(p) => Math.min(100, Math.max(0, p.$pct))}%;
+  background: ${(p) =>
+    p.$status === 'critical'
+      ? 'rgba(239, 68, 68, 0.95)'
+      : p.$status === 'warning'
+        ? 'rgba(251, 191, 36, 0.95)'
+        : 'rgba(34, 211, 238, 0.95)'};
+  transition: width 180ms ease;
+`;
+
+const ContextMeta = styled.div`
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.58);
 `;
 
 const EmptyState = styled.div`
@@ -155,29 +187,16 @@ export const SidebarHistory: React.FC = () => {
   const { history, startNewChat, restoreSession } = useAIStore();
   const { setFiles, setFileStructure, setActiveFile, setProjectName } = useProjectStore();
 
-  // Deduplicate sessions by projectName, keeping only the most recent
-  const deduplicatedHistory = useMemo(() => {
-    const seen = new Map<string, HistorySession>();
-    for (const session of history) {
-      const key = session.projectName || session.id;
-      const existing = seen.get(key);
-      if (!existing || (session.updatedAt || session.createdAt) > (existing.updatedAt || existing.createdAt)) {
-        seen.set(key, session);
-      }
-    }
-    return Array.from(seen.values()).sort((a, b) => 
+  const sortedHistory = useMemo(
+    () =>
+      [...history].sort((a, b) =>
       (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)
-    );
-  }, [history]);
-
-  const handleCleanDuplicates = useCallback(() => {
-    // Clean up duplicate sessions in storage
-    const cleaned = deduplicatedHistory;
-    useAIStore.setState({ history: cleaned });
-  }, [deduplicatedHistory]);
+      ),
+    [history]
+  );
 
   const handleRestore = (sessionId: string) => {
-    const session = deduplicatedHistory.find((item) => item.id === sessionId);
+    const session = sortedHistory.find((item) => item.id === sessionId);
     if (!session) return;
 
     restoreSession(sessionId);
@@ -209,30 +228,38 @@ export const SidebarHistory: React.FC = () => {
           <History size={14} />
           New Chat
         </ActionButton>
-        {history.length > 0 && (
-          <ActionButton type="button" onClick={handleCleanDuplicates} title="Clean duplicate sessions">
-            <Trash2 size={14} />
-          </ActionButton>
-        )}
       </ActionRow>
 
       <SessionList className="scrollbar-thin scrollbar-glass">
-        {deduplicatedHistory.length === 0 ? (
+        <ContextPreview />
+        {sortedHistory.length === 0 ? (
           <EmptyState>No saved sessions yet.</EmptyState>
         ) : (
-          deduplicatedHistory.map((session) => {
+          sortedHistory.map((session) => {
             const displayName = session.projectName || session.title || 'Untitled Session';
-            const fileCount = Object.keys(flattenFileSystem(session.files)).length;
+            const fileCount = flattenFileSystem(session.files).length;
+            const budget = session.contextBudget || selectContextBudget(session.id);
             return (
               <SessionCard key={session.id} type="button" onClick={() => handleRestore(session.id)}>
                 <FolderOpen size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
-                <SessionMain>
-                  <SessionTitle>{displayName}</SessionTitle>
-                  <SessionMeta>
-                    {formatDayMonth(session.updatedAt || session.createdAt)}
-                    {fileCount > 0 && ` • ${fileCount} files`}
-                  </SessionMeta>
-                </SessionMain>
+                <SessionCardBody>
+                  <SessionMain>
+                    <SessionTitle>{displayName}</SessionTitle>
+                    <SessionMeta>
+                      {formatDayMonth(session.updatedAt || session.createdAt)}
+                      {fileCount > 0 && ` • ${fileCount} files`}
+                    </SessionMeta>
+                  </SessionMain>
+                  <ContextMeter>
+                    <ContextFill $pct={budget.utilizationPct} $status={budget.status} />
+                  </ContextMeter>
+                  <ContextMeta>
+                    Context {budget.utilizationPct.toFixed(1)}% • {budget.status.toUpperCase()}
+                    {session.compressionSnapshot?.compressedMessagesCount
+                      ? ` • compressed ${session.compressionSnapshot.compressedMessagesCount}`
+                      : ''}
+                  </ContextMeta>
+                </SessionCardBody>
                 <RightMeta>Restore</RightMeta>
               </SessionCard>
             );

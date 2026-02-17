@@ -6,6 +6,8 @@ import { useProjectStore } from '@/stores/projectStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useLanguage } from '@/context/LanguageContext';
 import { FileSystem } from '@/types';
+import { getLanguageFromExtension } from '@/utils/stackDetector';
+import { LanguageIconBadge } from '@/components/files/LanguageIconBadge';
 
 type SidebarTab = 'files' | 'database';
 
@@ -405,7 +407,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
             <Folder size={16} className="text-blue-400" />
           </>
         ) : (
-          <FileText size={16} className="text-slate-400" />
+          <LanguageIconBadge language={getLanguageFromExtension(node.path || node.name || '')} size="md" />
         )}
         <TreeLabel style={{ textAlign: isRTL ? 'right' : 'left' }}>{node.name}</TreeLabel>
         {node.type === 'file' && (

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, RefreshCw, ExternalLink, Settings, Info, Server, Key, Globe } from 'lucide-react';
+import { apiUrl } from '@/services/apiBase';
 
 interface PreviewConfig {
   provider: string;
@@ -32,10 +33,10 @@ export const PreviewDiagnostics: React.FC<{
     if (!isRefreshing) setLoading(true);
     
     try {
-      const configRes = await fetch('/api/preview/config');
+      const configRes = await fetch(apiUrl('/preview/config'));
       const configData = await configRes.json();
       
-      const diagRes = await fetch('/api/preview/diagnostics');
+      const diagRes = await fetch(apiUrl('/preview/diagnostics'));
       const diagData = await diagRes.ok ? await diagRes.json() : {};
 
       const data: DiagnosticsData = {

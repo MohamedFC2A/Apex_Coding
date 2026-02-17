@@ -1,19 +1,44 @@
 import { getViteEnv } from '@/utils/env';
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0']);
+
+const getHostFromUrl = (value: string): string | null => {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
 export const getApiBaseUrl = () => {
   const env =
     getViteEnv('VITE_BACKEND_URL') ??
     (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_BACKEND_URL : undefined);
-  if (env && String(env).trim().length > 0) return String(env).trim();
-  
-  // If we are on Vercel or same domain, we can just use relative paths which Vercel rewrites handle.
-  // However, to be safe and explicit:
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    // If we are running locally on port 5173, we want to hit the proxy at /api
-    // If we are on production, we want /api as well.
-    // BUT if the rewrite expects /ai/plan to go to /api/index.js, we can just use /api prefix convention.
-    return '/api'; 
+
+  const envValue = env && String(env).trim().length > 0 ? String(env).trim() : '';
+
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const runtimeHost = String(window.location.hostname || '').toLowerCase();
+    const isLocalRuntime = LOCAL_HOSTS.has(runtimeHost);
+
+    if (isLocalRuntime) {
+      if (!envValue) return 'http://localhost:3001';
+      if (envValue === '/api') return envValue;
+
+      const envHost = getHostFromUrl(envValue);
+      if (envHost && !LOCAL_HOSTS.has(envHost)) {
+        // Prevent local dev from accidentally calling remote/stale backend URLs.
+        return 'http://localhost:3001';
+      }
+    }
   }
+
+  if (envValue) return envValue;
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return '/api';
+  }
+
   return '/api';
 };
 

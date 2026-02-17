@@ -55,7 +55,8 @@ export function getLanguageFromExtension(filename: string): string {
     'yml': 'yaml',
     'yaml': 'yaml',
     'xml': 'xml',
-    'sql': 'sql'
+    'sql': 'sql',
+    'svg': 'svg'
   };
 
   return languageMap[ext || ''] || 'plaintext';

@@ -14,6 +14,7 @@ build/
 
 # Temp projects
 backend/temp-projects/
+tmpclaude-*
 
 # Logs
 logs/

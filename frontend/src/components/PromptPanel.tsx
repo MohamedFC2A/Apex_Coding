@@ -139,7 +139,6 @@ export const PromptPanel: React.FC = () => {
   const { addLog } = usePreviewStore();
 
   const isThinkingMode = modelMode === 'thinking';
-  const isSuperMode = modelMode === 'super';
 
   useEffect(() => {
     if (!isGenerating) return;
@@ -384,7 +383,7 @@ export const PromptPanel: React.FC = () => {
                 </label>
                 <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
                   <ModeButton
-                    $active={!isThinkingMode && !isSuperMode}
+                    $active={!isThinkingMode}
                     $color="#f59e0b"
                     onClick={() => setModelMode('fast')}
                     className={isRTL ? 'flex-row-reverse' : 'flex-row'}
@@ -401,22 +400,11 @@ export const PromptPanel: React.FC = () => {
                     <Brain className="w-4 h-4" />
                     <span>{t('app.workspace.modeThinking')}</span>
                   </ModeButton>
-                  <ModeButton
-                    $active={isSuperMode}
-                    $color="#3b82f6"
-                    onClick={() => setModelMode('super')}
-                    className={isRTL ? 'flex-row-reverse' : 'flex-row'}
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>{t('app.workspace.modeSuper')}</span>
-                  </ModeButton>
                 </div>
                 <p className={`text-xs text-white/40 leading-relaxed ${isRTL ? 'text-right' : 'text-left'}`}>
-                  {isSuperMode
-                    ? t('app.workspace.modeDescriptionSuper')
-                    : isThinkingMode
-                      ? t('app.workspace.modeDescriptionThinking')
-                      : t('app.workspace.modeDescriptionFast')}
+                  {isThinkingMode
+                    ? t('app.workspace.modeDescriptionThinking')
+                    : t('app.workspace.modeDescriptionFast')}
                 </p>
               </div>
 

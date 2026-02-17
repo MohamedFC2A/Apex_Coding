@@ -8,14 +8,12 @@ import {
   Folder,
   ChevronRight,
   ChevronDown,
-  FileCode2,
-  FileJson,
-  FileText,
-  Palette,
   PenLine,
   Dot
 } from 'lucide-react';
 import { FileStructure } from '@/types';
+import { getLanguageFromExtension } from '@/utils/stackDetector';
+import { LanguageIconBadge } from '@/components/files/LanguageIconBadge';
 
 interface FileTreeNodeProps {
   node: FileStructure;
@@ -24,17 +22,6 @@ interface FileTreeNodeProps {
 }
 
 type NodeStatus = 'ready' | 'queued' | 'writing';
-
-const getFileIcon = (path: string) => {
-  const ext = path.split('.').pop()?.toLowerCase();
-  if (!ext) return File;
-  if (['ts', 'tsx', 'js', 'jsx', 'py', 'java', 'go', 'rs', 'cpp', 'c', 'cs', 'php'].includes(ext)) return FileCode2;
-  if (['css', 'scss', 'sass', 'less'].includes(ext)) return Palette;
-  if (['json', 'jsonc'].includes(ext)) return FileJson;
-  if (['md', 'txt', 'env', 'yml', 'yaml'].includes(ext)) return FileText;
-  if (['html', 'htm'].includes(ext)) return FileCode2;
-  return File;
-};
 
 const getStatusColor = (status: NodeStatus) => {
   if (status === 'writing') return 'rgba(245, 158, 11, 0.95)';
@@ -79,8 +66,6 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth, isRTL }) => {
   const status = computeStatus(node);
   const StatusIcon = status === 'writing' ? PenLine : Dot;
   const statusColor = getStatusColor(status);
-  const FileIcon = node.type === 'file' ? getFileIcon(node.path) : Folder;
-
   return (
     <div>
       <motion.div
@@ -111,7 +96,11 @@ const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth, isRTL }) => {
         ) : (
           <>
             <div className="w-3.5" />
-            <FileIcon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-white/40'}`} />
+            {node.path ? (
+              <LanguageIconBadge size="sm" language={getLanguageFromExtension(node.path)} />
+            ) : (
+              <File className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-white/40'}`} />
+            )}
           </>
         )}
         <span className={`text-xs font-medium truncate ${isRTL ? 'text-right' : 'text-left'} flex-1 font-mono tracking-tight`}>

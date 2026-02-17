@@ -2,10 +2,17 @@ import { createWithEqualityFn } from 'zustand/traditional';
 import { persist } from 'zustand/middleware';
 import { ProjectFile, FileStructure, FileSystem } from '@/types';
 import { applyWorkspaceDelta, clearWorkspace, loadWorkspace } from '@/utils/workspaceDb';
+import type { ConstraintEnforcement } from '@/types/constraints';
+
+export type ProjectType = 'FULL_STACK' | 'FRONTEND_ONLY';
 
 interface ProjectState {
   projectId: string;
   projectName: string;
+  projectType: ProjectType | null;
+  selectedFeatures: string[];
+  customFeatureTags: string[];
+  constraintsEnforcement: ConstraintEnforcement;
   files: ProjectFile[];
   fileStructure: FileStructure[];
   fileSystem?: FileSystem;
@@ -16,9 +23,13 @@ interface ProjectState {
 
   hydrateFromDisk: () => Promise<void>;
   clearDisk: () => Promise<void>;
-  
+
   setProjectId: (id: string) => void;
   setProjectName: (name: string) => void;
+  setProjectType: (type: ProjectType | null) => void;
+  setSelectedFeatures: (features: string[]) => void;
+  setCustomFeatureTags: (tags: string[]) => void;
+  setConstraintsEnforcement: (mode: ConstraintEnforcement) => void;
   setFiles: (files: ProjectFile[]) => void;
   setFileStructure: (structure: FileStructure[]) => void;
   setActiveFile: (path: string) => void;
@@ -36,6 +47,10 @@ interface ProjectState {
 const initialState = {
   projectId: '',
   projectName: '',
+  projectType: 'FRONTEND_ONLY' as ProjectType | null,
+  selectedFeatures: [] as string[],
+  customFeatureTags: [] as string[],
+  constraintsEnforcement: 'hard' as ConstraintEnforcement,
   files: [],
   fileStructure: [],
   fileSystem: {},
@@ -77,6 +92,14 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
             set({
               projectId: loaded.meta?.projectId ?? current.projectId,
               projectName: loaded.meta?.projectName ?? current.projectName,
+              projectType: loaded.meta?.projectType ?? current.projectType,
+              selectedFeatures: Array.isArray(loaded.meta?.selectedFeatures)
+                ? loaded.meta.selectedFeatures
+                : current.selectedFeatures,
+              customFeatureTags: Array.isArray(loaded.meta?.customFeatureTags)
+                ? loaded.meta.customFeatureTags
+                : current.customFeatureTags,
+              constraintsEnforcement: loaded.meta?.constraintsEnforcement ?? current.constraintsEnforcement,
               stack: loaded.meta?.stack ?? current.stack,
               description: loaded.meta?.description ?? current.description,
               activeFile: loaded.meta?.activeFile ?? current.activeFile ?? (restoredFiles[0]?.path || null),
@@ -106,6 +129,10 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
                 const legacyMeta = {
                   projectId: current.projectId || '',
                   projectName: String(parsed?.projectName || current.projectName || ''),
+                  projectType: current.projectType || 'FRONTEND_ONLY',
+                  selectedFeatures: current.selectedFeatures || [],
+                  customFeatureTags: current.customFeatureTags || [],
+                  constraintsEnforcement: current.constraintsEnforcement || 'hard',
                   stack: String(parsed?.stack || current.stack || ''),
                   description: String(parsed?.description || current.description || ''),
                   activeFile: String(parsed?.activeFile || current.activeFile || '') || null,
@@ -116,6 +143,10 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
 
                 set({
                   projectName: legacyMeta.projectName,
+                  projectType: legacyMeta.projectType,
+                  selectedFeatures: legacyMeta.selectedFeatures,
+                  customFeatureTags: legacyMeta.customFeatureTags,
+                  constraintsEnforcement: legacyMeta.constraintsEnforcement,
                   stack: legacyMeta.stack,
                   description: legacyMeta.description,
                   activeFile: legacyMeta.activeFile ?? legacyFiles[0]?.path ?? null,
@@ -143,7 +174,15 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
       setProjectId: (id) => set({ projectId: id }),
       
       setProjectName: (name) => set({ projectName: name }),
-      
+
+      setProjectType: (type) => set({ projectType: type }),
+
+      setSelectedFeatures: (features) => set({ selectedFeatures: features }),
+
+      setCustomFeatureTags: (tags) => set({ customFeatureTags: tags }),
+
+      setConstraintsEnforcement: (mode) => set({ constraintsEnforcement: mode }),
+
       setFiles: (files) => set({ files }),
       
       setFileStructure: (structure) => set({ fileStructure: structure }),
@@ -200,6 +239,10 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
       partialize: (state) => ({
         projectId: state.projectId,
         projectName: state.projectName,
+        projectType: state.projectType,
+        selectedFeatures: state.selectedFeatures,
+        customFeatureTags: state.customFeatureTags,
+        constraintsEnforcement: state.constraintsEnforcement,
         fileStructure: state.fileStructure,
         activeFile: state.activeFile,
         stack: state.stack,
@@ -239,6 +282,10 @@ if (typeof window !== 'undefined') {
     let pendingMeta: {
       projectId: string;
       projectName: string;
+      projectType: ProjectType | null;
+      selectedFeatures: string[];
+      customFeatureTags: string[];
+      constraintsEnforcement: ConstraintEnforcement;
       stack: string;
       description: string;
       activeFile: string | null;
@@ -279,6 +326,10 @@ if (typeof window !== 'undefined') {
       const nextMeta = {
         projectId: state.projectId,
         projectName: state.projectName,
+        projectType: state.projectType,
+        selectedFeatures: state.selectedFeatures,
+        customFeatureTags: state.customFeatureTags,
+        constraintsEnforcement: state.constraintsEnforcement,
         stack: state.stack,
         description: state.description,
         activeFile: state.activeFile,

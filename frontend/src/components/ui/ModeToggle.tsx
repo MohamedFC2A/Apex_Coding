@@ -1,72 +1,61 @@
 import React from 'react';
 import styled from 'styled-components';
-import { motion, LayoutGroup } from 'framer-motion';
 import { useAIStore } from '../../stores/aiStore';
-import { Zap, Brain, Rocket } from 'lucide-react';
+import { Zap, Brain } from 'lucide-react';
 
-const Container = styled(motion.div)`
-  position: relative;
-  display: inline-flex;
+const Root = styled.div`
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(9, 14, 24, 0.74);
   padding: 4px;
-  border-radius: 16px;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  box-shadow: 
-    0 4px 20px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  overflow: hidden;
 `;
 
-const Item = styled.button<{ $isActive: boolean; $mode: string }>`
-  position: relative;
-  display: flex;
+const Grid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+`;
+
+const Option = styled.button<{ $active: boolean }>`
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: transparent;
-  border: none;
+  gap: 5px;
+  border-radius: 8px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.36)' : 'rgba(255, 255, 255, 0.1)')};
+  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.17)' : 'rgba(255, 255, 255, 0.025)')};
+  color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 0.98)' : 'rgba(255, 255, 255, 0.72)')};
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  height: 40px;
   cursor: pointer;
-  z-index: 2;
-  font-family: inherit;
-  font-weight: 600;
-  font-size: 13px;
-  color: ${p => p.$isActive ? '#ffffff' : 'rgba(255, 255, 255, 0.6)'};
-  transition: color 0.3s ease;
-  outline: none;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+  min-width: 0;
 
-  &:hover {
-    color: ${p => p.$isActive ? '#ffffff' : 'rgba(255, 255, 255, 0.9)'};
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   svg {
-    width: 16px;
-    height: 16px;
-    opacity: ${p => p.$isActive ? 1 : 0.7};
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
   }
-`;
 
-const ActiveBackground = styled(motion.div)<{ $mode: string }>`
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  border-radius: 12px;
-  z-index: 1;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-  
-  ${p => {
-    switch(p.$mode) {
-      case 'fast':
-        return 'background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);';
-      case 'thinking':
-        return 'background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);';
-      case 'super':
-        return 'background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);';
-      default:
-        return 'background: #333;';
+  @media (max-width: 768px) {
+    height: 40px;
+    font-size: 11px;
+    gap: 4px;
+
+    span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-  }}
+  }
 `;
 
 interface ModeToggleProps {
@@ -78,41 +67,33 @@ export const ModeToggle: React.FC<ModeToggleProps> = ({ className }) => {
 
   const modes = [
     { id: 'fast', label: 'Fast', icon: Zap },
-    { id: 'thinking', label: 'Thinking', icon: Brain },
-    { id: 'super', label: 'Super', icon: Rocket },
+    { id: 'thinking', label: 'Think', icon: Brain }
   ] as const;
 
   return (
-    <LayoutGroup>
-      <Container className={className} layout>
+    <Root className={className} aria-label="Model mode selector">
+      <Grid>
         {modes.map((mode) => {
-          const isActive = modelMode === mode.id;
           const Icon = mode.icon;
-          
+          const active = modelMode === mode.id;
           return (
-            <div key={mode.id} style={{ position: 'relative' }}>
-              {isActive && (
-                <ActiveBackground
-                  layoutId="active-bg"
-                  $mode={mode.id}
-                  initial={false}
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                />
-              )}
-              <Item
-                onClick={() => !isGenerating && setModelMode(mode.id)}
-                $isActive={isActive}
-                $mode={mode.id}
-                disabled={isGenerating}
-                style={{ opacity: isGenerating ? 0.5 : 1 }}
-              >
-                <Icon strokeWidth={2.5} />
-                <span>{mode.label}</span>
-              </Item>
-            </div>
+            <Option
+              key={mode.id}
+              type="button"
+              $active={active}
+              onClick={() => {
+                if (!isGenerating) setModelMode(mode.id);
+              }}
+              disabled={isGenerating}
+              aria-pressed={active}
+              title={mode.label}
+            >
+              <Icon />
+              <span>{mode.label}</span>
+            </Option>
           );
         })}
-      </Container>
-    </LayoutGroup>
+      </Grid>
+    </Root>
   );
 };

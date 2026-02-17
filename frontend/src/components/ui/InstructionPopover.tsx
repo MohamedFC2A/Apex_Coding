@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 
@@ -100,27 +100,27 @@ export const Popover: React.FC<PopoverProps> = ({ children, openDelayMs = 0, clo
   const openTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
 
-  const clearTimers = () => {
+  const clearTimers = useCallback(() => {
     if (openTimerRef.current) window.clearTimeout(openTimerRef.current);
     if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
     openTimerRef.current = null;
     closeTimerRef.current = null;
-  };
+  }, []);
 
-  const openNow = () => {
+  const openNow = useCallback(() => {
     clearTimers();
     setOpen(true);
-  };
+  }, [clearTimers]);
 
-  const scheduleOpen = () => {
+  const scheduleOpen = useCallback(() => {
     clearTimers();
     openTimerRef.current = window.setTimeout(() => setOpen(true), openDelayMs);
-  };
+  }, [clearTimers, openDelayMs]);
 
-  const scheduleClose = () => {
+  const scheduleClose = useCallback(() => {
     clearTimers();
     closeTimerRef.current = window.setTimeout(() => setOpen(false), closeDelayMs);
-  };
+  }, [clearTimers, closeDelayMs]);
 
   const context = useMemo<PopoverContextValue>(
     () => ({ open, setOpen, openNow, scheduleOpen, scheduleClose, triggerEl, setTriggerEl }),
@@ -137,15 +137,60 @@ export const Popover: React.FC<PopoverProps> = ({ children, openDelayMs = 0, clo
 export const Trigger: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const ctx = useContext(PopoverContext);
   if (!ctx) throw new Error('InstructionPopover.Trigger must be used within <Popover>.');
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressOpenedRef = useRef(false);
+  const touchInteractionRef = useRef(false);
+
+  const clearLongPressTimer = useCallback(() => {
+    if (!longPressTimerRef.current) return;
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearLongPressTimer();
+    },
+    [clearLongPressTimer]
+  );
 
   return (
     <TriggerWrap
       ref={(node) => ctx.setTriggerEl(node as HTMLElement | null)}
       onMouseEnter={ctx.scheduleOpen}
       onMouseLeave={ctx.scheduleClose}
-      onClick={() => {
+      onClick={(event) => {
+        if (touchInteractionRef.current) {
+          event.preventDefault();
+          return;
+        }
         if (ctx.open) ctx.setOpen(false);
         else ctx.openNow();
+      }}
+      onTouchStart={() => {
+        touchInteractionRef.current = true;
+        longPressOpenedRef.current = false;
+        clearLongPressTimer();
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressOpenedRef.current = true;
+          ctx.openNow();
+        }, 220);
+      }}
+      onTouchEnd={() => {
+        clearLongPressTimer();
+        if (longPressOpenedRef.current) {
+          ctx.setOpen(false);
+        }
+        longPressOpenedRef.current = false;
+        window.setTimeout(() => {
+          touchInteractionRef.current = false;
+        }, 0);
+      }}
+      onTouchCancel={() => {
+        clearLongPressTimer();
+        if (longPressOpenedRef.current) ctx.setOpen(false);
+        longPressOpenedRef.current = false;
+        touchInteractionRef.current = false;
       }}
       onFocusCapture={ctx.openNow}
       onBlurCapture={(event) => {
@@ -161,6 +206,7 @@ export const Trigger: React.FC<{ children: React.ReactNode }> = ({ children }) =
 export const Content: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const ctx = useContext(PopoverContext);
   if (!ctx) throw new Error('InstructionPopover.Content must be used within <Popover>.');
+  const { open, triggerEl, setOpen, openNow, scheduleClose } = ctx;
 
   const overlayRoot = useMemo(() => getOverlayRoot(), []);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -171,17 +217,17 @@ export const Content: React.FC<{ children: React.ReactNode }> = ({ children }) =
   });
 
   useLayoutEffect(() => {
-    if (!ctx.open) return;
-    if (!ctx.triggerEl) return;
+    if (!open) return;
+    if (!triggerEl) return;
     if (!cardRef.current) return;
 
     const margin = 10;
     const gap = 10;
 
     const update = () => {
-      if (!ctx.triggerEl || !cardRef.current) return;
+      if (!triggerEl || !cardRef.current) return;
 
-      const rect = ctx.triggerEl.getBoundingClientRect();
+      const rect = triggerEl.getBoundingClientRect();
       const cardRect = cardRef.current.getBoundingClientRect();
 
       const idealLeft = rect.left + rect.width / 2;
@@ -210,21 +256,21 @@ export const Content: React.FC<{ children: React.ReactNode }> = ({ children }) =
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [ctx.open, ctx.triggerEl]);
+  }, [open, triggerEl]);
 
   useLayoutEffect(() => {
-    if (!ctx.open) return;
+    if (!open) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') ctx.setOpen(false);
+      if (event.key === 'Escape') setOpen(false);
     };
 
     const onPointerDown = (event: MouseEvent | PointerEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
       if (cardRef.current && cardRef.current.contains(target)) return;
-      if (ctx.triggerEl && ctx.triggerEl.contains(target)) return;
-      ctx.setOpen(false);
+      if (triggerEl && triggerEl.contains(target)) return;
+      setOpen(false);
     };
 
     document.addEventListener('keydown', onKeyDown);
@@ -236,19 +282,19 @@ export const Content: React.FC<{ children: React.ReactNode }> = ({ children }) =
       document.removeEventListener('mousedown', onPointerDown, true);
       document.removeEventListener('pointerdown', onPointerDown, true);
     };
-  }, [ctx.open, ctx.triggerEl, ctx.setOpen]);
+  }, [open, setOpen, triggerEl]);
 
   if (!overlayRoot) return null;
 
   return createPortal(
     <ContentRoot
-      $open={ctx.open}
+      $open={open}
       $left={pos.left}
       $top={pos.top}
       $placement={pos.placement}
       role="tooltip"
-      onMouseEnter={ctx.openNow}
-      onMouseLeave={ctx.scheduleClose}
+      onMouseEnter={openNow}
+      onMouseLeave={scheduleClose}
     >
       <Card ref={cardRef}>
         <Arrow $placement={pos.placement} />

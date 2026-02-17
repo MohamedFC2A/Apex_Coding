@@ -4,6 +4,14 @@ export const GlobalStyles = createGlobalStyle`
   :root {
     --mobile-nav-height: 60px;
     --brain-console-collapsed-height: 48px;
+    --header-height: 66px;
+    --ide-control-height: 40px;
+    --ide-control-radius: 11px;
+    --ide-gap-sm: 8px;
+    --ide-gap-md: 12px;
+    --ide-sidebar-width: 268px;
+    --ide-editor-min-width: 700px;
+    --ide-preview-min-width: 460px;
   }
 
   ::-webkit-scrollbar {

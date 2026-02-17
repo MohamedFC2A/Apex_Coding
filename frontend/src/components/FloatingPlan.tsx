@@ -5,26 +5,18 @@ import { useState } from 'react';
 import { ChevronRight, CheckCircle2, Circle, Sparkles, X, ListTodo } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 
-interface PlanStep {
-  id: string;
-  label: string;
-  completed: boolean;
-}
 
-const demoSteps: PlanStep[] = [
-  { id: '1', label: 'Graph Analysis', completed: true },
-  { id: '2', label: 'Component Generation', completed: true },
-  { id: '3', label: 'Styling & Layout', completed: false },
-  { id: '4', label: 'Testing & Deploy', completed: false }
-];
+
+import { useAIStore } from '@/stores/aiStore';
 
 export function FloatingPlan() {
   const { t, isRTL } = useLanguage();
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // In a real app, these would come from your state management (e.g. Zustand)
-  const steps = demoSteps; 
-  const progress = Math.round((steps.filter(s => s.completed).length / steps.length) * 100);
+  const steps = useAIStore((state) => state.planSteps) || [];
+  const progress = steps.length > 0 
+    ? Math.round((steps.filter(s => s.status === 'completed').length / steps.length) * 100) 
+    : 0;
 
   return (
     <motion.div
@@ -79,23 +71,23 @@ export function FloatingPlan() {
                   transition={{ delay: index * 0.05 }}
                   className={`
                     group flex items-start gap-3 rounded-xl border p-3 transition-all
-                    ${step.completed 
+                    ${step.status === 'completed' 
                       ? 'bg-emerald-500/5 border-emerald-500/10' 
                       : 'bg-white/5 border-white/5 hover:border-white/10'
                     }
                   `}
                   style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}
                 >
-                  <div className={`mt-0.5 ${step.completed ? 'text-emerald-400' : 'text-white/20 group-hover:text-white/40'}`}>
-                    {step.completed ? (
+                  <div className={`mt-0.5 ${step.status === 'completed' ? 'text-emerald-400' : 'text-white/20 group-hover:text-white/40'}`}>
+                    {step.status === 'completed' ? (
                       <CheckCircle2 className="h-4 w-4" />
                     ) : (
                       <Circle className="h-4 w-4" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0" style={{ textAlign: isRTL ? 'right' : 'left' }}>
-                    <p className={`text-sm font-medium leading-tight ${step.completed ? 'text-white/60 line-through' : 'text-white/90'}`}>
-                      {step.label}
+                    <p className={`text-sm font-medium leading-tight ${step.status === 'completed' ? 'text-white/60 line-through' : 'text-white/90'}`}>
+                      {step.title}
                     </p>
                   </div>
                 </motion.div>

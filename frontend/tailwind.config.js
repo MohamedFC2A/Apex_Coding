@@ -5,6 +5,18 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
+    // Mobile-first responsive breakpoints
+    screens: {
+      'xs': '320px',
+      'sm': '480px',
+      'md': '768px',
+      'lg': '1024px',
+      'xl': '1280px',
+      '2xl': '1536px',
+      // Touch-friendly sizes
+      'touch': { 'raw': '(pointer: coarse)' },
+      'no-touch': { 'raw': '(pointer: fine)' },
+    },
     extend: {
       colors: {
         // Core backgrounds
@@ -81,6 +93,19 @@ export default {
       spacing: {
         'safe-bottom': 'env(safe-area-inset-bottom)',
         'safe-top': 'env(safe-area-inset-top)',
+        'safe-left': 'env(safe-area-inset-left)',
+        'safe-right': 'env(safe-area-inset-right)',
+      },
+      minHeight: {
+        'touch': '44px', // Touch target minimum
+        'touch-lg': '48px', // Large touch target
+      },
+      minWidth: {
+        'touch': '44px', // Touch target minimum
+        'touch-lg': '48px', // Large touch target
+      },
+      padding: {
+        'safe-bottom': 'env(safe-area-inset-bottom)',
       },
       animation: {
         'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',

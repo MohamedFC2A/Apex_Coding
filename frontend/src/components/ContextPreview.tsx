@@ -4,11 +4,6 @@ import { FileText, MessageSquare, CheckSquare, Layers, Zap, AlertTriangle } from
 import { useAIStore } from '@/stores/aiStore';
 import { useProjectStore } from '@/stores/projectStore';
 
-// Context size constants
-const MAX_CONTEXT_SIZE = 128000;
-const COMPRESSION_THRESHOLD = 100000;
-const WARNING_THRESHOLD = 80000;
-
 const Wrapper = styled.div`
   width: 100%;
   height: 100%;
@@ -165,7 +160,7 @@ const LiveDot = styled.span`
 `;
 
 export const ContextPreview: React.FC = () => {
-  const { prompt, chatHistory, planSteps, lastPlannedPrompt, isGenerating } = useAIStore();
+  const { prompt, chatHistory, planSteps, lastPlannedPrompt, isGenerating, contextBudget, compressionSnapshot } = useAIStore();
   const { files, projectName, stack } = useProjectStore();
   const [, forceUpdate] = useState(0);
 
@@ -175,28 +170,11 @@ export const ContextPreview: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate context size
-  const contextSize = useMemo(() => {
-    let size = 0;
-    
-    // Chat history size
-    for (const msg of chatHistory) {
-      size += msg.content.length + msg.role.length + 10;
-    }
-    
-    // Files size
-    for (const file of files) {
-      size += (file.path || file.name || '').length;
-      size += (file.content || '').length;
-    }
-    
-    return size;
-  }, [chatHistory, files]);
-
-  const contextPercentage = (contextSize / MAX_CONTEXT_SIZE) * 100;
-  const isWarning = contextSize > WARNING_THRESHOLD;
-  const isCritical = contextSize > COMPRESSION_THRESHOLD;
-  const isCompressed = isCritical;
+  const contextSize = contextBudget.usedChars;
+  const contextPercentage = contextBudget.utilizationPct;
+  const isWarning = contextBudget.status === 'warning';
+  const isCritical = contextBudget.status === 'critical';
+  const isCompressed = (compressionSnapshot?.compressedMessagesCount || 0) > 0;
 
   const contextSummary = useMemo(() => {
     const fileCount = files.length;
@@ -248,7 +226,7 @@ export const ContextPreview: React.FC = () => {
           </span>
           <StatusIndicator $status={contextStatus}>
             {isCritical && <AlertTriangle size={10} />}
-            {formatSize(contextSize)} / {formatSize(MAX_CONTEXT_SIZE)}
+            {formatSize(contextSize)} / {formatSize(contextBudget.maxChars)}
           </StatusIndicator>
         </ContextBarHeader>
         <ContextProgress 

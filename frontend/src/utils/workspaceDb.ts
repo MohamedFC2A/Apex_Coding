@@ -87,6 +87,7 @@ export const applyWorkspaceDelta = async (delta: {
   meta?: Omit<WorkspaceMetaRecord, 'key' | 'version' | 'updatedAt'>;
   upsertFiles?: ProjectFile[];
   deletePaths?: string[];
+  movePaths?: Array<{ from: string; to: string }>;
 }) => {
   const updatedAt = Date.now();
   return withTx([META_STORE, FILE_STORE], 'readwrite', async (tx) => {
@@ -131,6 +132,26 @@ export const applyWorkspaceDelta = async (delta: {
       for (const path of delta.deletePaths) {
         if (!path) continue;
         fileStore.delete(path);
+      }
+    }
+
+    if (Array.isArray(delta.movePaths) && delta.movePaths.length > 0) {
+      for (const op of delta.movePaths) {
+        const from = String(op?.from || '').trim();
+        const to = String(op?.to || '').trim();
+        if (!from || !to || from === to) continue;
+
+        const existing = await asPromise(fileStore.get(from) as IDBRequest<WorkspaceFileRecord | undefined>);
+        if (existing) {
+          const movedRecord: WorkspaceFileRecord = {
+            ...existing,
+            path: to,
+            name: to.split('/').pop() || to,
+            updatedAt
+          };
+          fileStore.put(movedRecord);
+        }
+        fileStore.delete(from);
       }
     }
 

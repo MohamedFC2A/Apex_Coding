@@ -8,7 +8,7 @@ import { useLanguage } from './context/LanguageContext';
 import { useAIStore } from './stores/aiStore';
 import { useProjectStore } from './stores/projectStore';
 import { usePreviewStore } from './stores/previewStore';
-import { aiService } from './services/aiService';
+import { aiService, type StreamFileEvent } from './services/aiService';
 import { getLanguageFromExtension } from './utils/stackDetector';
 import { repairTruncatedContent } from './utils/codeRepair';
 
@@ -41,6 +41,49 @@ import type { GenerationConstraints } from './types/constraints';
 // GLOBAL AUTOSAVE - INDEPENDENT OF CHAT/COMPONENT LIFECYCLE
 // ============================================================================
 let globalAutosaveTimer: number | null = null;
+const AUTO_RESUME_KEY = 'apex-ai-pending-run';
+const AUTO_RESUME_MAX_ATTEMPTS = 2;
+const AUTO_RESUME_MAX_AGE_MS = 1000 * 60 * 60 * 6;
+
+type AutoResumePayload = {
+  prompt: string;
+  at: number;
+  attempts?: number;
+};
+
+const readAutoResumePayload = (): AutoResumePayload | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(AUTO_RESUME_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const prompt = String(parsed?.prompt || '').trim();
+    const at = Number(parsed?.at || 0);
+    const attempts = Number(parsed?.attempts || 0);
+    if (!prompt || !Number.isFinite(at) || at <= 0) return null;
+    return { prompt, at, attempts: Number.isFinite(attempts) ? attempts : 0 };
+  } catch {
+    return null;
+  }
+};
+
+const writeAutoResumePayload = (payload: AutoResumePayload) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(AUTO_RESUME_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage issues
+  }
+};
+
+const clearAutoResumePayload = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(AUTO_RESUME_KEY);
+  } catch {
+    // ignore storage issues
+  }
+};
 
 const globalWriteAutosaveNow = () => {
   try {
@@ -1269,6 +1312,8 @@ function App() {
     updateFile,
     upsertFile,
     appendToFile,
+    deleteFile,
+    moveFile,
     setProjectType: setProjectStoreType,
     setSelectedFeatures: setProjectStoreSelectedFeatures,
     setCustomFeatureTags: setProjectStoreCustomFeatureTags,
@@ -1307,6 +1352,8 @@ function App() {
   const generationAbortRef = useRef<AbortController | null>(null);
   const pendingEditRequestsRef = useRef<string[]>([]);
   const completionSummaryRef = useRef<{ phase: string; key: string }>({ phase: '', key: '' });
+  const autoResumeTriggeredRef = useRef(false);
+  const prevPlanCountRef = useRef(0);
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
@@ -1791,6 +1838,7 @@ function App() {
     if (!controller) return;
 
     logSystem('[STATUS] Stop requested by user.');
+    clearAutoResumePayload();
     setExecutionPhase('interrupted');
     setThinkingStatus('Stopping…');
 
@@ -1810,7 +1858,10 @@ function App() {
       selectedFeatures,
       customFeatureTags,
       enforcement: constraintsEnforcement,
-      qualityGateMode: 'strict'
+      qualityGateMode: 'strict',
+      siteArchitectureMode: 'adaptive_multi_page',
+      fileControlMode: 'safe_full',
+      contextIntelligenceMode: 'balanced_graph'
     };
   }, [constraintsEnforcement, customFeatureTags, effectiveProjectType, selectedFeatures]);
 
@@ -1873,6 +1924,12 @@ function App() {
     const scopedPrompt = mergePromptWithConstraints(basePrompt, generationConstraints);
     const agentContextBlock = buildAgentContextBlock(basePrompt);
     const scopedPromptWithAgentContext = `${scopedPrompt}\n\n${agentContextBlock}`.trim();
+
+    writeAutoResumePayload({
+      prompt: basePrompt,
+      at: Date.now(),
+      attempts: 0
+    });
 
     useAIStore.getState().saveCurrentSession();
 
@@ -2242,15 +2299,125 @@ function App() {
         return out;
       };
 
-      const handleFileEvent = (event: {
-        type: 'start' | 'chunk' | 'end';
-        path: string;
-        mode?: 'create' | 'edit';
-        chunk?: string;
-        partial?: boolean;
-        line?: number;
-        append?: boolean;
-      }) => {
+      const SENSITIVE_PATH_RE = /(^|\/)(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|vite\.config\.(js|ts)|next\.config\.(js|mjs|ts)|tsconfig\.json)$/i;
+      const normalizeRefPath = (value: string) =>
+        String(value || '')
+          .replace(/\\/g, '/')
+          .replace(/^\.\//, '')
+          .trim();
+
+      const collectPathReferenceHits = (targetPath: string) => {
+        const normalizedTarget = normalizeRefPath(targetPath);
+        const targetName = normalizedTarget.split('/').pop() || normalizedTarget;
+        return useProjectStore
+          .getState()
+          .files.filter((file) => {
+            const filePath = normalizeRefPath(file.path || file.name || '');
+            if (!filePath || filePath === normalizedTarget) return false;
+            const content = String(file.content || '');
+            if (!content) return false;
+            return (
+              content.includes(normalizedTarget) ||
+              content.includes(`/${normalizedTarget}`) ||
+              content.includes(`./${targetName}`) ||
+              content.includes(`/${targetName}`)
+            );
+          })
+          .map((file) => normalizeRefPath(file.path || file.name || ''));
+      };
+
+      const hasExplicitSafetyReason = (reason?: string) =>
+        /\b(import|imports|link|links|route|routing|rewrite|refactor|safe|cleanup|unused|orphan)\b/i.test(
+          String(reason || '')
+        );
+
+      const handleFileEvent = (event: StreamFileEvent) => {
+        if (event.type === 'delete') {
+          const resolvedPath = resolveGeneratedPath(event.path || '');
+          if (!resolvedPath) return;
+
+          const reason = String(event.reason || '').trim();
+          const isSensitive = SENSITIVE_PATH_RE.test(resolvedPath);
+          if (isSensitive && !hasExplicitSafetyReason(reason)) {
+            logSystem(`[SAFETY] Blocked delete for sensitive file: ${resolvedPath} (missing explicit reason)`);
+            addBrainEvent({
+              source: 'file',
+              level: 'warn',
+              message: `Blocked delete for sensitive file ${resolvedPath}`,
+              path: resolvedPath,
+              phase: 'recovering'
+            });
+            return;
+          }
+
+          deleteFile(resolvedPath);
+          filesByBaseName.delete((resolvedPath.split('/').pop() || resolvedPath).toLowerCase());
+          setFilesFromProjectFiles(useProjectStore.getState().files);
+          setFileStatus(resolvedPath, 'ready');
+          logSystem(`[STATUS] Deleted ${resolvedPath}${reason ? ` (${reason})` : ''}`);
+          addBrainEvent({
+            source: 'file',
+            level: 'info',
+            message: `Deleted ${resolvedPath}`,
+            path: resolvedPath,
+            phase: 'executing'
+          });
+          scheduleAutosave();
+          return;
+        }
+
+        if (event.type === 'move') {
+          const fromPath = resolveGeneratedPath(event.path || '');
+          const toPath = resolveGeneratedPath(event.toPath || '');
+          if (!fromPath || !toPath) return;
+
+          const reason = String(event.reason || '').trim();
+          const isSensitive = SENSITIVE_PATH_RE.test(fromPath);
+          if (isSensitive && !hasExplicitSafetyReason(reason)) {
+            logSystem(`[SAFETY] Blocked move for sensitive file: ${fromPath} -> ${toPath}`);
+            addBrainEvent({
+              source: 'file',
+              level: 'warn',
+              message: `Blocked move for sensitive file ${fromPath}`,
+              path: fromPath,
+              phase: 'recovering'
+            });
+            return;
+          }
+
+          const referenceHits = collectPathReferenceHits(fromPath);
+          if (referenceHits.length > 0 && !hasExplicitSafetyReason(reason)) {
+            logSystem(
+              `[SAFETY] Blocked move ${fromPath} -> ${toPath}. References exist in: ${referenceHits.slice(0, 6).join(', ')}`
+            );
+            addBrainEvent({
+              source: 'file',
+              level: 'warn',
+              message: `Blocked move for ${fromPath}; unresolved references detected`,
+              path: fromPath,
+              phase: 'recovering'
+            });
+            return;
+          }
+
+          moveFile(fromPath, toPath);
+          filesByBaseName.delete((fromPath.split('/').pop() || fromPath).toLowerCase());
+          filesByBaseName.set((toPath.split('/').pop() || toPath).toLowerCase(), toPath);
+          setFilesFromProjectFiles(useProjectStore.getState().files);
+          setFileStatus(fromPath, 'ready');
+          setFileStatus(toPath, 'ready');
+          logSystem(`[STATUS] Moved ${fromPath} -> ${toPath}${reason ? ` (${reason})` : ''}`);
+          addBrainEvent({
+            source: 'file',
+            level: 'info',
+            message: `Moved ${fromPath} -> ${toPath}`,
+            path: toPath,
+            phase: 'executing'
+          });
+          scheduleAutosave();
+          return;
+        }
+
         let resolvedPath = resolveGeneratedPath(event.path || '');
         if (!resolvedPath) return;
         
@@ -2301,7 +2468,7 @@ function App() {
             let finalText = cleaned;
             
             if (event.partial) {
-               finalText = repairTruncatedContent(cleaned, resolvedPath, { isKnownPartial: true, allowAggressiveFixes: true });
+               finalText = repairTruncatedContent(cleaned, resolvedPath, { isKnownPartial: true, allowAggressiveFixes: false });
                if (finalText !== cleaned) {
                   logSystem(`[REPAIR] Fixed truncated file: ${resolvedPath}`);
                   setFileStatus(resolvedPath, 'compromised');
@@ -2686,12 +2853,28 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       if (useAIStore.getState().executionPhase !== 'interrupted' && partialPaths.size === 0) {
         const currentFiles = useProjectStore.getState().files;
         if (generationConstraints.enforcement === 'hard') {
-          const { missingFeatures, qualityViolations, readyForFinalize } = validateConstraints(currentFiles, generationConstraints);
+          const {
+            missingFeatures,
+            qualityViolations,
+            routingViolations,
+            namingViolations,
+            retrievalCoverageScore,
+            readyForFinalize
+          } = validateConstraints(currentFiles, generationConstraints);
           if (!readyForFinalize) {
             const qualitySummary = qualityViolations.length > 0 ? ` | Quality issues: ${qualityViolations.join(', ')}` : '';
-            logSystem(`[constraints] Auto-fix required. Missing features: ${missingFeatures.join(', ') || 'none'}${qualitySummary}`);
+            const routingSummary = routingViolations.length > 0 ? ` | Routing: ${routingViolations.join(', ')}` : '';
+            const namingSummary = namingViolations.length > 0 ? ` | Naming: ${namingViolations.join(', ')}` : '';
+            logSystem(
+              `[constraints] Auto-fix required. Missing features: ${missingFeatures.join(', ') || 'none'}${qualitySummary}${routingSummary}${namingSummary} | Retrieval coverage=${retrievalCoverageScore}%`
+            );
             const repairPrompt = buildConstraintsRepairPrompt(
-              [...missingFeatures, ...qualityViolations.map((issue) => `quality:${issue}`)],
+              [
+                ...missingFeatures,
+                ...qualityViolations.map((issue) => `quality:${issue}`),
+                ...routingViolations.map((issue) => `routing:${issue}`),
+                ...namingViolations.map((issue) => `naming:${issue}`)
+              ],
               generationConstraints
             );
             await runStream(repairPrompt);
@@ -2704,6 +2887,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         const generatedFiles = useProjectStore.getState().files;
         generationSucceeded = generatedFiles.length > 0;
         if (generationSucceeded) {
+          clearAutoResumePayload();
           completionWatchRef.current = { at: Date.now(), prompt: basePrompt };
           setCompletionSuggestion(
             buildCompletionSuggestion({
@@ -2727,6 +2911,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       flushFileBuffers();
       flushReasoningBuffer();
       if (e?.abortedByUser || e?.message === 'ABORTED_BY_USER' || e?.name === 'AbortError') {
+        clearAutoResumePayload();
         setError(null);
       } else {
         setError(e?.message || 'Failed to generate code');
@@ -2752,7 +2937,9 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     isGenerating,
     isPlanning,
     modelMode,
+    moveFile,
     prompt,
+    deleteFile,
     resetProject,
     resetFiles,
     resolveFilePath,
@@ -2777,6 +2964,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     upsertFileNode,
     logSystem,
     setExecutionPhase,
+    setFilesFromProjectFiles,
     getGenerationConstraints,
     buildAgentContextBlock,
     effectiveProjectType,
@@ -2835,6 +3023,8 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         'Use ONLY these markers:',
         '  - [[EDIT_NODE: path/to/file.ext]] ... [[END_FILE]] for edits',
         '  - [[START_FILE: path/to/file.ext]] ... [[END_FILE]] for new files',
+        '  - [[DELETE_FILE: path/to/file.ext | reason: ...]] for safe deletes',
+        '  - [[MOVE_FILE: from/path.ext -> to/path.ext | reason: ...]] for safe moves',
         'Prefer [[EDIT_NODE]] whenever possible. Do NOT repeat unchanged files.',
         'When editing, use search/replace blocks:',
         '  [[EDIT_NODE: path/to/file.ext]]',
@@ -2879,6 +3069,50 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     const fixPrompt = buildFixPrompt(next);
     void handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
   }, [addChatMessage, buildFixPrompt, handleGenerate, isGenerating, isPlanning]);
+
+  useEffect(() => {
+    const prev = prevPlanCountRef.current;
+    const next = planSteps.length;
+    if (prev === 0 && next > 0) {
+      setPlanOpen(true);
+    }
+    prevPlanCountRef.current = next;
+  }, [planSteps.length]);
+
+  useEffect(() => {
+    if (autoResumeTriggeredRef.current) return;
+    if (isGenerating || isPlanning) return;
+
+    const payload = readAutoResumePayload();
+    if (!payload) return;
+
+    if (Date.now() - payload.at > AUTO_RESUME_MAX_AGE_MS) {
+      clearAutoResumePayload();
+      return;
+    }
+
+    const attempts = Number(payload.attempts || 0);
+    if (attempts >= AUTO_RESUME_MAX_ATTEMPTS) {
+      clearAutoResumePayload();
+      return;
+    }
+
+    const aiSnapshot = useAIStore.getState();
+    const hasPartialFiles = Object.values(aiSnapshot.fileStatuses || {}).some((status) => status === 'partial' || status === 'compromised');
+    const hasPlanContext = aiSnapshot.planSteps.length > 0 || Boolean(aiSnapshot.lastPlannedPrompt);
+    const resumable = aiSnapshot.executionPhase === 'interrupted' || hasPartialFiles || hasPlanContext;
+    if (!resumable) return;
+
+    autoResumeTriggeredRef.current = true;
+    writeAutoResumePayload({
+      prompt: payload.prompt,
+      at: Date.now(),
+      attempts: attempts + 1
+    });
+
+    logSystem('[STATUS] Auto-resume detected after refresh. Continuing generation…');
+    void handleGenerate(payload.prompt, { resume: true, preserveProjectMeta: true });
+  }, [executionPhase, handleGenerate, isGenerating, isPlanning, logSystem]);
 
   useEffect(() => {
     if (!isPreviewOpen) return;
@@ -3513,7 +3747,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         </OverlayBody>
       </OverlayPanel>
 
-      {architectMode && planSteps.length > 0 && (
+      {planSteps.length > 0 && (
         <FloatingPlanWrap $open={planOpen}>
           {planOpen ? (
             <FloatingPlanPanel>

@@ -1,4 +1,5 @@
 import { fileSystemAI } from './fileSystemAI';
+import { useProjectStore } from '@/stores/projectStore';
 
 // Smart Template System with AI-Powered Generation
 export class SmartTemplates {
@@ -562,10 +563,25 @@ describe('{{utilityName}}', () => {
       throw new Error(`Template ${templateId} not found`);
     }
 
-    return template.files.map((file: any) => ({
-      path: this.replaceVariables(file.path, variables),
-      content: this.replaceVariables(file.content, variables),
-    }));
+    const existingPaths = useProjectStore.getState().files.map((file) => file.path || file.name).filter(Boolean);
+
+    return template.files.map((file: any) => {
+      const rawPath = this.replaceVariables(file.path, variables);
+      const inferredType = this.inferCanonicalType(rawPath);
+      const mode = this.inferCanonicalMode(rawPath);
+      const decision = fileSystemAI.generateCanonicalPath({
+        goal: this.deriveGoal(rawPath, variables),
+        fileType: inferredType,
+        route: variables.pageName || variables.routeName || variables.route || '',
+        mode,
+        existingPaths
+      });
+
+      return {
+        path: decision.action === 'create' ? rawPath : decision.path,
+        content: this.replaceVariables(file.content, variables),
+      };
+    });
   }
 
   // Create custom template
@@ -652,6 +668,36 @@ describe('{{utilityName}}', () => {
     );
 
     return result;
+  }
+
+  private inferCanonicalType(path: string): 'page' | 'style' | 'script' | 'component' | 'asset' | 'data' | 'utility' {
+    const lower = String(path || '').toLowerCase();
+    if (lower.endsWith('.html') || /\/pages?\//.test(lower)) return 'page';
+    if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.sass')) return 'style';
+    if (lower.endsWith('.js') || lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.jsx')) {
+      if (/components?\//.test(lower)) return 'component';
+      return 'script';
+    }
+    if (lower.endsWith('.json')) return 'data';
+    if (/assets?\//.test(lower)) return 'asset';
+    return 'utility';
+  }
+
+  private inferCanonicalMode(path: string): 'static_frontend' | 'framework' {
+    const lower = String(path || '').toLowerCase();
+    if (lower.startsWith('src/') || lower.endsWith('.tsx') || lower.endsWith('.jsx')) return 'framework';
+    return 'static_frontend';
+  }
+
+  private deriveGoal(path: string, variables: Record<string, string>): string {
+    return (
+      variables.componentName ||
+      variables.pageName ||
+      variables.routeName ||
+      variables.utilityName ||
+      String(path || '').split('/').pop()?.split('.')[0] ||
+      'file'
+    );
   }
 }
 

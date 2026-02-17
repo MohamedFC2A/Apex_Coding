@@ -1,5 +1,24 @@
 import { useProjectStore } from '@/stores/projectStore';
 
+type CanonicalFileType = 'page' | 'style' | 'script' | 'component' | 'asset' | 'data' | 'utility';
+type CanonicalMode = 'static_frontend' | 'framework';
+
+export interface NamingEngineInput {
+  goal: string;
+  fileType: CanonicalFileType;
+  route?: string;
+  mode?: CanonicalMode;
+  existingPaths?: string[];
+}
+
+export interface NamingEngineDecision {
+  path: string;
+  reason: string;
+  confidence: number;
+  action: 'create' | 'edit' | 'move';
+  conflictWith?: string;
+}
+
 // Advanced AI-powered File System Management
 export class FileSystemAI {
   private static instance: FileSystemAI;
@@ -11,6 +30,71 @@ export class FileSystemAI {
       FileSystemAI.instance = new FileSystemAI();
     }
     return FileSystemAI.instance;
+  }
+
+  generateCanonicalPath(input: NamingEngineInput): NamingEngineDecision {
+    const goal = this.toKebab(input.goal || 'page');
+    const mode = input.mode || 'static_frontend';
+    const existingPaths = (input.existingPaths || []).map((p) => this.normalizePath(p)).filter(Boolean);
+    const routeToken = this.toKebab((input.route || '').replace(/^\/+/, '').replace(/\/+/g, '-'));
+
+    let canonicalPath = '';
+    let reason = '';
+
+    if (mode === 'framework') {
+      if (input.fileType === 'page') {
+        canonicalPath = routeToken ? `src/pages/${routeToken}.tsx` : 'src/pages/home.tsx';
+        reason = 'Framework mode page path under src/pages/.';
+      } else if (input.fileType === 'style') {
+        canonicalPath = 'src/styles/style.css';
+        reason = 'Framework mode shared style path.';
+      } else if (input.fileType === 'script') {
+        canonicalPath = 'src/scripts/app.ts';
+        reason = 'Framework mode shared script entry.';
+      } else if (input.fileType === 'component') {
+        canonicalPath = `src/components/${this.toPascal(goal)}.tsx`;
+        reason = 'Framework component naming convention.';
+      } else if (input.fileType === 'data') {
+        canonicalPath = `src/data/${goal}.json`;
+        reason = 'Framework data files under src/data/.';
+      } else if (input.fileType === 'utility') {
+        canonicalPath = `src/utils/${this.toCamel(goal)}.ts`;
+        reason = 'Framework utility naming convention.';
+      } else {
+        canonicalPath = `src/assets/${goal}`;
+        reason = 'Framework assets under src/assets/.';
+      }
+    } else {
+      if (input.fileType === 'page') {
+        canonicalPath = !routeToken || routeToken === 'home' ? 'index.html' : `pages/${routeToken}.html`;
+        reason = 'Static route-oriented page naming.';
+      } else if (input.fileType === 'style') {
+        canonicalPath = 'style.css';
+        reason = 'Static shared stylesheet convention.';
+      } else if (input.fileType === 'script') {
+        canonicalPath = 'script.js';
+        reason = 'Static shared script convention.';
+      } else if (input.fileType === 'component') {
+        canonicalPath = `components/${goal}.html`;
+        reason = 'Static component fragment convention.';
+      } else if (input.fileType === 'data') {
+        canonicalPath = `data/${goal}.json`;
+        reason = 'Static data file under data/.';
+      } else if (input.fileType === 'utility') {
+        canonicalPath = `scripts/${this.toCamel(goal)}.js`;
+        reason = 'Static utility script under scripts/.';
+      } else {
+        canonicalPath = `assets/${goal}`;
+        reason = 'Static asset convention.';
+      }
+    }
+
+    return this.resolvePathConflict({
+      canonicalPath,
+      fileType: input.fileType,
+      existingPaths,
+      reason
+    });
   }
 
   // Analyze and optimize project structure
@@ -201,7 +285,17 @@ export class FileSystemAI {
       );
     }
     
-    return suggestions;
+    if (fileType === 'page' || fileType === 'style' || fileType === 'script' || fileType === 'component' || fileType === 'data' || fileType === 'utility') {
+      const paths = useProjectStore.getState().files.map((file) => file.path || file.name).filter(Boolean);
+      const decision = this.generateCanonicalPath({
+        goal: keywords.primary,
+        fileType: fileType as CanonicalFileType,
+        existingPaths: paths
+      });
+      suggestions.unshift(decision.path);
+    }
+
+    return Array.from(new Set(suggestions));
   }
 
   // Generate boilerplate code
@@ -427,6 +521,84 @@ export class FileSystemAI {
 
   private pascalCase(str: string): string {
     return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  private normalizePath(path: string): string {
+    return String(path || '').replace(/\\/g, '/').replace(/^\.\/+/, '').trim();
+  }
+
+  private toKebab(value: string): string {
+    return String(value || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'item';
+  }
+
+  private toCamel(value: string): string {
+    const kebab = this.toKebab(value);
+    return kebab.replace(/-([a-z0-9])/g, (_, m1) => m1.toUpperCase());
+  }
+
+  private toPascal(value: string): string {
+    const camel = this.toCamel(value);
+    return camel.charAt(0).toUpperCase() + camel.slice(1);
+  }
+
+  private resolvePathConflict(input: {
+    canonicalPath: string;
+    fileType: CanonicalFileType;
+    existingPaths: string[];
+    reason: string;
+  }): NamingEngineDecision {
+    const canonical = this.normalizePath(input.canonicalPath);
+    const existing = new Set(input.existingPaths.map((p) => this.normalizePath(p)));
+
+    if (existing.has(canonical)) {
+      return {
+        path: canonical,
+        reason: `${input.reason} Existing canonical path found, prefer edit.`,
+        confidence: 0.98,
+        action: 'edit',
+        conflictWith: canonical
+      };
+    }
+
+    const basename = canonical.split('/').pop() || canonical;
+    const sameBase = Array.from(existing).find((path) => (path.split('/').pop() || '') === basename);
+    if (sameBase) {
+      return {
+        path: sameBase,
+        reason: `${input.reason} Basename already exists at another location, prefer edit/move over duplication.`,
+        confidence: 0.91,
+        action: 'move',
+        conflictWith: sameBase
+      };
+    }
+
+    const samePurpose = Array.from(existing).find((path) => {
+      if (input.fileType === 'style') return path.endsWith('.css');
+      if (input.fileType === 'script' || input.fileType === 'utility') return path.endsWith('.js') || path.endsWith('.ts');
+      if (input.fileType === 'page') return path.endsWith('.html');
+      return false;
+    });
+
+    if (samePurpose && (input.fileType === 'style' || input.fileType === 'script')) {
+      return {
+        path: samePurpose,
+        reason: `${input.reason} Purpose-equivalent file already exists, prefer edit.`,
+        confidence: 0.87,
+        action: 'edit',
+        conflictWith: samePurpose
+      };
+    }
+
+    return {
+      path: canonical,
+      reason: `${input.reason} No conflict detected, create allowed.`,
+      confidence: 0.84,
+      action: 'create'
+    };
   }
 
   private hashContent(content: string): string {

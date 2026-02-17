@@ -122,7 +122,8 @@ export const repairTruncatedContent = (content: string, path: string, options: R
     return repaired;
   }
 
-  if (!allowAggressiveFixes && !isKnownPartial) {
+  if (!allowAggressiveFixes) {
+    // Prefer resume/regeneration over force-fixing script syntax in conservative mode.
     return repaired;
   }
 

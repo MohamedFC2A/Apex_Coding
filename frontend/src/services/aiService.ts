@@ -6,6 +6,7 @@ import { useAIStore } from '@/stores/aiStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import type { GenerationConstraints } from '@/types/constraints';
 import { buildAIOrganizationPolicyBlock, mergePromptWithConstraints } from '@/services/constraintPromptBuilder';
+import { selectContextRetrievalTrace } from '@/services/contextGraph';
 
 interface AIResponse {
   plan: string;
@@ -15,6 +16,30 @@ interface AIResponse {
   stack: string;
   description: string;
 }
+
+export type StreamFileEvent =
+  | {
+      type: 'start' | 'chunk' | 'end';
+      path: string;
+      mode?: 'create' | 'edit';
+      chunk?: string;
+      partial?: boolean;
+      line?: number;
+      append?: boolean;
+    }
+  | {
+      type: 'delete';
+      path: string;
+      reason?: string;
+      safetyCheckPassed?: boolean;
+    }
+  | {
+      type: 'move';
+      path: string;
+      toPath: string;
+      reason?: string;
+      safetyCheckPassed?: boolean;
+    };
 
 const buildModelRoutingPayload = (thinkingMode: boolean) => {
   return {
@@ -26,12 +51,17 @@ const buildModelRoutingPayload = (thinkingMode: boolean) => {
   };
 };
 
-const buildContextMetaPayload = () => {
+const buildContextMetaPayload = (extra?: Record<string, unknown>) => {
   const ai = useAIStore.getState();
+  const decisionMemory = (ai.compressionSnapshot?.summaryBlocks || [])
+    .flatMap((block) => block.keyDecisions || [])
+    .slice(0, 16);
   return {
     budget: ai.contextBudget,
     compressionSummary: ai.compressionSnapshot,
-    sessionId: ai.currentSessionId
+    sessionId: ai.currentSessionId,
+    decisionMemory,
+    ...(extra || {})
   };
 };
 
@@ -125,13 +155,17 @@ STRICT PLANNING RULES:
 
 [PROJECT TYPE: FRONTEND ONLY]
 STRUCTURE:
-- Default to strict vanilla static output: index.html + style.css + script.js.
+- Default to adaptive multi-page static output (vanilla HTML/CSS/JS).
+- Use single-page only when the request is simple and clearly scoped.
+- Auto-switch to multi-page when request implies: multiple services/products, legal pages, blog/docs/faq, or dashboard-like flows.
 - Only switch to React/Next/Vite when explicitly requested by the user prompt.
 - NO backend APIs, databases, server-side code, or authentication.
-- Prefer flat file structure: index.html, style.css, script.js.
-- ONE CSS file for all styles. ONE JS file for all logic. ONE HTML entry point.
+- Prefer canonical static folders when multi-page: pages/, components/, styles/, scripts/, assets/, data/.
+- Keep shared style.css + script.js as defaults unless architecture requires scoped files.
+- Use route-oriented kebab-case naming for static pages.
 - Do NOT create package.json or build configs unless explicitly requested.
 - Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.
+- Include a route map contract (site-map.json or equivalent structured mapping) when multi-page output is used.
 
 COMPONENT DECOMPOSITION:
 - Break the UI into named sections: Header/Nav, Hero, Content Sections, Footer.
@@ -279,15 +313,7 @@ QUALITY:
           history?: any[];
           typingMs?: number;
           abortSignal?: AbortSignal;
-          onFileEvent?: (event: {
-            type: 'start' | 'chunk' | 'end';
-            path: string;
-            mode?: 'create' | 'edit';
-            chunk?: string;
-            partial?: boolean;
-            line?: number;
-            append?: boolean;
-          }) => void;
+          onFileEvent?: (event: StreamFileEvent) => void;
           resumeContext?: {
             completedFiles: string[];
             lastSuccessfulFile: string | null;
@@ -318,11 +344,19 @@ QUALITY:
       const projectState = useProjectStore.getState();
       const aiState = useAIStore.getState();
       const previewState = usePreviewStore.getState();
+      const retrievalTrace = selectContextRetrievalTrace({
+        files: projectState.files,
+        activeFile: projectState.activeFile,
+        recentPreviewErrors: previewState.logs.slice(-24).map((entry) => String(entry.message || '')),
+        mode: constraints?.contextIntelligenceMode || 'balanced_graph'
+      });
+      const selectedPathSet = new Set(retrievalTrace.selected.map((item) => item.path));
       
       const normalizedFiles = Array.from(
         new Set(
           projectState.files
             .map((f: ProjectFile) => String(f.path || f.name || '').replace(/\\/g, '/').trim())
+            .filter((path) => selectedPathSet.has(path) || selectedPathSet.has(path.replace(/^\/+/, '')))
             .filter(Boolean)
         )
       ).sort((a, b) => a.localeCompare(b));
@@ -364,11 +398,12 @@ QUALITY:
         selectedProjectMode === 'FRONTEND_ONLY'
           ? [
               '[FRONTEND STRICT MODE]',
-              '- Default architecture: vanilla HTML/CSS/JS only.',
-              '- Required baseline files: index.html, style.css, script.js.',
+              '- Default architecture: adaptive multi-page vanilla HTML/CSS/JS.',
+              '- Use single-page only for simple requests; otherwise split into linked pages.',
+              '- Keep shared styling/behavior centralized unless architecture requires scoped files.',
               '- Do not produce React/Next/Vite scaffolding unless explicitly requested.',
               `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.`,
-              '- Follow strict quality gate: structure + a11y + responsive + syntax-safe JS.'
+              '- Follow strict quality gate: structure + naming + routing + a11y + responsive + syntax-safe JS.'
             ].join('\n')
           : '';
 
@@ -392,7 +427,9 @@ EXECUTION RULES:
 
 2. **WEB PROJECT REQUIREMENTS (PREVIEW RUNNER READY)**:
    - **STRUCTURE**:
-     - If project mode is FRONTEND_ONLY: generate strict vanilla frontend by default (index.html, style.css, script.js).
+     - If project mode is FRONTEND_ONLY: default to adaptive multi-page vanilla frontend architecture.
+     - Use single-page only for simple requests; otherwise create linked pages with coherent navigation.
+     - Keep shared style.css and script.js defaults for static mode unless scoped files are clearly justified.
      - Only generate React/Next/Vite structure when explicitly requested by the user.
      - If project mode is FULL_STACK, use fullstack structure:
        - \`backend/\` (Node.js API)
@@ -463,6 +500,10 @@ ${Array.from(completedFiles).join('\n')}
 [RECENT PREVIEW SIGNALS]
 ${context.recentPreviewErrors.length > 0 ? context.recentPreviewErrors.join('\n') : 'None'}
 
+[CONTEXT RETRIEVAL TRACE]
+Strategy: ${retrievalTrace.strategy}
+Selected: ${retrievalTrace.selected.slice(0, 40).map((item) => `${item.path} (${item.score})`).join(', ') || 'none'}
+
 [USER REQUEST]
 ${constrainedPrompt}
 `.trim();
@@ -499,6 +540,8 @@ ${constrainedPrompt}
       const startToken = '[[START_FILE:';
       const editToken = '[[EDIT_FILE:';
       const editNodeToken = '[[EDIT_NODE:';
+      const deleteToken = '[[DELETE_FILE:';
+      const moveToken = '[[MOVE_FILE:';
       const endToken = '[[END_FILE]]';
       const streamTailMax = 2200;
 
@@ -537,13 +580,64 @@ ${constrainedPrompt}
               const startIdx = this.scan.indexOf(startToken);
               const editIdx = this.scan.indexOf(editToken);
               const editNodeIdx = this.scan.indexOf(editNodeToken);
+              const deleteIdx = this.scan.indexOf(deleteToken);
+              const moveIdx = this.scan.indexOf(moveToken);
               const nextIdx =
-                [startIdx, editIdx, editNodeIdx].filter((v) => v !== -1).sort((a, b) => a - b)[0] ?? -1;
+                [startIdx, editIdx, editNodeIdx, deleteIdx, moveIdx]
+                  .filter((v) => v !== -1)
+                  .sort((a, b) => a - b)[0] ?? -1;
 
               if (nextIdx === -1) {
-                const keep = Math.max(startToken.length - 1, editToken.length - 1, editNodeToken.length - 1);
+                const keep = Math.max(
+                  startToken.length - 1,
+                  editToken.length - 1,
+                  editNodeToken.length - 1,
+                  deleteToken.length - 1,
+                  moveToken.length - 1
+                );
                 this.scan = this.scan.slice(Math.max(0, this.scan.length - keep));
                 return;
+              }
+
+              if (deleteIdx === nextIdx) {
+                const closeIdx = this.scan.indexOf(']]', nextIdx);
+                if (closeIdx === -1) {
+                  this.scan = this.scan.slice(nextIdx);
+                  return;
+                }
+                const payload = this.scan.slice(nextIdx + deleteToken.length, closeIdx).trim();
+                const parsed = this.parsePathWithReason(payload);
+                if (parsed.path) {
+                  options.onFileEvent?.({
+                    type: 'delete',
+                    path: parsed.path,
+                    reason: parsed.reason,
+                    safetyCheckPassed: false
+                  });
+                }
+                this.scan = this.scan.slice(closeIdx + 2);
+                continue;
+              }
+
+              if (moveIdx === nextIdx) {
+                const closeIdx = this.scan.indexOf(']]', nextIdx);
+                if (closeIdx === -1) {
+                  this.scan = this.scan.slice(nextIdx);
+                  return;
+                }
+                const payload = this.scan.slice(nextIdx + moveToken.length, closeIdx).trim();
+                const parsed = this.parseMovePayload(payload);
+                if (parsed.from && parsed.to) {
+                  options.onFileEvent?.({
+                    type: 'move',
+                    path: parsed.from,
+                    toPath: parsed.to,
+                    reason: parsed.reason,
+                    safetyCheckPassed: false
+                  });
+                }
+                this.scan = this.scan.slice(closeIdx + 2);
+                continue;
               }
 
               const isEdit = (editIdx !== -1 && editIdx === nextIdx) || (editNodeIdx !== -1 && editNodeIdx === nextIdx);
@@ -574,12 +668,13 @@ ${constrainedPrompt}
             const endIdx = this.scan.indexOf(endToken);
             const nextStartIdx = this.scan.indexOf(startToken);
             const nextEditIdx = this.scan.indexOf(editToken);
+            const nextEditNodeIdx = this.scan.indexOf(editNodeToken);
+            const nextDeleteIdx = this.scan.indexOf(deleteToken);
+            const nextMoveIdx = this.scan.indexOf(moveToken);
             const nextMarkerIdx =
-              nextStartIdx === -1
-                ? nextEditIdx
-                : nextEditIdx === -1
-                  ? nextStartIdx
-                  : Math.min(nextStartIdx, nextEditIdx);
+              [nextStartIdx, nextEditIdx, nextEditNodeIdx, nextDeleteIdx, nextMoveIdx]
+                .filter((v) => v !== -1)
+                .sort((a, b) => a - b)[0] ?? -1;
 
             const hasImplicitStart = nextMarkerIdx !== -1 && (endIdx === -1 || nextMarkerIdx < endIdx);
             if (hasImplicitStart) {
@@ -602,7 +697,14 @@ ${constrainedPrompt}
               continue;
             }
 
-            const keep = Math.max(startToken.length + 8, editToken.length + 8, endToken.length + 8);
+            const keep = Math.max(
+              startToken.length + 8,
+              editToken.length + 8,
+              editNodeToken.length + 8,
+              deleteToken.length + 8,
+              moveToken.length + 8,
+              endToken.length + 8
+            );
             if (this.scan.length <= keep) return;
 
             this.flushContent(this.scan.slice(0, this.scan.length - keep));
@@ -624,6 +726,30 @@ ${constrainedPrompt}
           lastSuccessfulLine = this.currentLine;
           this.inFile = false;
           this.currentPath = '';
+        }
+
+        private parsePathWithReason(payload: string): { path: string; reason?: string } {
+          const text = String(payload || '').trim();
+          if (!text) return { path: '' };
+          const parts = text.split('|').map((item) => item.trim()).filter(Boolean);
+          const path = parts[0] || '';
+          const reasonPart = parts.slice(1).join(' | ');
+          const reason = reasonPart ? reasonPart.replace(/^reason\s*[:=]\s*/i, '').trim() : undefined;
+          return { path, reason };
+        }
+
+        private parseMovePayload(payload: string): { from: string; to: string; reason?: string } {
+          const text = String(payload || '').trim();
+          if (!text) return { from: '', to: '' };
+          const [routePart, ...rest] = text.split('|');
+          const reasonPart = rest.join(' | ').trim();
+          const reason = reasonPart ? reasonPart.replace(/^reason\s*[:=]\s*/i, '').trim() : undefined;
+          const route = String(routePart || '').trim();
+          const arrowIndex = route.indexOf('->');
+          if (arrowIndex === -1) return { from: '', to: '', reason };
+          const from = route.slice(0, arrowIndex).trim();
+          const to = route.slice(arrowIndex + 2).trim();
+          return { from, to, reason };
         }
 
         finalize(): { cutPath: string; cutLine: number } | null {
@@ -825,7 +951,7 @@ ${constrainedPrompt}
               context,
               history: options.history || [],
               constraints,
-              contextMeta: buildContextMetaPayload(),
+              contextMeta: buildContextMetaPayload({ retrievalTrace }),
               modelRouting: buildModelRoutingPayload(thinkingMode)
             })
           });

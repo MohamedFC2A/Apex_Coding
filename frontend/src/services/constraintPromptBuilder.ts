@@ -59,15 +59,38 @@ export const buildFrontendPlanningPolicyBlock = (): string =>
 export const buildFrontendProfessionalBaselineBlock = (): string =>
   [
     '[FRONTEND PROFESSIONAL BASELINE]',
-    '- Default output for static frontend must be exactly: index.html, style.css, script.js.',
-    '- Keep naming stable and predictable: index.html + style.css + script.js for vanilla projects.',
+    '- Default output for static frontend is adaptive multi-page vanilla HTML/CSS/JS.',
+    '- For simple requests: index.html + style.css + script.js. For broader scope: linked pages with shared style/script.',
+    '- Keep naming stable and predictable: route-oriented kebab-case pages + shared style.css/script.js.',
     '- Mandatory section map: Header/Nav, Hero, Features/Content, CTA/Form, Footer.',
     '- JavaScript architecture: IIFE or module-safe bootstrapping + DOM ready initialization + guarded selectors.',
     '- Event binding must be runtime-safe (check element existence before addEventListener).',
     '- Avoid alert() as the default UX pattern; prefer inline status or accessible messages unless explicitly requested.',
+    '- File control protocol must support safe create/edit/delete/move with explicit reason for destructive operations.',
     '- Never glue comments with executable code on the same line in a way that can break syntax.',
     '- Deliver complete, runnable behavior in first pass; no TODO placeholders.'
   ].join('\n');
+
+export const buildPageArchitecturePolicyBlock = (
+  mode: GenerationConstraints['siteArchitectureMode'] = 'adaptive_multi_page'
+): string => {
+  const modeLine =
+    mode === 'single_page'
+      ? '- Prefer single-page architecture unless user explicitly requests multiple pages.'
+      : mode === 'force_multi_page'
+        ? '- Use multi-page architecture by default for all non-trivial websites.'
+        : '- Use adaptive multi-page architecture: single-page for simple requests, multi-page for rich/complex websites.';
+
+  return [
+    '[PAGE ARCHITECTURE POLICY]',
+    modeLine,
+    '- Switch to multi-page automatically when request implies: multiple services/products, legal pages, blog/docs/faq, or dashboard-like flows.',
+    '- Use stable folder conventions for static sites: pages/, components/, styles/, scripts/, assets/, data/.',
+    '- Use kebab-case for static page files and route-oriented paths.',
+    '- Include a route map contract (site-map.json or equivalent structured route mapping) when multi-page output is generated.',
+    '- Ensure navigation/footer/internal links are generated from the same route map and remain consistent after edits.'
+  ].join('\n');
+};
 
 export const buildAntiDuplicationPolicyBlock = (): string =>
   [
@@ -76,7 +99,7 @@ export const buildAntiDuplicationPolicyBlock = (): string =>
     '- If a file at the same path exists, use EDIT_NODE protocol to modify it — never START_FILE.',
     '- Never split CSS into multiple files unless explicitly using CSS modules or framework convention.',
     '- Never create a new file if an existing file already serves the same purpose.',
-    '- ONE CSS file, ONE JS file, ONE HTML entry point for simple static sites.',
+    '- ONE shared CSS file and ONE shared JS file for simple static sites (multi-page may add additional HTML pages).',
     '- If style.css exists, do not create main.css/styles.css duplicates.',
     '- If script.js exists, do not create app.js/main.js duplicates for the same static project.',
     '- If editing an existing project, preserve the existing file structure — do not reorganize.'
@@ -109,6 +132,9 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
   const frontendPolicyBlock = isFrontendOnly ? buildFrontendDeliveryPolicyBlock() : null;
   const frontendPlanningBlock = isFrontendOnly ? buildFrontendPlanningPolicyBlock() : null;
   const frontendProfessionalBaselineBlock = isFrontendOnly ? buildFrontendProfessionalBaselineBlock() : null;
+  const pageArchitectureBlock = isFrontendOnly
+    ? buildPageArchitecturePolicyBlock(constraints.siteArchitectureMode || 'adaptive_multi_page')
+    : null;
   const antiDuplicationBlock = buildAntiDuplicationPolicyBlock();
 
   return [
@@ -127,6 +153,7 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
     organizationBlock,
     '',
     antiDuplicationBlock,
+    ...(pageArchitectureBlock ? ['', pageArchitectureBlock] : []),
     ...(frontendProfessionalBaselineBlock ? ['', frontendProfessionalBaselineBlock] : []),
     ...(frontendPolicyBlock ? ['', frontendPolicyBlock] : []),
     ...(frontendPlanningBlock ? ['', frontendPlanningBlock] : [])

@@ -39,6 +39,7 @@ interface ProjectState {
   appendToFile: (path: string, chunk: string) => void;
   addFile: (file: ProjectFile) => void;
   deleteFile: (path: string) => void;
+  moveFile: (fromPath: string, toPath: string) => void;
   setStack: (stack: string) => void;
   setDescription: (description: string) => void;
   reset: () => void;
@@ -207,7 +208,12 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
               files: state.files.map((f) => ((f.path || f.name) === path ? { ...f, ...file, path } : f))
             };
           }
-          return { files: [...state.files, { ...file, path }] };
+          return {
+            files: [...state.files, { ...file, path }],
+            fileStructure: state.fileStructure.some((entry) => entry.path === path)
+              ? state.fileStructure
+              : [...state.fileStructure, { path, type: 'file' as const }]
+          };
         }),
 
       appendToFile: (path, chunk) =>
@@ -219,14 +225,70 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
           )
         })),
       
-      addFile: (file) => set((state) => ({
-        files: [...state.files, file]
-      })),
+      addFile: (file) =>
+        set((state) => {
+          const path = file.path || file.name;
+          if (!path) return state;
+          return {
+            files: [...state.files, { ...file, path }],
+            fileStructure: state.fileStructure.some((entry) => entry.path === path)
+              ? state.fileStructure
+              : [...state.fileStructure, { path, type: 'file' as const }]
+          };
+        }),
       
-      deleteFile: (path) => set((state) => ({
-        files: state.files.filter(file => file.path !== path),
-        activeFile: state.activeFile === path ? null : state.activeFile
-      })),
+      deleteFile: (path) => {
+        const target = String(path || '').trim();
+        if (!target) return;
+        set((state) => ({
+          files: state.files.filter((file) => (file.path || file.name) !== target),
+          fileStructure: state.fileStructure.filter((entry) => entry.path !== target),
+          activeFile: state.activeFile === target ? null : state.activeFile
+        }));
+        if (typeof window !== 'undefined') {
+          void applyWorkspaceDelta({ deletePaths: [target] }).catch(() => undefined);
+        }
+      },
+
+      moveFile: (fromPath, toPath) => {
+        const from = String(fromPath || '').trim();
+        const to = String(toPath || '').trim();
+        if (!from || !to || from === to) return;
+
+        set((state) => {
+          const source = state.files.find((file) => (file.path || file.name) === from);
+          if (!source) return state;
+
+          const movedFile: ProjectFile = {
+            ...source,
+            path: to,
+            name: to.split('/').pop() || to
+          };
+
+          const nextFiles = state.files
+            .filter((file) => {
+              const current = file.path || file.name;
+              return current !== from && current !== to;
+            })
+            .concat(movedFile);
+
+          const nextStructure = state.fileStructure
+            .filter((entry) => entry.path !== from && entry.path !== to)
+            .concat({ path: to, type: 'file' as const });
+
+          const activeFile = state.activeFile === from ? to : state.activeFile;
+
+          return {
+            files: nextFiles,
+            fileStructure: nextStructure,
+            activeFile
+          };
+        });
+
+        if (typeof window !== 'undefined') {
+          void applyWorkspaceDelta({ movePaths: [{ from, to }] }).catch(() => undefined);
+        }
+      },
       
       setStack: (stack) => set({ stack }),
       

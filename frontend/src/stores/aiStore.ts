@@ -13,6 +13,29 @@ export type InteractionMode = 'create' | 'edit';
 export type ProjectType = 'FULL_STACK' | 'FRONTEND_ONLY';
 export type BrainEventSource = 'system' | 'stream' | 'file' | 'preview' | 'user';
 export type BrainEventLevel = 'info' | 'warn' | 'error' | 'success';
+export type AIFileEvent =
+  | {
+      type: 'start' | 'chunk' | 'end';
+      path: string;
+      mode?: 'create' | 'edit';
+      chunk?: string;
+      partial?: boolean;
+      line?: number;
+      append?: boolean;
+    }
+  | {
+      type: 'delete';
+      path: string;
+      reason?: string;
+      safetyCheckPassed?: boolean;
+    }
+  | {
+      type: 'move';
+      path: string;
+      toPath: string;
+      reason?: string;
+      safetyCheckPassed?: boolean;
+    };
 
 type FileSystemState = FileSystem | [];
 
@@ -163,7 +186,7 @@ interface AIStoreActions {
   upsertFileNode: (path: string, content?: string) => void;
   upsertDirectoryNode: (path: string) => void;
   appendToFileNode: (path: string, chunk: string) => void;
-  handleFileEvent: (event: { type: 'start' | 'chunk' | 'end'; path: string; mode?: 'create' | 'edit'; chunk?: string; partial?: boolean; line?: number; append?: boolean }) => void;
+  handleFileEvent: (event: AIFileEvent) => void;
   setFilesFromProjectFiles: (files: ProjectFile[]) => void;
   saveCurrentSession: () => void;
   hydrateHistoryFromDisk: () => Promise<void>;
@@ -681,6 +704,66 @@ const appendToFileSystemEntry = (tree: FileSystem, rawPath: string, chunk: strin
   return insert(tree, 0);
 };
 
+const removeFileSystemEntry = (tree: FileSystem, rawPath: string): FileSystem => {
+  const resolvedPath = normalizePath(rawPath);
+  if (!resolvedPath) return tree;
+
+  const segments = resolvedPath.split('/');
+
+  const removeAt = (node: FileSystem, index: number): FileSystem => {
+    const name = segments[index];
+    if (!name || !node[name]) return node;
+
+    if (index === segments.length - 1) {
+      const next = { ...node };
+      delete next[name];
+      return next;
+    }
+
+    const dir = node[name]?.directory;
+    if (!dir) return node;
+
+    const updatedDir = removeAt(dir, index + 1);
+    const next = { ...node };
+
+    if (Object.keys(updatedDir).length === 0 && !node[name]?.file) {
+      delete next[name];
+      return next;
+    }
+
+    next[name] = {
+      ...(node[name]?.file ? { file: node[name].file } : {}),
+      directory: updatedDir
+    };
+    return next;
+  };
+
+  return removeAt(tree, 0);
+};
+
+const findFileContentByPath = (tree: FileSystem, rawPath: string): string => {
+  const resolvedPath = normalizePath(rawPath);
+  if (!resolvedPath) return '';
+  const segments = resolvedPath.split('/');
+  let node: any = tree;
+  for (let i = 0; i < segments.length; i++) {
+    const name = segments[i];
+    const entry = node?.[name];
+    if (!entry) return '';
+    if (i === segments.length - 1) return entry?.file?.contents || '';
+    if (!entry.directory) return '';
+    node = entry.directory;
+  }
+  return '';
+};
+
+const moveFileSystemEntry = (tree: FileSystem, fromPath: string, toPath: string): FileSystem => {
+  const content = findFileContentByPath(tree, fromPath);
+  if (!content && !checkFileExists(tree, fromPath)) return tree;
+  const withoutSource = removeFileSystemEntry(tree, fromPath);
+  return upsertFileSystemEntry(withoutSource, toPath, content);
+};
+
 const buildTreeFromProjectFiles = (files: ProjectFile[]) => {
   let tree: FileSystem = {};
 
@@ -855,7 +938,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             selectedFeatures: get().selectedFeatures,
             customFeatureTags: get().customFeatureTags,
             enforcement: 'hard' as const,
-            qualityGateMode: 'strict' as const
+            qualityGateMode: 'strict' as const,
+            siteArchitectureMode: 'adaptive_multi_page' as const,
+            fileControlMode: 'safe_full' as const,
+            contextIntelligenceMode: 'balanced_graph' as const
           };
           const data = await aiService.generatePlan(prompt, thinkingMode, abortSignal, projectType, constraints);
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
@@ -1044,8 +1130,36 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       },
 
       handleFileEvent: (event) => {
-        let { type, path, chunk, partial, mode } = event;
+        const type = event.type;
+        let path = event.path;
         const state = get();
+
+        if (type === 'delete') {
+          set((current) => ({
+            files: removeFileSystemEntry(normalizeFileSystem(current.files), path),
+            writingFilePath: current.writingFilePath === path ? null : current.writingFilePath
+          }));
+          get().setFileStatus(path, 'ready');
+          scheduleSessionSave(350);
+          return;
+        }
+
+        if (type === 'move') {
+          const toPath = event.toPath;
+          if (!toPath) return;
+          set((current) => ({
+            files: moveFileSystemEntry(normalizeFileSystem(current.files), path, toPath),
+            writingFilePath: current.writingFilePath === path ? toPath : current.writingFilePath
+          }));
+          get().setFileStatus(path, 'ready');
+          get().setFileStatus(toPath, 'ready');
+          scheduleSessionSave(350);
+          return;
+        }
+
+        const chunk = event.type === 'chunk' ? event.chunk : undefined;
+        const partial = event.type === 'end' ? event.partial : undefined;
+        const mode = event.type === 'start' ? event.mode : undefined;
         
         if (type === 'start') {
            // Anti-duplication Logic
@@ -1094,11 +1208,11 @@ export const useAIStore = createWithEqualityFn<AIState>()(
                 }
                 return '';
              };
-             
+            
              const currentContent = findContent(files, targetPath);
              const repaired = repairTruncatedContent(currentContent, targetPath, {
                 isKnownPartial: true,
-                allowAggressiveFixes: true
+                allowAggressiveFixes: false
              });
              
              if (repaired !== currentContent) {
@@ -1470,6 +1584,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       name: 'apex-ai-store',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
+        prompt: state.prompt,
+        plan: state.plan,
+        planSteps: state.planSteps,
+        lastPlannedPrompt: state.lastPlannedPrompt,
         projectType: state.projectType,
         selectedFeatures: state.selectedFeatures,
         customFeatureTags: state.customFeatureTags,
@@ -1478,7 +1596,15 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         modelMode: normalizeModelMode(state.modelMode),
         interactionMode: state.interactionMode,
         executionBudget: state.executionBudget,
+        executionPhase: state.executionPhase,
+        lastTokenAt: state.lastTokenAt,
+        lastSuccessfulFile: state.lastSuccessfulFile,
+        lastSuccessfulLine: state.lastSuccessfulLine,
+        completedFiles: state.completedFiles,
+        fileStatuses: state.fileStatuses,
+        writingFilePath: state.writingFilePath,
         isPreviewOpen: state.isPreviewOpen,
+        currentSessionId: state.currentSessionId,
         contextBudget: state.contextBudget,
         compressionSnapshot: state.compressionSnapshot
       }),

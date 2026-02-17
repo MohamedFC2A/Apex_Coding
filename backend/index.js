@@ -723,9 +723,14 @@ const addFilesToZip = (zip, files) => {
 
 const FRONTEND_PRO_QUALITY_POLICY = [
   '[FRONTEND PRO QUALITY POLICY]',
-  '- Default frontend mode is strict vanilla: index.html + style.css + script.js.',
+  '- Default frontend mode is adaptive multi-page vanilla (HTML/CSS/JS).',
+  '- Use single-page only for simple requests; otherwise generate linked multi-page architecture.',
   '- Do not switch to React/Next/Vite unless explicitly requested by the user prompt.',
-  '- For static mode, enforce one HTML entry point, one CSS file, and one JS file (no duplicates).',
+  '- For static mode, keep shared style.css + script.js and route-oriented kebab-case page files.',
+  '- Use canonical folders when multi-page: pages/, components/, styles/, scripts/, assets/, data/.',
+  '- Include a route map contract (site-map.json or equivalent structured mapping) for multi-page outputs.',
+  '- Prevent duplicate-purpose files; prefer edit/move over creating conflicting files.',
+  '- Use explicit delete/move file operations with reasons when restructuring files.',
   '- Never output TODO/placeholders in final code.',
   '- Keep JavaScript syntax-safe and avoid glued comment/code lines that can break parsing.',
   '- Add clean interactivity when relevant: menu toggle, form validation, smooth-scroll, active nav, and observer effects.',
@@ -765,9 +770,11 @@ CATEGORY RULES:
 
 FILE TREE RULES (CRITICAL — DUPLICATES ARE FORBIDDEN):
 - fileTree must list EVERY file that will be created.
-- For simple sites use flat structure: index.html, style.css, script.js
+- For simple sites use flat structure: index.html, style.css, script.js.
+- For complex sites, use adaptive multi-page structure with canonical folders: pages/, components/, styles/, scripts/, assets/, data/.
+- If multi-page is used, include site-map.json in fileTree.
 - NEVER list the same filename twice (e.g. two style.css in different paths).
-- ONE CSS file for all styles. ONE JS file for all logic. ONE HTML entry point.
+- Keep one shared style.css and one shared script.js by default in static mode (unless architecture explicitly needs scoped files).
 - If SVG icons are needed, place in src/icons/ and list each file.
 - NEVER include package.json, node_modules, or build configs unless explicitly requested.
 
@@ -849,13 +856,15 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - NEVER create the same file twice (e.g., styles.css in two locations)
    - NEVER create duplicate CSS/JS files
    - If a file exists, use [[EDIT_NODE:]] to modify it, NEVER [[START_FILE:]]
-   - ONE styles.css, ONE main.js/app.js, ONE index.html
+   - Prefer one shared style.css + one shared script.js for static projects
    
    DECISION TREE — before writing ANY file:
    a) Does a file with the SAME PATH already exist? → Use [[EDIT_NODE:]]
    b) Does a file with the SAME BASENAME exist at a different path? → Do NOT create it. Use [[EDIT_NODE:]] on the existing one.
    c) Does a file with the SAME PURPOSE exist (e.g., another CSS file)? → Do NOT create it. Append to the existing one via [[EDIT_NODE:]].
-   d) Only if NONE of the above → Use [[START_FILE:]]
+   d) If reorganization is needed, use [[MOVE_FILE: from -> to | reason: ...]]
+   e) If stale duplicate is proven unused, use [[DELETE_FILE: path | reason: ...]]
+   f) Only if NONE of the above → Use [[START_FILE:]]
    
    SINGLE-SOURCE-OF-TRUTH:
    - ALL CSS goes in ONE file (style.css or styles.css). Never split into multiple CSS files.
@@ -863,14 +872,16 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - If a CSS file already exists, do NOT use inline styles. Add classes to the CSS file via [[EDIT_NODE:]].
    - If you have already output style.css, do NOT output styles.css or main.css. They are the SAME file.
 
-2. PROJECT STRUCTURE - PREFER STATIC HTML/CSS/JS (SIMPLE & NATURAL):
-   - ALWAYS prefer simple, static HTML/CSS/JS structures unless the user explicitly asks for React, Vue, or a build step.
+2. PROJECT STRUCTURE - ADAPTIVE MULTI-PAGE STATIC BY DEFAULT:
+   - ALWAYS prefer static HTML/CSS/JS unless the user explicitly asks for React, Vue, Next, or a build step.
+   - Use single-page only for simple requests; otherwise generate linked multi-page architecture.
+   - Multi-page static conventions: pages/, components/, styles/, scripts/, assets/, data/, plus site-map.json.
    - Do NOT generate 'package.json', 'vite.config.js', or 'node_modules' usage unless explicitly requested.
-   - For most tasks, use:
+   - For simple tasks, use:
      - index.html (main HTML with all structure)
      - style.css (ALL CSS in ONE file)
      - script.js (ALL JavaScript in ONE file - MANDATORY)
-   - NO nested folders for simple sites. Keep it flat and simple.
+   - For complex tasks, keep navigation/footer links consistent with site-map.json route map.
    
    If React/Vite is EXPLICITLY requested:
    - package.json
@@ -903,14 +914,15 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - NO markdown, NO code fences
    - NO "Here is", "I will", "Let me" phrases
    - ALWAYS implement the FULL functionality requested, specifically JavaScript/TypeScript logic. Do not leave "TODO" comments.
-   - YOU MUST OUTPUT ALL 3 CORE FILES (HTML, CSS, JS) FOR STATIC SITES IN A SINGLE RESPONSE.
+   - For simple static sites, output the baseline files (index.html + style.css + script.js) in one response.
+   - For adaptive multi-page static sites, output all linked pages plus shared style/script and route map files.
    - DO NOT STOP AFTER THE FIRST FILE.
 
 6. ANTI-LAZINESS RULES:
    - Do NOT be lazy. Write the FULL code.
    - Do NOT say "Add more code here". Write it.
    - If the user asks for a landing page, build the WHOLE landing page (Hero, Features, Footer, etc).
-   - A single HTML file is a FAILURE. You MUST split code into logical files.
+   - For non-trivial requests, a single HTML file is a FAILURE. Split into logical pages/components.
 
 7. FRONTEND EXCELLENCE STANDARDS (MANDATORY):
    - Mobile-First: Always build for mobile first, then scale up using media queries.
@@ -948,6 +960,16 @@ EDIT PROTOCOL:
 <new text>
 [[END_EDIT]]
 [[END_FILE]]
+
+DELETE PROTOCOL:
+[[DELETE_FILE: path/to/file.ext | reason: why deletion is safe]]
+
+MOVE PROTOCOL:
+[[MOVE_FILE: from/path.ext -> to/path.ext | reason: why move is safe]]
+
+SAFETY RULES FOR DELETE/MOVE:
+- Never delete or move sensitive root files (package.json, lock files, tsconfig, next/vite configs) unless explicitly justified and replacements are included.
+- Never move files in a way that breaks imports/routes/links without emitting corresponding edits in the same response.
 
 STATIC SITE EXAMPLE (Preferred Structure):
 [[START_FILE: index.html]]
@@ -1003,7 +1025,30 @@ const normalizeConstraints = (rawConstraints = {}, fallbackProjectType = null) =
     projectMode,
     selectedFeatures,
     customFeatureTags,
-    enforcement: 'hard'
+    enforcement: 'hard',
+    qualityGateMode:
+      rawConstraints?.qualityGateMode === 'strict' ||
+      rawConstraints?.qualityGateMode === 'medium' ||
+      rawConstraints?.qualityGateMode === 'light'
+        ? rawConstraints.qualityGateMode
+        : 'strict',
+    siteArchitectureMode:
+      rawConstraints?.siteArchitectureMode === 'adaptive_multi_page' ||
+      rawConstraints?.siteArchitectureMode === 'single_page' ||
+      rawConstraints?.siteArchitectureMode === 'force_multi_page'
+        ? rawConstraints.siteArchitectureMode
+        : 'adaptive_multi_page',
+    fileControlMode:
+      rawConstraints?.fileControlMode === 'safe_full' ||
+      rawConstraints?.fileControlMode === 'create_edit_only'
+        ? rawConstraints.fileControlMode
+        : 'safe_full',
+    contextIntelligenceMode:
+      rawConstraints?.contextIntelligenceMode === 'balanced_graph' ||
+      rawConstraints?.contextIntelligenceMode === 'light' ||
+      rawConstraints?.contextIntelligenceMode === 'max'
+        ? rawConstraints.contextIntelligenceMode
+        : 'balanced_graph'
   };
 };
 
@@ -1016,9 +1061,11 @@ const buildConstraintsBlock = (constraints, prompt = '') => {
   const frontendModeRules = constraints.projectMode === 'FRONTEND_ONLY'
     ? [
         'Frontend Defaults:',
-        '- Default to strict vanilla static site output: index.html, style.css, script.js.',
+        '- Default to adaptive multi-page vanilla static output.',
+        '- Use single-page only for simple prompts; switch to multi-page when scope is broader.',
         `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.`,
         '- Only produce React/Next/Vite structure when explicit framework request is YES.',
+        '- If multi-page static is used, include route map contract (site-map.json or equivalent).',
         '',
         FRONTEND_PRO_QUALITY_POLICY
       ].join('\n')
@@ -1028,6 +1075,9 @@ const buildConstraintsBlock = (constraints, prompt = '') => {
     '[SERVER CONSTRAINTS]',
     `Project Mode: ${constraints.projectMode}`,
     `Enforcement: ${constraints.enforcement.toUpperCase()}`,
+    `Site Architecture Mode: ${constraints.siteArchitectureMode || 'adaptive_multi_page'}`,
+    `File Control Mode: ${constraints.fileControlMode || 'safe_full'}`,
+    `Context Intelligence Mode: ${constraints.contextIntelligenceMode || 'balanced_graph'}`,
     'Required Features:',
     featureLines.length > 0 ? featureLines.join('\n') : '- none',
     '',
@@ -1161,13 +1211,13 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
       console.warn(`[plan] [${req.requestId}] timeout - returning demo fallback`);
       const title = 'Plan (Demo Fallback)';
       const description = 'انتهت مهلة توليد الخطة. تم إرجاع خطة سريعة بديلة.';
-      const stack = 'react-vite';
-      const fileTree = ['index.html', 'src/main.tsx', 'src/App.tsx', 'src/styles.css'];
+      const stack = 'html-css-javascript';
+      const fileTree = ['index.html', 'style.css', 'script.js', 'site-map.json'];
       const steps = [
-        { id: '1', title: 'تهيئة index.html', category: 'config', files: ['index.html'], description: '' },
-        { id: '2', title: 'إنشاء main.tsx', category: 'frontend', files: ['src/main.tsx'], description: '' },
-        { id: '3', title: 'إنشاء App.tsx', category: 'frontend', files: ['src/App.tsx'], description: '' },
-        { id: '4', title: 'إضافة styles.css', category: 'frontend', files: ['src/styles.css'], description: '' }
+        { id: '1', title: 'تهيئة هيكل الصفحات وخريطة المسارات', category: 'setup', files: ['site-map.json'], description: '' },
+        { id: '2', title: 'بناء صفحة البداية وروابط التنقل', category: 'layout', files: ['index.html'], description: '' },
+        { id: '3', title: 'إضافة التصميم المتجاوب المشترك', category: 'styling', files: ['style.css'], description: '' },
+        { id: '4', title: 'إضافة السلوكيات التفاعلية المشتركة', category: 'interactivity', files: ['script.js'], description: '' }
       ];
       return res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
     }
@@ -1236,7 +1286,156 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
     );
 
     // Fallback streaming when AI provider is not configured (demo mode)
+    const explicitFrameworkRequested = hasExplicitFrameworkRequest(constrainedPrompt);
     if (!process.env.DEEPSEEK_API_KEY) {
+      if (constraints.projectMode === 'FRONTEND_ONLY' && !explicitFrameworkRequested) {
+        const siteMap = [
+          '[[START_FILE: site-map.json]]',
+          '{',
+          '  "routes": [',
+          '    { "path": "/", "file": "index.html", "title": "Home" },',
+          '    { "path": "/pages/about.html", "file": "pages/about.html", "title": "About" },',
+          '    { "path": "/pages/contact.html", "file": "pages/contact.html", "title": "Contact" }',
+          '  ]',
+          '}',
+          '[[END_FILE]]'
+        ].join('\n');
+
+        const indexHtml = [
+          '[[START_FILE: index.html]]',
+          '<!doctype html>',
+          '<html lang="en">',
+          '<head>',
+          '  <meta charset="UTF-8" />',
+          '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+          '  <title>Apex Demo Site</title>',
+          '  <link rel="stylesheet" href="style.css" />',
+          '</head>',
+          '<body>',
+          '  <header class="site-header">',
+          '    <a class="brand" href="index.html">Apex Demo</a>',
+          '    <nav aria-label="Primary">',
+          '      <a href="index.html">Home</a>',
+          '      <a href="pages/about.html">About</a>',
+          '      <a href="pages/contact.html">Contact</a>',
+          '    </nav>',
+          '  </header>',
+          '  <main>',
+          '    <section class="hero">',
+          '      <h1>Professional Frontend Baseline</h1>',
+          '      <p>Adaptive multi-page static architecture with shared CSS/JS.</p>',
+          '      <a class="btn" href="pages/contact.html">Start now</a>',
+          '    </section>',
+          '  </main>',
+          '  <footer>© 2026 Nexus Apex | Built by Matany Labs.</footer>',
+          '  <script src="script.js"></script>',
+          '</body>',
+          '</html>',
+          '[[END_FILE]]'
+        ].join('\n');
+
+        const aboutHtml = [
+          '[[START_FILE: pages/about.html]]',
+          '<!doctype html>',
+          '<html lang="en">',
+          '<head>',
+          '  <meta charset="UTF-8" />',
+          '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+          '  <title>About | Apex Demo</title>',
+          '  <link rel="stylesheet" href="../style.css" />',
+          '</head>',
+          '<body>',
+          '  <header class="site-header"><a class="brand" href="../index.html">Apex Demo</a></header>',
+          '  <main><section><h1>About</h1><p>This page is linked through site-map.json.</p></section></main>',
+          '  <footer>© 2026 Nexus Apex | Built by Matany Labs.</footer>',
+          '  <script src="../script.js"></script>',
+          '</body>',
+          '</html>',
+          '[[END_FILE]]'
+        ].join('\n');
+
+        const contactHtml = [
+          '[[START_FILE: pages/contact.html]]',
+          '<!doctype html>',
+          '<html lang="en">',
+          '<head>',
+          '  <meta charset="UTF-8" />',
+          '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+          '  <title>Contact | Apex Demo</title>',
+          '  <link rel="stylesheet" href="../style.css" />',
+          '</head>',
+          '<body>',
+          '  <header class="site-header"><a class="brand" href="../index.html">Apex Demo</a></header>',
+          '  <main>',
+          '    <section>',
+          '      <h1>Contact</h1>',
+          '      <form id="contactForm" novalidate>',
+          '        <label for="email">Email</label>',
+          '        <input id="email" name="email" type="email" required />',
+          '        <button type="submit">Send</button>',
+          '      </form>',
+          '      <p id="formMessage" aria-live="polite"></p>',
+          '    </section>',
+          '  </main>',
+          '  <footer>© 2026 Nexus Apex | Built by Matany Labs.</footer>',
+          '  <script src="../script.js"></script>',
+          '</body>',
+          '</html>',
+          '[[END_FILE]]'
+        ].join('\n');
+
+        const styleCss = [
+          '[[START_FILE: style.css]]',
+          ':root { --bg: #0c1118; --surface: #121b26; --text: #f3f7ff; --muted: #b8c4d6; --accent: #00a37a; }',
+          '* { box-sizing: border-box; }',
+          'body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); }',
+          '.site-header { display: flex; justify-content: space-between; padding: 1rem 1.25rem; background: var(--surface); }',
+          '.site-header nav { display: flex; gap: 0.85rem; }',
+          '.site-header a { color: var(--text); text-decoration: none; }',
+          '.hero { max-width: 860px; margin: 3rem auto; padding: 0 1.25rem; }',
+          '.btn { display: inline-block; padding: 0.7rem 1rem; border-radius: 8px; background: var(--accent); color: #052118; }',
+          'form { display: grid; gap: 0.75rem; max-width: 420px; }',
+          'input, button { min-height: 44px; border-radius: 8px; border: 1px solid #2a3a4e; padding: 0.6rem; }',
+          '@media (max-width: 768px) { .site-header { flex-direction: column; gap: 0.75rem; } }',
+          '[[END_FILE]]'
+        ].join('\n');
+
+        const scriptJs = [
+          '[[START_FILE: script.js]]',
+          '(function () {',
+          '  function ready(fn) {',
+          "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);",
+          '    else fn();',
+          '  }',
+          '  function isValidEmail(value) {',
+          "    return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(value || ''));",
+          '  }',
+          '  ready(function () {',
+          "    var form = document.getElementById('contactForm');",
+          "    var message = document.getElementById('formMessage');",
+          '    if (!form) return;',
+          "    form.addEventListener('submit', function (event) {",
+          '      event.preventDefault();',
+          "      var input = form.querySelector('input[type=\"email\"]');",
+          '      var email = input ? input.value.trim() : "";',
+          '      if (!isValidEmail(email)) {',
+          "        if (message) message.textContent = 'Please enter a valid email.';",
+          '        return;',
+          '      }',
+          "      if (message) message.textContent = 'Message sent successfully.';",
+          '      form.reset();',
+          '    });',
+          '  });',
+          '})();',
+          '[[END_FILE]]'
+        ].join('\n');
+
+        writeSse('token', [siteMap, indexHtml, aboutHtml, contactHtml, styleCss, scriptJs].join('\n'));
+        writeSse('status', 'done:Complete');
+        res.end();
+        return;
+      }
+
       const indexHtml = [
         '[[START_FILE: index.html]]',
         '<!doctype html>',

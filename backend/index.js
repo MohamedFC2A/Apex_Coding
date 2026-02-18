@@ -685,19 +685,146 @@ const shouldUseMultiAgentArchitect = ({ architectMode, modelRouting }) => {
   });
 };
 
+const extractFirstBalancedJsonSegment = (text) => {
+  const source = String(text || '');
+  if (!source) return '';
+
+  const start = source.indexOf('{') !== -1 ? source.indexOf('{') : source.indexOf('[');
+  if (start === -1) return '';
+
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') {
+      stack.push(ch);
+      continue;
+    }
+
+    if (ch === '}' || ch === ']') {
+      const open = stack[stack.length - 1];
+      const matches = (open === '{' && ch === '}') || (open === '[' && ch === ']');
+      if (!matches) return '';
+      stack.pop();
+      if (stack.length === 0) {
+        return source.slice(start, i + 1);
+      }
+    }
+  }
+
+  return '';
+};
+
 const cleanAndParseJSON = (text) => {
   const raw = String(text || '').trim();
   if (!raw) throw new Error('Empty AI response');
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    const match = raw.match(/```json\\s*([\\s\\S]*?)\\s*```/i) || raw.match(/```\\s*([\\s\\S]*?)\\s*```/);
-    if (match && match[1]) return JSON.parse(match[1]);
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start !== -1 && end !== -1 && end > start) return JSON.parse(raw.slice(start, end + 1));
-    throw e;
+
+  const candidates = [];
+  const pushCandidate = (value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return;
+    if (!candidates.includes(normalized)) candidates.push(normalized);
+  };
+
+  pushCandidate(raw);
+
+  const fenceRegex = /```(?:json)?\s*([\s\S]*?)\s*```/gi;
+  let fenceMatch;
+  while ((fenceMatch = fenceRegex.exec(raw)) !== null) {
+    if (fenceMatch[1]) pushCandidate(fenceMatch[1]);
   }
+
+  const balanced = extractFirstBalancedJsonSegment(raw);
+  if (balanced) pushCandidate(balanced);
+
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw lastError || new Error('Invalid JSON response');
+};
+
+const inferPlanCategoryFromTitle = (title) => {
+  const text = String(title || '').toLowerCase();
+  if (!text) return 'frontend';
+  if (/(setup|config|bootstrap|init|scaffold)/.test(text)) return 'config';
+  if (/(backend|api|server|database|auth|middleware)/.test(text)) return 'backend';
+  if (/(test|qa|validation|verify|debug)/.test(text)) return 'testing';
+  if (/(deploy|release|publish|ci|cd)/.test(text)) return 'deployment';
+  if (/(integrat|connect|sync|bridge)/.test(text)) return 'integration';
+  return 'frontend';
+};
+
+const extractPlanStepsFromText = (content) => {
+  const lines = String(content || '').split(/\r?\n/);
+  const steps = [];
+
+  for (const line of lines) {
+    const rawLine = String(line || '').trim();
+    if (!rawLine) continue;
+
+    const isStepLine =
+      /^(?:[-*•]\s+|\d+\s*[\).:-]\s+|step\s*\d+\s*[:).-]\s+)/i.test(rawLine);
+    if (!isStepLine) continue;
+
+    const title = rawLine
+      .replace(/^[-*•]\s+/i, '')
+      .replace(/^\d+\s*[\).:-]\s+/i, '')
+      .replace(/^step\s*\d+\s*[:).-]\s+/i, '')
+      .trim();
+
+    if (!title || title.length < 4) continue;
+    if (/^(title|description|stack|filetree|steps?)\s*[:=]/i.test(title)) continue;
+
+    steps.push({
+      id: String(steps.length + 1),
+      title,
+      category: inferPlanCategoryFromTitle(title),
+      files: [],
+      description: ''
+    });
+
+    if (steps.length >= 8) break;
+  }
+
+  return steps;
+};
+
+const normalizeHistoryMessages = (history) => {
+  if (!Array.isArray(history)) return [];
+  return history
+    .map((entry) => {
+      const role = entry?.role === 'assistant' ? 'assistant' : entry?.role === 'user' ? 'user' : '';
+      const content = String(entry?.content || '').trim();
+      if (!role || !content) return null;
+      return { role, content: content.slice(0, 900) };
+    })
+    .filter(Boolean)
+    .slice(-8);
 };
 
 const getErrorDetails = (error) => {
@@ -1308,7 +1435,26 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     content = String(content).replace(/```json/gi, '').replace(/```/g, '').trim();
     if (content.length === 0) throw new Error('Empty AI response');
 
-    const parsed = cleanAndParseJSON(content);
+    let parsed;
+    try {
+      parsed = cleanAndParseJSON(content);
+    } catch (parseError) {
+      const fallbackSteps = extractPlanStepsFromText(content);
+      if (fallbackSteps.length > 0) {
+        console.warn(
+          `[plan] [${req.requestId}] Non-JSON planner response recovered with text-step fallback (${fallbackSteps.length} steps).`
+        );
+        return res.json({
+          title: effectiveProjectType === 'FULL_STACK' ? 'Full-stack Implementation Plan' : 'Frontend Implementation Plan',
+          description: 'Recovered plan from non-JSON response.',
+          stack: effectiveProjectType === 'FULL_STACK' ? 'react-express-node' : 'html-css-javascript',
+          fileTree: [],
+          steps: fallbackSteps,
+          requestId: req.requestId
+        });
+      }
+      throw parseError;
+    }
     const stepsRaw = Array.isArray(parsed) ? parsed : parsed?.steps;
     const steps = Array.isArray(stepsRaw)
       ? stepsRaw
@@ -1391,7 +1537,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
   };
 
   try {
-    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, contextBundle, architectMode } = req.body || {};
+    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, contextBundle, history, architectMode } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       res.status(400).send('Prompt is required');
       return;
@@ -1414,6 +1560,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
     const finalPrompt = contextBundlePrompt
       ? `${constrainedPrompt}\n\n${contextBundlePrompt}`.trim()
       : constrainedPrompt;
+    const historyMessages = normalizeHistoryMessages(history);
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -1824,6 +1971,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       temperature: 0.0,
       messages: [
         { role: 'system', content: CODE_STREAM_SYSTEM_PROMPT },
+        ...historyMessages,
         { role: 'user', content: finalPrompt }
       ],
       stream: true,

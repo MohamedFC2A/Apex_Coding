@@ -3180,6 +3180,21 @@ function App() {
       let reasoningChars = 0;
       const isThinkingMode = modelMode === 'thinking';
       let openedBrain = false;
+      const buildHistoryPayload = () => {
+        const liveHistory = useAIStore.getState().chatHistory || [];
+        return liveHistory
+          .filter(
+            (msg) =>
+              (msg.role === 'user' || msg.role === 'assistant') &&
+              msg.kind !== 'completion-summary'
+          )
+          .map((msg) => ({
+            role: msg.role,
+            content: String(msg.content || '').slice(0, 2800)
+          }))
+          .filter((msg) => msg.content.trim().length > 0)
+          .slice(-14);
+      };
 
       const runStream = async (streamPrompt: string) => {
         await aiService.generateCodeStream(
@@ -3296,6 +3311,7 @@ function App() {
             onFileEvent: handleFileEvent,
             abortSignal: abortController.signal,
             resumeContext,
+            history: buildHistoryPayload(),
             constraints: generationConstraints
           }
         );
@@ -3466,40 +3482,47 @@ Output ONLY the code for these files.
         }
       } else if (architectMode && (!skipPlanning || isResuming)) {
         setExecutionPhase('planning');
-        const currentSteps = useAIStore.getState().planSteps;
-        const lastPlanned = useAIStore.getState().lastPlannedPrompt;
-        
-        if (!isResuming && (currentSteps.length === 0 || lastPlanned !== scopedPrompt)) {
-           await generatePlan(scopedPrompt, abortController.signal);
+        const planBeforeRun = useAIStore.getState();
+        const currentSteps = planBeforeRun.planSteps;
+        const lastPlanned = planBeforeRun.lastPlannedPrompt;
+        const shouldGenerateFreshPlan = !isResuming && (currentSteps.length === 0 || lastPlanned !== scopedPrompt);
+
+        if (shouldGenerateFreshPlan) {
+          await generatePlan(scopedPrompt, abortController.signal);
         }
-        
-        const rawPlannedSteps = useAIStore.getState().planSteps;
+
+        const planAfterRun = useAIStore.getState();
+        const rawPlannedSteps = planAfterRun.planSteps;
         const normalizedPlannedSteps = rawPlannedSteps.map((step) => ({
           ...step,
           category: normalizePlanCategory(step?.category, step?.title, Array.isArray(step?.files) ? step.files : [])
         }));
         const steps = normalizePlanStepsForProfile(normalizedPlannedSteps, effectiveProjectType);
-        if (steps.length !== rawPlannedSteps.length) {
-          setPlanSteps(steps);
+
+        if (!isResuming && steps.length === 0) {
+          throw new Error(planAfterRun.error || 'PLAN_EMPTY: planner returned no steps.');
         }
+
+        setPlanSteps(steps);
+
         if (steps.length === 0) {
           setExecutionPhase('executing');
           await runStream(baseStreamPrompt);
         } else {
-        
-          if (!isResuming && lastPlanned !== scopedPrompt) {
-               setPlanSteps(steps.map(s => ({...s, completed: false})));
-          }
+          const plannedExecutionSteps =
+            !isResuming && shouldGenerateFreshPlan ? steps.map((s) => ({ ...s, completed: false })) : steps;
 
+          if (!isResuming && shouldGenerateFreshPlan) {
+            setPlanSteps(plannedExecutionSteps);
+          }
           setExecutionPhase('executing');
-          const updatedSteps = useAIStore.getState().planSteps;
 
           if (isResuming && partialFile) {
             logSystem('[STATUS] Resuming partial file before continuing plan…');
             await runStream(baseStreamPrompt);
           }
           
-          for (const step of updatedSteps) {
+          for (const step of plannedExecutionSteps) {
               if (step.completed) continue;
               
               logSystem(`[PLAN] Executing step: ${step.title}`);
@@ -3512,7 +3535,7 @@ Output ONLY the code for these files.
  ${agentContextBlock}
 
 [CURRENT PLAN]
-${updatedSteps.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
+${plannedExecutionSteps.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
 
 [TASK]
 Implement this step: "${step.title}"

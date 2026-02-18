@@ -1016,6 +1016,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             }))
             .filter((s) => s.title.length > 0);
 
+          if (planSteps.length === 0) {
+            throw new Error('PLAN_EMPTY: Planner returned no executable steps.');
+          }
+
           set({ planSteps, lastPlannedPrompt: prompt, plan: data?.title || 'Architecture Plan' });
           scheduleSessionSave();
           
@@ -1047,10 +1051,12 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         } catch (err: any) {
           if (err?.abortedByUser || err?.message === 'ABORTED_BY_USER' || err?.name === 'AbortError') {
             set({ error: null });
-            return;
+            throw err;
           }
 
-          set({ error: err?.message || 'Failed to generate plan' });
+          const message = err?.message || 'Failed to generate plan';
+          set({ error: message, plan: '', planSteps: [], lastPlannedPrompt: '' });
+          throw (err instanceof Error ? err : new Error(message));
         } finally {
           set({ isPlanning: false });
         }

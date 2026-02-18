@@ -3007,7 +3007,15 @@ function App() {
             updateFile(resolvedPath, finalText);
             upsertFileNode(resolvedPath, finalText);
             upsertFile({ name, path: resolvedPath, content: finalText, language: getLanguageFromExtension(resolvedPath) });
+          } else if (event.mode === 'edit') {
+            // EDIT MODE: preserve existing content as backup
+            // The AI will send the full updated version — if stream is interrupted, old content stays
+            const prevWriting = useAIStore.getState().writingFilePath;
+            if (prevWriting) flushFileBuffers({ onlyPath: prevWriting, force: true });
+            fileChunkBuffersRef.current.delete(resolvedPath);
+            // Do NOT clear the file — keep existing content as safety net
           } else {
+            // CREATE MODE: clear and start fresh
             const prevWriting = useAIStore.getState().writingFilePath;
             if (prevWriting) flushFileBuffers({ onlyPath: prevWriting, force: true });
             fileChunkBuffersRef.current.delete(resolvedPath);

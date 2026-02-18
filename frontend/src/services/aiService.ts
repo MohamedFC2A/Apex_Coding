@@ -465,8 +465,11 @@ EXECUTION RULES:
    - **DEV SERVER**: \`npm run dev\` must start the frontend on \`0.0.0.0:3000\` (use \`--host 0.0.0.0 --port 3000 --strictPort\` for Vite, or \`next dev -H 0.0.0.0 -p 3000\` for Next).
    - **FULLSTACK** (if backend exists): backend listens on \`0.0.0.0:3001\` and frontend dev server proxies \`/api\` to the backend during dev.
 
-3. **FULL FILE OUTPUT**:
-   - ALWAYS output the FULL content of the file.
+3. **SURGICAL EDIT POLICY**:
+   - When modifying an EXISTING project, ONLY emit files that ACTUALLY CHANGE.
+   - Do NOT re-emit unchanged files. Leave them completely alone.
+   - For each changed file, output the FULL updated content of THAT file.
+   - Use [[PATCH_FILE: path | mode: edit]] for existing files, [[PATCH_FILE: path | mode: create]] for new files.
    - If a file is too large, split it into modules.
 
 4. **VALID HTML/CSS/JS**:

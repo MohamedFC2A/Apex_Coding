@@ -1233,13 +1233,13 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
           set({ writingFilePath: path });
           get().setFileStatus(path, 'writing');
-          if (mode === 'create') {
-             // Initialize file if not exists or overwrite?
-             // Usually start means overwrite unless append is true
+          if (mode !== 'edit') {
+             // CREATE mode: clear and start fresh
              if (!event.append) {
                 get().upsertFileNode(path, '');
              }
           }
+          // EDIT mode: keep existing content — new content will replace it via chunks
         } else if (type === 'chunk' && chunk) {
           const targetPath = state.writingFilePath || path;
           get().appendToFileNode(targetPath, chunk);

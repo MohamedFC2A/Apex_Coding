@@ -13,6 +13,7 @@ const { createRateLimiter } = require('./middleware/rateLimit');
 const { parseAllowedOrigins } = require('./utils/security');
 const { getCodeSandboxApiKey, createSandboxPreview, patchSandboxFiles, hibernateSandbox } = require('./utils/codesandbox');
 const { createFileOpParser } = require('./utils/fileOpParser');
+const { createFileOpPolicyGate, buildPolicyRepairPrompt } = require('./utils/fileOpPolicyGate');
 const {
   isMultiAgentArchitectEnabled,
   isResumePrompt,
@@ -1225,7 +1226,8 @@ const normalizeConstraints = (rawConstraints = {}, fallbackProjectType = null) =
     contextIntelligenceMode:
       rawConstraints?.contextIntelligenceMode === 'balanced_graph' ||
       rawConstraints?.contextIntelligenceMode === 'light' ||
-      rawConstraints?.contextIntelligenceMode === 'max'
+      rawConstraints?.contextIntelligenceMode === 'max' ||
+      rawConstraints?.contextIntelligenceMode === 'strict_full'
         ? rawConstraints.contextIntelligenceMode
         : 'balanced_graph'
   };
@@ -1275,6 +1277,7 @@ const attachConstraintsToPrompt = (prompt, constraints) => {
 const buildContextBundlePrompt = (contextBundle) => {
   if (!contextBundle || typeof contextBundle !== 'object') return '';
   const files = Array.isArray(contextBundle.files) ? contextBundle.files : [];
+  const manifest = Array.isArray(contextBundle.manifest) ? contextBundle.manifest : [];
   const activeFile = contextBundle.activeFile && typeof contextBundle.activeFile === 'object'
     ? contextBundle.activeFile
     : null;
@@ -1283,7 +1286,22 @@ const buildContextBundlePrompt = (contextBundle) => {
     : null;
 
   const lines = ['[CONTEXT BUNDLE V2]'];
+  lines.push(`manifest.count=${manifest.length}`);
   lines.push(`files.count=${files.length}`);
+  if (manifest.length > 0) {
+    const manifestLines = manifest
+      .slice(0, 120)
+      .map((entry) => {
+        const path = String(entry?.path || '').trim();
+        if (!path) return '';
+        return `${path} | ${String(entry?.type || 'other')} | ${Number(entry?.size || 0)}`;
+      })
+      .filter(Boolean);
+    if (manifestLines.length > 0) {
+      lines.push('manifest.entries=');
+      lines.push(...manifestLines);
+    }
+  }
   if (activeFile?.path) {
     lines.push(`active.path=${String(activeFile.path)}`);
     const activeContent = String(activeFile.content || '').slice(0, 4000);
@@ -1315,6 +1333,62 @@ const buildContextBundlePrompt = (contextBundle) => {
   }
 
   return lines.join('\n').trim();
+};
+
+const replayPatchThroughPolicyGate = (text, policyGate) => {
+  let violation = null;
+  const emittedEvents = [];
+  const parser = createFileOpParser((event) => {
+    if (violation) return;
+    const gateResult = policyGate.check(event);
+    if (!gateResult.allowed) {
+      violation = gateResult.violation || { code: 'POLICY_VIOLATION', message: 'Policy violation' };
+      return;
+    }
+    emittedEvents.push(event);
+  });
+  parser.push(String(text || ''));
+  parser.finalize();
+
+  if (violation) {
+    return { ok: false, violation, events: emittedEvents };
+  }
+  return { ok: true, events: emittedEvents };
+};
+
+const runSinglePolicyRepairAttempt = async ({
+  provider,
+  model,
+  codeSystemPrompt,
+  originalPrompt,
+  violation,
+  writePolicy,
+  workspaceAnalysis,
+  historyMessages,
+  timeoutMs = 150000
+}) => {
+  const repairPrompt = buildPolicyRepairPrompt({
+    originalPrompt,
+    violation,
+    writePolicy,
+    workspaceAnalysis
+  });
+
+  const request = {
+    model,
+    temperature: 0.0,
+    messages: [
+      { role: 'system', content: codeSystemPrompt },
+      ...(Array.isArray(historyMessages) ? historyMessages : []),
+      { role: 'user', content: repairPrompt }
+    ]
+  };
+
+  const completion = await Promise.race([
+    provider.createChatCompletion(request),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('POLICY_REPAIR_TIMEOUT')), timeoutMs))
+  ]);
+  return String(completion?.choices?.[0]?.message?.content || '').trim();
 };
 
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
@@ -1540,7 +1614,19 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
   };
 
   try {
-    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, contextBundle, history, architectMode } = req.body || {};
+    const {
+      prompt,
+      thinkingMode,
+      projectType,
+      constraints: rawConstraints,
+      contextMeta,
+      modelRouting,
+      contextBundle,
+      workspaceAnalysis,
+      writePolicy,
+      history,
+      architectMode
+    } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       res.status(400).send('Prompt is required');
       return;
@@ -1572,6 +1658,18 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
     res.setHeader('x-request-id', req.requestId);
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
     writeSse('status', 'streaming:Initializing stream');
+    if (workspaceAnalysis && typeof workspaceAnalysis === 'object') {
+      const confidence = Number(workspaceAnalysis.confidence || 0);
+      const required = Array.isArray(workspaceAnalysis.requiredReadSet) ? workspaceAnalysis.requiredReadSet.length : 0;
+      const expanded = Array.isArray(workspaceAnalysis.expandedReadSet) ? workspaceAnalysis.expandedReadSet.length : 0;
+      writeSse('status', `analysis:confidence=${confidence.toFixed(1)} required=${required} expanded=${expanded}`);
+      const threshold = Math.max(0, Number(writePolicy?.minContextConfidence || 0));
+      if (threshold > 0 && confidence < threshold) {
+        writeSse('status', `blocked:analysis confidence ${confidence.toFixed(1)} below threshold ${threshold.toFixed(1)}`);
+        res.end();
+        return;
+      }
+    }
 
     const executorRoute = getExecutorRouting(Boolean(thinkingMode), modelRouting);
     const model = executorRoute.model;
@@ -1586,14 +1684,71 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       `[generate] [${req.requestId}] model=${executorRoute.provider}:${executorRoute.model} architect=${Boolean(architectMode)} multiAgent=${multiAgentEnabled} resume=${resumePrompt} session=${contextMeta?.sessionId || 'none'}`
     );
 
-    if (multiAgentEnabled && !resumePrompt) {
-      let provider;
-      try {
-        provider = getLLMProvider(executorRoute.provider);
-      } catch {
-        provider = getLLMProvider('deepseek');
+    let provider;
+    try {
+      provider = getLLMProvider(executorRoute.provider);
+    } catch {
+      provider = getLLMProvider('deepseek');
+    }
+
+    let policyRepairUsed = false;
+    const emitPatchText = (patchText) => {
+      const fileOpParser = createFileOpParser((event) => {
+        writeSse('file_op', JSON.stringify(event));
+      });
+      const merged = String(patchText || '');
+      const CHUNK_SIZE = 1500;
+      for (let idx = 0; idx < merged.length; idx += CHUNK_SIZE) {
+        const chunk = merged.slice(idx, idx + CHUNK_SIZE);
+        fileOpParser.push(chunk);
+        writeSse('token', chunk);
+      }
+      fileOpParser.finalize();
+    };
+    const tryPolicyRepair = async (violation, sourcePatchText = '') => {
+      const violationMessage = `${violation?.code || 'POLICY_VIOLATION'}: ${violation?.message || 'Policy violation'}`;
+      writeSse('status', `policy_violation:${violationMessage}`);
+      if (policyRepairUsed) {
+        writeSse('status', `blocked:${violationMessage}`);
+        return null;
       }
 
+      policyRepairUsed = true;
+      writeSse('status', 'recovering:Policy repair attempt 1/1');
+      let repairedText = '';
+      try {
+        repairedText = await runSinglePolicyRepairAttempt({
+          provider,
+          model,
+          codeSystemPrompt: CODE_STREAM_SYSTEM_PROMPT,
+          originalPrompt: `${finalPrompt}\n\n[PREVIOUS_INVALID_PATCH_STREAM]\n${String(sourcePatchText || '').slice(0, 20000)}`,
+          violation,
+          writePolicy: writePolicy || {},
+          workspaceAnalysis: workspaceAnalysis || null,
+          historyMessages
+        });
+      } catch (repairError) {
+        const details = getErrorDetails(repairError);
+        writeSse('status', `blocked:Policy repair failed (${details.message})`);
+        return null;
+      }
+
+      const repairGate = createFileOpPolicyGate({
+        writePolicy: writePolicy || {},
+        workspaceAnalysis: workspaceAnalysis || null
+      });
+      const replay = replayPatchThroughPolicyGate(repairedText, repairGate);
+      if (!replay.ok) {
+        writeSse(
+          'status',
+          `blocked:${replay.violation?.code || 'POLICY_VIOLATION'}: ${replay.violation?.message || 'Policy violation'}`
+        );
+        return null;
+      }
+      return repairedText;
+    };
+
+    if (multiAgentEnabled && !resumePrompt) {
       try {
         const multiAgentResult = await runGenerateMultiAgent({
           prompt: finalPrompt,
@@ -1608,19 +1763,26 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
         });
 
         if (!multiAgentResult?.bypass) {
-          const fileOpParser = createFileOpParser((event) => {
-            writeSse('file_op', JSON.stringify(event));
+          const gate = createFileOpPolicyGate({
+            writePolicy: writePolicy || {},
+            workspaceAnalysis: workspaceAnalysis || null
           });
           writeSse('status', 'streaming:Receiving tokens');
-
           const merged = String(multiAgentResult?.text || '');
-          const CHUNK_SIZE = 1500;
-          for (let idx = 0; idx < merged.length; idx += CHUNK_SIZE) {
-            const chunk = merged.slice(idx, idx + CHUNK_SIZE);
-            fileOpParser.push(chunk);
-            writeSse('token', chunk);
+          const replay = replayPatchThroughPolicyGate(merged, gate);
+          if (!replay.ok) {
+            const repaired = await tryPolicyRepair(replay.violation, merged);
+            if (!repaired) {
+              res.end();
+              return;
+            }
+            emitPatchText(repaired);
+            writeSse('status', 'done:Complete');
+            res.end();
+            return;
           }
-          fileOpParser.finalize();
+
+          emitPatchText(merged);
 
           writeSse('status', 'done:Complete');
           res.end();
@@ -1982,32 +2144,61 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       signal: abortController.signal
     };
 
-    let provider;
-    try {
-      provider = getLLMProvider(executorRoute.provider);
-    } catch {
-      provider = getLLMProvider('deepseek');
-    }
+    let policyViolation = null;
+    const policyGate = createFileOpPolicyGate({
+      writePolicy: writePolicy || {},
+      workspaceAnalysis: workspaceAnalysis || null
+    });
     const fileOpParser = createFileOpParser((event) => {
+      if (policyViolation) return;
+      const gateResult = policyGate.check(event);
+      if (!gateResult.allowed) {
+        policyViolation = gateResult.violation || { code: 'POLICY_VIOLATION', message: 'Policy violation' };
+        try {
+          abortController.abort();
+        } catch {
+          // ignore
+        }
+        return;
+      }
       writeSse('file_op', JSON.stringify(event));
     });
     const stream = provider.streamChatCompletion(request, { signal: abortController.signal });
-    for await (const chunk of stream) {
-      const delta = chunk?.choices?.[0]?.delta || {};
-      const contentChunk = delta?.content;
-      if (typeof contentChunk !== 'string' || contentChunk.length === 0) continue;
+    try {
+      for await (const chunk of stream) {
+        const delta = chunk?.choices?.[0]?.delta || {};
+        const contentChunk = delta?.content;
+        if (typeof contentChunk !== 'string' || contentChunk.length === 0) continue;
 
-      if (!hasStartedStreaming) {
-        hasStartedStreaming = true;
-        if (keepAliveTimer) clearInterval(keepAliveTimer);
-        writeSse('status', 'streaming:Receiving tokens');
+        if (!hasStartedStreaming) {
+          hasStartedStreaming = true;
+          if (keepAliveTimer) clearInterval(keepAliveTimer);
+          writeSse('status', 'streaming:Receiving tokens');
+        }
+
+        // Pipe directly (raw stream). Frontend consumes as a text stream.
+        fileOpParser.push(contentChunk);
+        if (policyViolation) break;
+        writeSse('token', contentChunk);
       }
-
-      // Pipe directly (raw stream). Frontend consumes as a text stream.
-      fileOpParser.push(contentChunk);
-      writeSse('token', contentChunk);
+    } catch (streamError) {
+      if (!policyViolation) throw streamError;
     }
     fileOpParser.finalize();
+
+    if (policyViolation) {
+      const repaired = await tryPolicyRepair(policyViolation);
+      if (!repaired) {
+        res.end();
+        return;
+      }
+      emitPatchText(repaired);
+      if (keepAliveTimer) clearInterval(keepAliveTimer);
+      if (abortTimer) clearTimeout(abortTimer);
+      writeSse('status', 'done:Complete');
+      res.end();
+      return;
+    }
 
     if (keepAliveTimer) clearInterval(keepAliveTimer);
     if (abortTimer) clearTimeout(abortTimer);

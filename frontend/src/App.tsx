@@ -40,6 +40,11 @@ import type { GenerationConstraints } from './types/constraints';
 import { createFileMutationEngine } from './services/fileMutationEngine';
 import { buildContextBundle } from './services/contextRetrievalEngine';
 import { buildFrontendProjectModeScaffold, FRONTEND_PROJECT_MODE_VERSION } from './services/frontendProjectModeV12';
+import {
+  analyzeWorkspaceIntelligence,
+  buildStrictWritePolicy,
+  getWorkspaceBlockReason
+} from './services/workspaceIntelligence';
 
 // ============================================================================
 // GLOBAL AUTOSAVE - INDEPENDENT OF CHAT/COMPONENT LIFECYCLE
@@ -1309,6 +1314,9 @@ function App() {
     fileStatuses,
     contextBudget,
     brainEvents,
+    analysisReport,
+    policyViolations,
+    blockedReason,
     setPrompt,
     setProjectType,
     setSelectedFeatures,
@@ -1344,7 +1352,11 @@ function App() {
     executionPhase,
     setExecutionPhase,
     addBrainEvent,
-    clearBrainEvents
+    clearBrainEvents,
+    setAnalysisReport,
+    addPolicyViolation,
+    clearPolicyViolations,
+    setBlockedReason
   } = useAIStore();
 
   useEffect(() => {
@@ -1741,10 +1753,11 @@ function App() {
     const streamOk = !isGenerating || (lastTokenAt > 0 && tokenGapMs < 8000);
     const previewOk = runtimeStatus !== 'error';
 
+    if (blockedReason || policyViolations.length > 0) return 'DEGRADED: policy blocked';
     if (!streamOk) return 'DEGRADED: stream stalled';
     if (!previewOk) return `DEGRADED: preview ${runtimeMessage || 'error'}`;
     return 'OK';
-  }, [isGenerating, lastTokenAt, runtimeMessage, runtimeStatus]);
+  }, [blockedReason, isGenerating, lastTokenAt, policyViolations.length, runtimeMessage, runtimeStatus]);
 
   const queuedFilePaths = useMemo(
     () =>
@@ -1754,6 +1767,39 @@ function App() {
         .sort((a, b) => a.localeCompare(b)),
     [fileStatuses]
   );
+
+  const policyDiagnostics = useMemo(() => {
+    const lines: string[] = [];
+    if (analysisReport) {
+      lines.push(
+        `[analysis-report] confidence=${analysisReport.confidence.toFixed(1)} required=${analysisReport.requiredReadSet.length} expanded=${analysisReport.expandedReadSet.length} allowedEdit=${analysisReport.allowedEditPaths.length}`
+      );
+      if (analysisReport.allowedEditPaths.length > 0) {
+        const allowedPaths = analysisReport.allowedEditPaths.slice(0, 24).join(', ');
+        const suffix = analysisReport.allowedEditPaths.length > 24 ? ` ... (+${analysisReport.allowedEditPaths.length - 24})` : '';
+        lines.push(`[analysis-report] allowedEditPaths=${allowedPaths}${suffix}`);
+      }
+      if (analysisReport.allowedCreateRules.length > 0) {
+        const createRules = analysisReport.allowedCreateRules.slice(0, 12).map((rule) => rule.pattern).join(', ');
+        const suffix = analysisReport.allowedCreateRules.length > 12 ? ` ... (+${analysisReport.allowedCreateRules.length - 12})` : '';
+        lines.push(`[analysis-report] allowedCreateRules=${createRules}${suffix}`);
+      }
+      if (analysisReport.riskFlags.length > 0) {
+        lines.push(`[analysis-report] riskFlags=${analysisReport.riskFlags.join(', ')}`);
+      }
+    }
+    if (blockedReason) lines.push(`[blocked] ${blockedReason}`);
+    for (const issue of policyViolations) {
+      lines.push(`[policy-violation] ${issue}`);
+    }
+    return lines.join('\n');
+  }, [analysisReport, blockedReason, policyViolations]);
+
+  const consoleLogs = useMemo(() => {
+    if (!policyDiagnostics) return systemConsoleContent;
+    const base = String(systemConsoleContent || '').trimEnd();
+    return `${base}${base ? '\n' : ''}${policyDiagnostics}\n`;
+  }, [policyDiagnostics, systemConsoleContent]);
 
   const stamp = () => new Date().toLocaleTimeString([], { hour12: false });
   const logSystem = useCallback(
@@ -2033,7 +2079,11 @@ function App() {
       qualityGateMode: 'strict',
       siteArchitectureMode: 'adaptive_multi_page',
       fileControlMode: 'safe_full',
-      contextIntelligenceMode: 'balanced_graph'
+      contextIntelligenceMode: 'strict_full',
+      analysisMode: 'strict_full',
+      touchBudgetMode: 'minimal',
+      postProcessMode: 'safety_only',
+      minContextConfidence: 80
     };
   }, [constraintsEnforcement, customFeatureTags, effectiveProjectType, selectedFeatures]);
 
@@ -2237,6 +2287,55 @@ function App() {
     const scopedPrompt = mergePromptWithConstraints(basePrompt, generationConstraints);
     const agentContextBlock = buildAgentContextBlock(basePrompt);
     const scopedPromptWithAgentContext = `${scopedPrompt}\n\n${agentContextBlock}`.trim();
+    const minContextConfidence = Math.max(0, Number(generationConstraints.minContextConfidence ?? 80));
+    const projectSnapshotForAnalysis = useProjectStore.getState();
+    const previewSnapshotForAnalysis = usePreviewStore.getState();
+    const workspaceAnalysis = analyzeWorkspaceIntelligence({
+      files: projectSnapshotForAnalysis.files,
+      prompt: basePrompt,
+      activeFile: projectSnapshotForAnalysis.activeFile,
+      recentPreviewErrors: previewSnapshotForAnalysis.logs.slice(-32).map((entry) => String(entry.message || '')),
+      interactionMode,
+      minContextConfidence,
+      maxContextChars: 120_000
+    });
+    const writePolicy = buildStrictWritePolicy({
+      report: workspaceAnalysis,
+      minContextConfidence,
+      interactionMode
+    });
+    setAnalysisReport(workspaceAnalysis);
+    clearPolicyViolations();
+    setBlockedReason(null);
+    addBrainEvent({
+      source: 'system',
+      level: workspaceAnalysis.confidence < minContextConfidence ? 'warn' : 'info',
+      message: `Analysis confidence=${workspaceAnalysis.confidence.toFixed(1)} threshold=${minContextConfidence.toFixed(
+        1
+      )} required=${workspaceAnalysis.requiredReadSet.length} expanded=${workspaceAnalysis.expandedReadSet.length}`,
+      phase: 'planning'
+    });
+    logSystem(
+      `[analysis] confidence=${workspaceAnalysis.confidence.toFixed(1)} threshold=${minContextConfidence.toFixed(
+        1
+      )} required=${workspaceAnalysis.requiredReadSet.length} expanded=${workspaceAnalysis.expandedReadSet.length}`
+    );
+    const analysisBlockReason = getWorkspaceBlockReason(workspaceAnalysis, minContextConfidence);
+    if (analysisBlockReason) {
+      const blocked = `ANALYSIS_BLOCKED: ${analysisBlockReason}`;
+      setBlockedReason(blocked);
+      addPolicyViolation(blocked);
+      setError(blocked);
+      setExecutionPhase('interrupted');
+      addBrainEvent({
+        source: 'system',
+        level: 'error',
+        message: blocked,
+        phase: 'recovering'
+      });
+      logSystem(`[analysis] ${blocked}`);
+      return;
+    }
 
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     writeAutoResumePayload({
@@ -2312,6 +2411,7 @@ function App() {
       const filePathMap = new Map<string, string>();
       const partialPaths = new Set<string>();
       const filesByBaseName = new Map<string, string>();
+      const filesByDuplicatePurpose = new Map<string, string>();
       for (const file of useProjectStore.getState().files) {
         const existingPath = String(file.path || file.name || '').replace(/\\/g, '/').trim();
         if (!existingPath) continue;
@@ -2392,30 +2492,6 @@ function App() {
           .replace(/(?:\n[ \t]*)+$/, '');
       };
 
-      const BRANDING_FOOTER = `<footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
-  © 2026 Apex Coding | AI-Powered Developer Platform
-</footer>`;
-
-      const injectBrandingFooter = (html: string) => {
-        const signature = '© 2026 Apex Coding | AI-Powered Developer Platform';
-        if (html.includes(signature)) return html;
-
-        const footerBlock = `\n${BRANDING_FOOTER}\n`;
-        const bodyCloseMatch = html.match(/<\/body\s*>/i);
-        if (bodyCloseMatch && typeof bodyCloseMatch.index === 'number') {
-          const idx = bodyCloseMatch.index;
-          return html.slice(0, idx) + footerBlock + html.slice(idx);
-        }
-
-        const htmlCloseMatch = html.match(/<\/html\s*>/i);
-        if (htmlCloseMatch && typeof htmlCloseMatch.index === 'number') {
-          const idx = htmlCloseMatch.index;
-          return html.slice(0, idx) + footerBlock + html.slice(idx);
-        }
-
-        return html + footerBlock;
-      };
-
       const healHtmlDocument = (html: string) => {
         const text = String(html || '');
         const voidTags = new Set([
@@ -2465,8 +2541,7 @@ function App() {
 
         const cleaned = stripPartialMarkerAtEnd(existing.content || '');
         const healed = partial ? healHtmlDocument(cleaned) : cleaned;
-        const branded = injectBrandingFooter(healed);
-        const finalText = normalizeGeneratedContent(branded);
+        const finalText = normalizeGeneratedContent(healed);
 
         updateFile(path, finalText);
         upsertFileNode(path, finalText);
@@ -2923,10 +2998,9 @@ function App() {
 
       const deterministicHtmlSelfHeal = (path: string, source: string) => {
         const current = String(source || '');
-        const healed = healHtmlDocument(stripPartialMarkerAtEnd(current));
-        const branded = injectBrandingFooter(healed);
-        const repaired = branded !== current;
-        return { content: branded, repaired, ok: true as const, reason: '' };
+        const healed = normalizeGeneratedContent(healHtmlDocument(stripPartialMarkerAtEnd(current)));
+        const repaired = healed !== normalizeGeneratedContent(current);
+        return { content: healed, repaired, ok: true as const, reason: '' };
       };
 
       const applyDeterministicHiddenSyntaxSelfHeal = () => {
@@ -2978,11 +3052,97 @@ function App() {
 
 
       const SENSITIVE_PATH_RE = /(^|\/)(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|vite\.config\.(js|ts)|next\.config\.(js|mjs|ts)|tsconfig\.json)$/i;
+      const DUPLICATE_CSS_BASENAMES = new Set(['style.css', 'styles.css', 'main.css', 'app.css']);
+      const DUPLICATE_JS_BASENAMES = new Set(['script.js', 'main.js', 'app.js']);
       const normalizeRefPath = (value: string) =>
         String(value || '')
           .replace(/\\/g, '/')
           .replace(/^\.\//, '')
           .trim();
+      const normalizePolicyPath = (value: string) => normalizeRefPath(value).toLowerCase();
+      const duplicatePurposeKey = (baseName: string) => {
+        const lower = String(baseName || '').toLowerCase();
+        if (DUPLICATE_CSS_BASENAMES.has(lower)) return 'css:primary';
+        if (DUPLICATE_JS_BASENAMES.has(lower)) return 'js:primary';
+        return `file:${lower}`;
+      };
+      const registerDuplicatePurposePath = (path: string) => {
+        const normalized = normalizeRefPath(path);
+        if (!normalized) return;
+        const base = (normalized.split('/').pop() || normalized).toLowerCase();
+        const purpose = duplicatePurposeKey(base);
+        if (!filesByDuplicatePurpose.has(purpose)) {
+          filesByDuplicatePurpose.set(purpose, normalized);
+        }
+      };
+      const unregisterDuplicatePurposePath = (path: string) => {
+        const normalized = normalizeRefPath(path);
+        if (!normalized) return;
+        const base = (normalized.split('/').pop() || normalized).toLowerCase();
+        const purpose = duplicatePurposeKey(base);
+        const current = filesByDuplicatePurpose.get(purpose);
+        if (current && normalizePolicyPath(current) === normalizePolicyPath(normalized)) {
+          filesByDuplicatePurpose.delete(purpose);
+        }
+      };
+      for (const existingPath of filesByBaseName.values()) {
+        registerDuplicatePurposePath(existingPath);
+      }
+      const localAllowedEditSet = new Set((writePolicy?.allowedEditPaths || []).map((path) => normalizePolicyPath(path)));
+      const globToRegExp = (pattern: string) => {
+        const escaped = String(pattern || '')
+          .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+          .replace(/\*\*/g, '::DOUBLE_STAR::')
+          .replace(/\*/g, '[^/]*')
+          .replace(/::DOUBLE_STAR::/g, '.*');
+        return new RegExp(`^${escaped}$`, 'i');
+      };
+      const localCreateRuleRegexes = (writePolicy?.allowedCreateRules || [])
+        .map((rule) => {
+          try {
+            return globToRegExp(rule.pattern);
+          } catch {
+            return null;
+          }
+        })
+        .filter((item): item is RegExp => Boolean(item));
+      const localTouchedPaths = new Set<string>();
+      const localCreatedPaths = new Set<string>();
+      const localMaxTouched = Math.max(1, Number(writePolicy?.maxTouchedFiles || 1));
+      const isCreateAllowedByRule = (path: string) => {
+        const normalized = normalizeRefPath(path);
+        if (!normalized) return false;
+        if (localCreateRuleRegexes.length === 0) return false;
+        return localCreateRuleRegexes.some((re) => re.test(normalized));
+      };
+      const trackTouchedPath = (path: string) => {
+        const normalized = normalizePolicyPath(path);
+        if (!normalized) return true;
+        if (localTouchedPaths.has(normalized)) return true;
+        if (localTouchedPaths.size + 1 > localMaxTouched) return false;
+        localTouchedPaths.add(normalized);
+        return true;
+      };
+      const enforceLocalPolicyViolation = (code: string, message: string, path?: string) => {
+        const detail = `${code}: ${message}${path ? ` (${path})` : ''}`;
+        setBlockedReason(detail);
+        addPolicyViolation(detail);
+        setError(detail);
+        setExecutionPhase('interrupted');
+        logSystem(`[policy] ${detail}`);
+        addBrainEvent({
+          source: 'file',
+          level: 'error',
+          message: detail,
+          path,
+          phase: 'recovering'
+        });
+        try {
+          abortController.abort();
+        } catch {
+          // ignore
+        }
+      };
 
       const collectPathReferenceHits = (targetPath: string) => {
         const normalizedTarget = normalizeRefPath(targetPath);
@@ -3008,6 +3168,10 @@ function App() {
         /\b(import|imports|link|links|route|routing|rewrite|refactor|safe|cleanup|unused|orphan)\b/i.test(
           String(reason || '')
         );
+      const hasExplicitSecurityReason = (reason?: string) =>
+        /\b(security|vuln|vulnerability|cve|exploit|malware|credential|secret|token|compromise|exposure|leak)\b/i.test(
+          String(reason || '')
+        );
 
       const handleFileEvent = (incomingEvent: StreamFileEvent) => {
         const event = fileMutationEngine.applyFileOperation(incomingEvent);
@@ -3017,8 +3181,21 @@ function App() {
           if (!resolvedPath) return;
 
           const reason = String(event.reason || '').trim();
+          const normalizedDelete = normalizePolicyPath(resolvedPath);
+          if (interactionMode === 'edit' && !localAllowedEditSet.has(normalizedDelete)) {
+            enforceLocalPolicyViolation('LOCAL_POLICY_DELETE_OUT_OF_SCOPE', 'delete is outside allowed edit set', resolvedPath);
+            return;
+          }
+          if (!trackTouchedPath(resolvedPath)) {
+            enforceLocalPolicyViolation(
+              'LOCAL_POLICY_TOUCH_BUDGET_EXCEEDED',
+              `touch budget exceeded (${localTouchedPaths.size}/${localMaxTouched})`,
+              resolvedPath
+            );
+            return;
+          }
           const isSensitive = SENSITIVE_PATH_RE.test(resolvedPath);
-          if (isSensitive && !hasExplicitSafetyReason(reason)) {
+          if (isSensitive && !hasExplicitSecurityReason(reason)) {
             logSystem(`[SAFETY] Blocked delete for sensitive file: ${resolvedPath} (missing explicit reason)`);
             addBrainEvent({
               source: 'file',
@@ -3032,6 +3209,7 @@ function App() {
 
           deleteFile(resolvedPath);
           filesByBaseName.delete((resolvedPath.split('/').pop() || resolvedPath).toLowerCase());
+          unregisterDuplicatePurposePath(resolvedPath);
           setFilesFromProjectFiles(useProjectStore.getState().files);
           setFileStatus(resolvedPath, 'ready');
           logSystem(`[STATUS] Deleted ${resolvedPath}${reason ? ` (${reason})` : ''}`);
@@ -3052,8 +3230,26 @@ function App() {
           if (!fromPath || !toPath) return;
 
           const reason = String(event.reason || '').trim();
+          const normalizedFrom = normalizePolicyPath(fromPath);
+          const normalizedTo = normalizePolicyPath(toPath);
+          if (interactionMode === 'edit' && !localAllowedEditSet.has(normalizedFrom)) {
+            enforceLocalPolicyViolation('LOCAL_POLICY_MOVE_OUT_OF_SCOPE', 'move source is outside allowed edit set', fromPath);
+            return;
+          }
+          if (interactionMode === 'edit' && !localAllowedEditSet.has(normalizedTo) && !isCreateAllowedByRule(toPath)) {
+            enforceLocalPolicyViolation('LOCAL_POLICY_MOVE_TARGET_OUT_OF_SCOPE', 'move target is outside allowed scope', toPath);
+            return;
+          }
+          if (!trackTouchedPath(fromPath) || !trackTouchedPath(toPath)) {
+            enforceLocalPolicyViolation(
+              'LOCAL_POLICY_TOUCH_BUDGET_EXCEEDED',
+              `touch budget exceeded (${localTouchedPaths.size}/${localMaxTouched})`,
+              fromPath
+            );
+            return;
+          }
           const isSensitive = SENSITIVE_PATH_RE.test(fromPath);
-          if (isSensitive && !hasExplicitSafetyReason(reason)) {
+          if (isSensitive && !hasExplicitSecurityReason(reason)) {
             logSystem(`[SAFETY] Blocked move for sensitive file: ${fromPath} -> ${toPath}`);
             addBrainEvent({
               source: 'file',
@@ -3083,6 +3279,8 @@ function App() {
           moveFile(fromPath, toPath);
           filesByBaseName.delete((fromPath.split('/').pop() || fromPath).toLowerCase());
           filesByBaseName.set((toPath.split('/').pop() || toPath).toLowerCase(), toPath);
+          unregisterDuplicatePurposePath(fromPath);
+          registerDuplicatePurposePath(toPath);
           setFilesFromProjectFiles(useProjectStore.getState().files);
           setFileStatus(fromPath, 'ready');
           setFileStatus(toPath, 'ready');
@@ -3098,13 +3296,60 @@ function App() {
           return;
         }
 
-        let resolvedPath = resolveGeneratedPath(event.path || '');
+        const resolvedPath = resolveGeneratedPath(event.path || '');
         if (!resolvedPath) return;
 
         const baseName = resolvedPath.split('/').pop() || resolvedPath;
-        filesByBaseName.set(baseName.toLowerCase(), resolvedPath);
 
         if (event.type === 'start') {
+          const normalizedResolved = normalizePolicyPath(resolvedPath);
+          const mode = event.mode === 'edit' ? 'edit' : 'create';
+          if (mode === 'edit') {
+            const allowedByEditSet = localAllowedEditSet.has(normalizedResolved);
+            const allowedByCreateSession = localCreatedPaths.has(normalizedResolved);
+            if (interactionMode === 'edit' && !allowedByEditSet) {
+              enforceLocalPolicyViolation('LOCAL_POLICY_EDIT_OUT_OF_SCOPE', 'edit path is outside allowed edit set', resolvedPath);
+              return;
+            }
+            if (interactionMode !== 'edit' && !allowedByEditSet && !allowedByCreateSession) {
+              enforceLocalPolicyViolation('LOCAL_POLICY_EDIT_OUT_OF_SCOPE', 'edit path is outside generated/allowed scope', resolvedPath);
+              return;
+            }
+          } else {
+            if (!isCreateAllowedByRule(resolvedPath)) {
+              enforceLocalPolicyViolation('LOCAL_POLICY_CREATE_OUT_OF_SCOPE', 'create path is outside allowed create rules', resolvedPath);
+              return;
+            }
+
+            const lowerBase = baseName.toLowerCase();
+            const existingPath = filesByDuplicatePurpose.get(duplicatePurposeKey(lowerBase));
+            if (
+              existingPath &&
+              normalizePolicyPath(existingPath) !== normalizedResolved &&
+              (DUPLICATE_CSS_BASENAMES.has(lowerBase) || DUPLICATE_JS_BASENAMES.has(lowerBase))
+            ) {
+              enforceLocalPolicyViolation(
+                'LOCAL_POLICY_DUPLICATE_PURPOSE_CREATE',
+                `duplicate-purpose create blocked; canonical file already exists at ${existingPath}`,
+                resolvedPath
+              );
+              return;
+            }
+            localCreatedPaths.add(normalizedResolved);
+          }
+
+          if (!trackTouchedPath(resolvedPath)) {
+            enforceLocalPolicyViolation(
+              'LOCAL_POLICY_TOUCH_BUDGET_EXCEEDED',
+              `touch budget exceeded (${localTouchedPaths.size}/${localMaxTouched})`,
+              resolvedPath
+            );
+            return;
+          }
+
+          filesByBaseName.set(baseName.toLowerCase(), resolvedPath);
+          registerDuplicatePurposePath(resolvedPath);
+
           const previousWritingPath = useAIStore.getState().writingFilePath;
           if (previousWritingPath && previousWritingPath !== resolvedPath) {
             logSystem(`[STATUS] Switching file ${previousWritingPath} -> ${resolvedPath}`);
@@ -3219,16 +3464,26 @@ function App() {
             useAIStore.getState().setExecutionCursor(resolvedPath, event.line);
           }
 
-          let latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '';
-          latest = normalizeGeneratedContent(latest);
-          updateFile(resolvedPath, latest);
-          upsertFileNode(resolvedPath, latest);
-          upsertFile({
-            name: resolvedPath.split('/').pop() || resolvedPath,
-            path: resolvedPath,
-            content: latest,
-            language: getLanguageFromExtension(resolvedPath)
-          });
+          const readCurrentContent = () =>
+            String(useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '');
+          const commitContent = (nextContent: string) => {
+            const normalizedNext = normalizeGeneratedContent(nextContent);
+            const normalizedCurrent = normalizeGeneratedContent(readCurrentContent());
+            if (normalizedCurrent === normalizedNext) return false;
+            updateFile(resolvedPath, normalizedNext);
+            upsertFileNode(resolvedPath, normalizedNext);
+            upsertFile({
+              name: resolvedPath.split('/').pop() || resolvedPath,
+              path: resolvedPath,
+              content: normalizedNext,
+              language: getLanguageFromExtension(resolvedPath)
+            });
+            return true;
+          };
+
+          const originalNormalized = normalizeGeneratedContent(readCurrentContent());
+          let latest = originalNormalized;
+          commitContent(latest);
 
           const extension = resolvedPath.includes('.') ? (resolvedPath.split('.').pop() || '').toLowerCase() : '';
 
@@ -3236,14 +3491,7 @@ function App() {
             const healed = repairCommentKeywordGlue(latest);
             if (healed !== latest) {
               latest = healed;
-              updateFile(resolvedPath, healed);
-              upsertFileNode(resolvedPath, healed);
-              upsertFile({
-                name: resolvedPath.split('/').pop() || resolvedPath,
-                path: resolvedPath,
-                content: healed,
-                language: getLanguageFromExtension(resolvedPath)
-              });
+              commitContent(healed);
               logSystem(`[REPAIR] Fixed glued comment/code boundary in ${resolvedPath}`);
             }
           }
@@ -3252,14 +3500,7 @@ function App() {
             const cssResult = deterministicCssSelfHeal(resolvedPath, latest);
             if (cssResult.repaired) {
               latest = cssResult.content;
-              updateFile(resolvedPath, latest);
-              upsertFileNode(resolvedPath, latest);
-              upsertFile({
-                name: resolvedPath.split('/').pop() || resolvedPath,
-                path: resolvedPath,
-                content: latest,
-                language: getLanguageFromExtension(resolvedPath)
-              });
+              commitContent(latest);
               logSystem(`[REPAIR] Balanced CSS braces in ${resolvedPath}`);
             }
 
@@ -3303,7 +3544,7 @@ function App() {
 
           // Keep the AI file tree in sync without per-chunk updates.
           if (event.mode !== 'edit') {
-            upsertFileNode(resolvedPath, latest);
+            commitContent(latest);
           }
 
           if (effectivePartial) {
@@ -3380,6 +3621,46 @@ function App() {
                 level: 'info',
                 message: 'Heartbeat',
                 phase: 'heartbeat'
+              });
+              return;
+            }
+            if (phase === 'analysis') {
+              const detail = String(message || '').trim();
+              if (detail) {
+                logSystem(`[analysis] ${detail}`);
+                addBrainEvent({
+                  source: 'system',
+                  level: 'info',
+                  message: `analysis: ${detail}`,
+                  phase: 'planning'
+                });
+              }
+              return;
+            }
+            if (phase === 'policy_violation') {
+              const detail = String(message || '').trim() || 'Policy violation detected';
+              addPolicyViolation(detail);
+              setBlockedReason(detail);
+              logSystem(`[policy] ${detail}`);
+              addBrainEvent({
+                source: 'stream',
+                level: 'error',
+                message: detail,
+                phase: 'recovering'
+              });
+              return;
+            }
+            if (phase === 'blocked') {
+              const detail = String(message || '').trim() || 'Execution blocked by policy gate';
+              addPolicyViolation(detail);
+              setBlockedReason(detail);
+              setExecutionPhase('interrupted');
+              logSystem(`[policy] BLOCKED: ${detail}`);
+              addBrainEvent({
+                source: 'stream',
+                level: 'error',
+                message: `blocked: ${detail}`,
+                phase: 'recovering'
               });
               return;
             }
@@ -3475,7 +3756,9 @@ function App() {
             abortSignal: abortController.signal,
             resumeContext,
             history: buildHistoryPayload(),
-            constraints: generationConstraints
+            constraints: generationConstraints,
+            workspaceAnalysis,
+            writePolicy
           }
         );
       };
@@ -3744,7 +4027,12 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
               } | Retrieval coverage=${retrievalCoverageScore}%`
             );
           }
-          if (shouldAutoFix) {
+          const streamFileStatuses = Object.values(useAIStore.getState().fileStatuses || {});
+          const hasIntegrityFailureSignal =
+            partialPaths.size > 0 ||
+            streamFileStatuses.some((status) => status === 'partial' || status === 'compromised');
+
+          if (shouldAutoFix && hasIntegrityFailureSignal) {
             const qualitySummary = qualityViolations.length > 0 ? ` | Quality issues: ${qualityViolations.join(', ')}` : '';
             const routingSummary = routingViolations.length > 0 ? ` | Routing: ${routingViolations.join(', ')}` : '';
             const namingSummary = namingViolations.length > 0 ? ` | Naming: ${namingViolations.join(', ')}` : '';
@@ -3765,6 +4053,10 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                 }`
               );
             }
+          } else if (shouldAutoFix) {
+            logSystem(
+              `[constraints] Auto-fix skipped (safety-only mode): no partial/integrity failure signal. Retrieval coverage=${retrievalCoverageScore}%`
+            );
           } else if (!readyForFinalize) {
             logSystem('[constraints] Non-critical issues detected. Finalizing without extra edits to avoid unnecessary token usage.');
           }
@@ -3830,6 +4122,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     flushFileBuffers,
     flushReasoningBuffer,
     generatePlan,
+    interactionMode,
     isGenerating,
     isPlanning,
     modelMode,
@@ -3863,6 +4156,10 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     logSystem,
     setExecutionPhase,
     setFilesFromProjectFiles,
+    setAnalysisReport,
+    clearPolicyViolations,
+    addPolicyViolation,
+    setBlockedReason,
     getGenerationConstraints,
     buildAgentContextBlock,
     effectiveProjectType,
@@ -4704,7 +5001,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         thought={thinkingContent}
         status={thinkingStatus}
         error={error}
-        logs={systemConsoleContent}
+        logs={consoleLogs}
         events={brainEvents}
         executionPhase={executionPhase}
         writingFilePath={writingFilePath}

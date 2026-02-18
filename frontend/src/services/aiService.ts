@@ -8,6 +8,8 @@ import type { GenerationConstraints } from '@/types/constraints';
 import { buildAIOrganizationPolicyBlock, mergePromptWithConstraints } from '@/services/constraintPromptBuilder';
 import { buildContextBundle } from '@/services/contextRetrievalEngine';
 import { parseFileOpEventPayload } from '@/services/fileOpEvents';
+import type { WorkspaceAnalysisReport } from '@/types/context';
+import type { StrictWritePolicy } from '@/services/workspaceIntelligence';
 
 interface AIResponse {
   plan: string;
@@ -351,6 +353,8 @@ QUALITY:
             lastSuccessfulLine: number;
           };
           constraints?: GenerationConstraints;
+          workspaceAnalysis?: WorkspaceAnalysisReport | null;
+          writePolicy?: StrictWritePolicy | null;
         } = false
   ): Promise<void> {
     const { canMakeRequest, incrementRequests, tier } = useSubscriptionStore.getState();
@@ -367,6 +371,8 @@ QUALITY:
       const includeReasoning = Boolean(options.includeReasoning);
       const abortSignal = (options as any).abortSignal as AbortSignal | undefined;
       const constraints = options.constraints;
+      const workspaceAnalysis = options.workspaceAnalysis || null;
+      const writePolicy = options.writePolicy || null;
       const typingMsRaw = Number(options.typingMs ?? 26);
       const typingMs = Number.isFinite(typingMsRaw) ? typingMsRaw : 26;
       const resumeContext = options.resumeContext;
@@ -381,7 +387,9 @@ QUALITY:
         recentPreviewErrors: previewState.logs.slice(-24).map((entry) => String(entry.message || '')),
         prompt,
         mode: constraints?.contextIntelligenceMode || 'balanced_graph',
-        maxFiles: 24
+        maxFiles: constraints?.contextIntelligenceMode === 'strict_full' ? 40 : 24,
+        maxChars: 120_000,
+        workspaceAnalysis
       });
       const retrievalTrace = contextBundle.retrievalTrace;
       const normalizedFiles = contextBundle.files.map((item) => item.path);
@@ -1013,6 +1021,8 @@ ${constrainedPrompt}
               includeReasoning,
               context,
               contextBundle,
+              workspaceAnalysis,
+              writePolicy,
               history: options.history || [],
               constraints,
               contextMeta: buildContextMetaPayload({ retrievalTrace }),

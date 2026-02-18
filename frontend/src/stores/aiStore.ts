@@ -6,7 +6,12 @@ import { aiService } from '@/services/aiService';
 import { repairTruncatedContent } from '@/utils/codeRepair';
 import { normalizePlanCategory } from '@/utils/planCategory';
 import { loadSessionsFromDisk, saveSessionToDisk, type StoredHistorySession } from '@/utils/sessionDb';
-import type { ActiveModelProfile, CompressionSnapshot, ContextBudgetState } from '@/types/context';
+import type {
+  ActiveModelProfile,
+  CompressionSnapshot,
+  ContextBudgetState,
+  WorkspaceAnalysisReport
+} from '@/types/context';
 
 type ModelMode = 'fast' | 'thinking' | 'super';
 export type FileStreamStatus = 'ready' | 'queued' | 'writing' | 'partial' | 'compromised';
@@ -155,6 +160,9 @@ interface AIStoreState {
   contextBudget: ContextBudgetState;
   compressionSnapshot: CompressionSnapshot;
   brainEvents: BrainEvent[];
+  analysisReport: WorkspaceAnalysisReport | null;
+  policyViolations: string[];
+  blockedReason: string | null;
 }
 
 interface AIStoreActions {
@@ -213,6 +221,11 @@ interface AIStoreActions {
   recoverSession: () => void;
   addBrainEvent: (event: Omit<BrainEvent, 'id' | 'ts'> & { id?: string; ts?: number }) => void;
   clearBrainEvents: () => void;
+  setAnalysisReport: (report: WorkspaceAnalysisReport | null) => void;
+  setPolicyViolations: (issues: string[]) => void;
+  addPolicyViolation: (issue: string) => void;
+  clearPolicyViolations: () => void;
+  setBlockedReason: (reason: string | null) => void;
 }
 
 export type AIState = AIStoreState & AIStoreActions;
@@ -883,7 +896,10 @@ const buildInitialState = (): AIStoreState => ({
   currentSessionId: null,
   contextBudget: DEFAULT_CONTEXT_BUDGET,
   compressionSnapshot: DEFAULT_COMPRESSION_SNAPSHOT,
-  brainEvents: []
+  brainEvents: [],
+  analysisReport: null,
+  policyViolations: [],
+  blockedReason: null
 });
 
 const initialState: AIStoreState = buildInitialState();
@@ -1012,7 +1028,11 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             qualityGateMode: 'strict' as const,
             siteArchitectureMode: 'adaptive_multi_page' as const,
             fileControlMode: 'safe_full' as const,
-            contextIntelligenceMode: 'balanced_graph' as const
+            contextIntelligenceMode: 'strict_full' as const,
+            analysisMode: 'strict_full' as const,
+            touchBudgetMode: 'minimal' as const,
+            postProcessMode: 'safety_only' as const,
+            minContextConfidence: 80
           };
           const data = await aiService.generatePlan(prompt, thinkingMode, abortSignal, projectType, constraints, get().architectMode);
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
@@ -1116,6 +1136,22 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         }),
 
       clearBrainEvents: () => set({ brainEvents: [] }),
+
+      setAnalysisReport: (report) => set({ analysisReport: report }),
+
+      setPolicyViolations: (issues) => set({ policyViolations: Array.from(new Set((issues || []).map((item) => String(item || '').trim()).filter(Boolean))) }),
+
+      addPolicyViolation: (issue) =>
+        set((state) => {
+          const normalized = String(issue || '').trim();
+          if (!normalized) return state;
+          if (state.policyViolations.includes(normalized)) return state;
+          return { policyViolations: [...state.policyViolations, normalized] };
+        }),
+
+      clearPolicyViolations: () => set({ policyViolations: [] }),
+
+      setBlockedReason: (reason) => set({ blockedReason: reason ? String(reason) : null }),
 
   verifyIntegrity: () => {
     const { fileStatuses } = get();
@@ -1689,7 +1725,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           currentSessionId: sessionId,
           contextBudget: session.contextBudget || DEFAULT_CONTEXT_BUDGET,
           compressionSnapshot: session.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
-          brainEvents: []
+          brainEvents: [],
+          analysisReport: null,
+          policyViolations: [],
+          blockedReason: null
         });
       },
 
@@ -1734,7 +1773,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           currentSessionId: null,
           contextBudget: DEFAULT_CONTEXT_BUDGET,
           compressionSnapshot: DEFAULT_COMPRESSION_SNAPSHOT,
-          brainEvents: []
+          brainEvents: [],
+          analysisReport: null,
+          policyViolations: [],
+          blockedReason: null
          });
 
          // Clear persisted workspace before reload so "New Chat" doesn't restore old files.

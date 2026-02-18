@@ -88,7 +88,7 @@ type ContextSelectionOptions = {
   files: ContextGraphInputFile[];
   activeFile?: string | null;
   recentPreviewErrors?: string[];
-  mode?: 'balanced_graph' | 'light' | 'max';
+  mode?: 'balanced_graph' | 'light' | 'max' | 'strict_full';
   maxItems?: number;
 };
 
@@ -115,7 +115,7 @@ const scorePath = (
 
 export const selectContextRetrievalTrace = (options: ContextSelectionOptions): ContextRetrievalTrace => {
   const mode = options.mode || 'balanced_graph';
-  const maxItems = options.maxItems || (mode === 'light' ? 24 : mode === 'max' ? 90 : 56);
+  const maxItems = options.maxItems || (mode === 'light' ? 24 : mode === 'max' ? 90 : mode === 'strict_full' ? 120 : 56);
   const files = options.files || [];
   const activeFile = options.activeFile || '';
   const recentPreviewErrors = (options.recentPreviewErrors || []).map((item) => String(item || ''));

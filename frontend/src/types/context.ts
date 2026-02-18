@@ -73,5 +73,38 @@ export interface ContextRetrievalTrace {
   budgetUsed: number;
   budgetMax: number;
   generatedAt: number;
-  strategy: 'balanced_graph' | 'light' | 'max';
+  strategy: 'balanced_graph' | 'light' | 'max' | 'strict_full';
+}
+
+export interface WorkspaceManifestEntry {
+  path: string;
+  hash: string;
+  size: number;
+  type: 'code' | 'config' | 'asset' | 'doc' | 'other';
+  extension: string;
+}
+
+export interface WorkspaceCoverageMetrics {
+  requiredSetCoverage: number;
+  dependencyCoverage: number;
+  previewSignalCoverage: number;
+  activeRecencyCoverage: number;
+  tokenHeadroomCoverage: number;
+  overallConfidence: number;
+}
+
+export interface WorkspaceAllowedCreateRule {
+  pattern: string;
+  reason: string;
+}
+
+export interface WorkspaceAnalysisReport {
+  manifest: WorkspaceManifestEntry[];
+  requiredReadSet: string[];
+  expandedReadSet: string[];
+  allowedEditPaths: string[];
+  allowedCreateRules: WorkspaceAllowedCreateRule[];
+  confidence: number;
+  coverageMetrics: WorkspaceCoverageMetrics;
+  riskFlags: string[];
 }

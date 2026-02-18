@@ -2604,26 +2604,191 @@ function App() {
         return { content: current, repaired: false, ok: false as const, reason: integrity.reason };
       };
 
+      const repairScriptBracketMismatch = (source: string) => {
+        const text = String(source || '');
+        if (!text.trim()) return text;
+
+        const closers: Record<string, string> = { '{': '}', '(': ')', '[': ']' };
+        const expectedOpeners: Record<string, string> = { '}': '{', ')': '(', ']': '[' };
+        const stack: string[] = [];
+
+        let inSingle = false;
+        let inDouble = false;
+        let inTemplate = false;
+        let inLineComment = false;
+        let inBlockComment = false;
+        let escaped = false;
+        let changed = false;
+        const out: string[] = [];
+
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          const next = text[i + 1];
+
+          if (inLineComment) {
+            out.push(ch);
+            if (ch === '\n') inLineComment = false;
+            continue;
+          }
+
+          if (inBlockComment) {
+            out.push(ch);
+            if (ch === '*' && next === '/') {
+              out.push(next);
+              inBlockComment = false;
+              i += 1;
+            }
+            continue;
+          }
+
+          if (inSingle) {
+            out.push(ch);
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '\'') inSingle = false;
+            continue;
+          }
+
+          if (inDouble) {
+            out.push(ch);
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inDouble = false;
+            continue;
+          }
+
+          if (inTemplate) {
+            out.push(ch);
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '`') inTemplate = false;
+            continue;
+          }
+
+          if (ch === '/' && next === '/') {
+            out.push(ch, next);
+            inLineComment = true;
+            i += 1;
+            continue;
+          }
+
+          if (ch === '/' && next === '*') {
+            out.push(ch, next);
+            inBlockComment = true;
+            i += 1;
+            continue;
+          }
+
+          if (ch === '\'') {
+            out.push(ch);
+            inSingle = true;
+            continue;
+          }
+          if (ch === '"') {
+            out.push(ch);
+            inDouble = true;
+            continue;
+          }
+          if (ch === '`') {
+            out.push(ch);
+            inTemplate = true;
+            continue;
+          }
+
+          if (ch === '{' || ch === '(' || ch === '[') {
+            stack.push(ch);
+            out.push(ch);
+            continue;
+          }
+
+          if (ch === '}' || ch === ')' || ch === ']') {
+            const expected = expectedOpeners[ch];
+            const top = stack.length > 0 ? stack[stack.length - 1] : '';
+            if (top !== expected) {
+              changed = true;
+              continue;
+            }
+            stack.pop();
+            out.push(ch);
+            continue;
+          }
+
+          out.push(ch);
+        }
+
+        if (stack.length > 0) {
+          changed = true;
+          for (let i = stack.length - 1; i >= 0; i--) {
+            const opener = stack[i];
+            out.push(closers[opener] || '');
+          }
+        }
+
+        return changed ? out.join('') : text;
+      };
+
+      const deterministicJsSelfHeal = (path: string, source: string, extension: string) => {
+        const current = String(source || '');
+        const firstPass = repairCommentKeywordGlue(current);
+        const secondPass = repairScriptBracketMismatch(firstPass);
+        if (secondPass === current) {
+          const integrity = analyzeScriptIntegrity(current, extension);
+          return { content: current, repaired: false, ok: integrity.ok, reason: integrity.reason };
+        }
+
+        const post = analyzeScriptIntegrity(secondPass, extension);
+        if (post.ok) {
+          return { content: secondPass, repaired: true, ok: true as const, reason: '' };
+        }
+
+        return { content: current, repaired: false, ok: false as const, reason: post.reason || 'Syntax check failed' };
+      };
+
+      const deterministicHtmlSelfHeal = (path: string, source: string) => {
+        const current = String(source || '');
+        const healed = healHtmlDocument(stripPartialMarkerAtEnd(current));
+        const branded = injectBrandingFooter(healed);
+        const repaired = branded !== current;
+        return { content: branded, repaired, ok: true as const, reason: '' };
+      };
+
       const applyDeterministicHiddenSyntaxSelfHeal = () => {
         const filesSnapshot = useProjectStore.getState().files;
         const touched: string[] = [];
+        const createOrUpdateFile = (path: string, content: string) => {
+          updateFile(path, content);
+          upsertFileNode(path, content);
+          upsertFile({
+            name: path.split('/').pop() || path,
+            path,
+            content,
+            language: getLanguageFromExtension(path)
+          });
+        };
 
         for (const file of filesSnapshot) {
           const path = String(file.path || file.name || '').trim();
           if (!path) continue;
-          if (!path.toLowerCase().endsWith('.css')) continue;
+          const lower = path.toLowerCase();
+          const content = String(file.content || '');
 
-          const result = deterministicCssSelfHeal(path, String(file.content || ''));
+          let result:
+            | { content: string; repaired: boolean; ok: boolean; reason: string }
+            | null = null;
+
+          if (lower.endsWith('.css')) {
+            result = deterministicCssSelfHeal(path, content);
+          } else if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) {
+            const extension = lower.split('.').pop() || 'js';
+            result = deterministicJsSelfHeal(path, content, extension);
+          } else if (lower.endsWith('/index.html') || lower === 'index.html') {
+            result = deterministicHtmlSelfHeal(path, content);
+          }
+
+          if (!result) continue;
           if (!result.repaired) continue;
 
-          updateFile(path, result.content);
-          upsertFileNode(path, result.content);
-          upsertFile({
-            name: path.split('/').pop() || path,
-            path,
-            content: result.content,
-            language: getLanguageFromExtension(path)
-          });
+          createOrUpdateFile(path, result.content);
           touched.push(path);
         }
 
@@ -3090,6 +3255,108 @@ function App() {
         );
       };
 
+      type ConstraintValidationSnapshot = ReturnType<typeof validateConstraints>;
+
+      const hasBlockingConstraintIssues = (snapshot: ConstraintValidationSnapshot) =>
+        snapshot.shouldAutoFix || !snapshot.readyForFinalize;
+
+      const buildConstraintSignature = (snapshot: ConstraintValidationSnapshot) =>
+        [
+          ...snapshot.missingFeatures.map((x) => `missing:${x}`),
+          ...snapshot.criticalViolations.map((x) => `critical:${x}`),
+          ...snapshot.hiddenIssues.map((x) => `hidden:${x}`)
+        ]
+          .sort()
+          .join('|');
+
+      const buildAutoFixIssueBatches = (snapshot: ConstraintValidationSnapshot) => {
+        const hidden = snapshot.hiddenIssues.map((x) => `hidden:${x}`);
+        const missing = snapshot.missingFeatures.map((x) => `missing:${x}`);
+        const critical = snapshot.criticalViolations.map((x) => `critical:${x}`);
+        const routing = snapshot.routingViolations.map((x) => `routing:${x}`);
+        const quality = snapshot.qualityViolations.map((x) => `quality:${x}`);
+        const naming = snapshot.namingViolations.map((x) => `naming:${x}`);
+
+        const batches: Array<{ label: string; issues: string[] }> = [];
+        if (hidden.length > 0) batches.push({ label: 'hidden-syntax', issues: hidden });
+        if (missing.length > 0 || critical.length > 0) {
+          batches.push({ label: 'critical-structure', issues: [...missing, ...critical] });
+        }
+        if (routing.length > 0) batches.push({ label: 'routing-integrity', issues: routing });
+        const qualityPack = [...quality, ...naming];
+        if (qualityPack.length > 0) batches.push({ label: 'quality-hardening', issues: qualityPack });
+
+        const seen = new Set<string>();
+        return batches
+          .map((batch) => ({
+            ...batch,
+            issues: batch.issues.filter((issue) => {
+              const key = String(issue || '').trim();
+              if (!key || seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+          }))
+          .filter((batch) => batch.issues.length > 0);
+      };
+
+      const runSmartConstraintAutoFix = async (initial: ConstraintValidationSnapshot) => {
+        const MAX_AUTO_FIX_ROUNDS = 3;
+        let validation = initial;
+        let signature = buildConstraintSignature(validation);
+
+        for (let round = 1; round <= MAX_AUTO_FIX_ROUNDS; round++) {
+          if (!hasBlockingConstraintIssues(validation)) break;
+
+          const deterministicHeals = applyDeterministicHiddenSyntaxSelfHeal();
+          if (deterministicHeals.length > 0) {
+            logSystem(`[constraints] Deterministic syntax self-heal: ${deterministicHeals.join(', ')}`);
+          }
+
+          validation = validateConstraints(useProjectStore.getState().files, generationConstraints);
+          if (!hasBlockingConstraintIssues(validation)) break;
+
+          const batches = buildAutoFixIssueBatches(validation);
+          if (batches.length === 0) break;
+
+          let progressed = false;
+          for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
+            logSystem(
+              `[constraints] Smart auto-fix round ${round}/${MAX_AUTO_FIX_ROUNDS} · ${batch.label} (${batchIndex + 1}/${batches.length})`
+            );
+
+            const repairPrompt = buildConstraintsRepairPrompt(batch.issues, generationConstraints, {
+              focus: batch.label,
+              attempt: round,
+              maxAttempts: MAX_AUTO_FIX_ROUNDS,
+              recentlyHealedFiles: deterministicHeals
+            });
+            await runStream(repairPrompt);
+
+            const postHeals = applyDeterministicHiddenSyntaxSelfHeal();
+            if (postHeals.length > 0) {
+              logSystem(`[constraints] Post auto-fix syntax self-heal: ${postHeals.join(', ')}`);
+            }
+
+            const nextValidation = validateConstraints(useProjectStore.getState().files, generationConstraints);
+            const nextSignature = buildConstraintSignature(nextValidation);
+            if (nextSignature !== signature) progressed = true;
+            signature = nextSignature;
+            validation = nextValidation;
+
+            if (!hasBlockingConstraintIssues(validation)) break;
+          }
+
+          if (!progressed) {
+            logSystem('[constraints] Smart auto-fix stalled (no issue delta). Using best-effort result.');
+            break;
+          }
+        }
+
+        return validation;
+      };
+
       if (!SUPER_MODE_TEMP_DISABLED && modelMode === 'super') {
         setExecutionPhase('planning');
         logSystem('[SUPER-THINKING] Initializing Fast-Mode Blueprint...');
@@ -3222,25 +3489,20 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       }
 
       if (useAIStore.getState().executionPhase !== 'interrupted' && partialPaths.size === 0) {
-        const preGateHealed = applyDeterministicHiddenSyntaxSelfHeal();
-        if (preGateHealed.length > 0) {
-          logSystem(`[constraints] Deterministic syntax self-heal: ${preGateHealed.join(', ')}`);
-        }
-
         const currentFiles = useProjectStore.getState().files;
         if (generationConstraints.enforcement === 'hard') {
+          const initialValidation = validateConstraints(currentFiles, generationConstraints);
           const {
             missingFeatures,
             qualityViolations,
             routingViolations,
             namingViolations,
-            criticalViolations,
             advisoryViolations,
             hiddenIssues,
             shouldAutoFix,
             retrievalCoverageScore,
             readyForFinalize
-          } = validateConstraints(currentFiles, generationConstraints);
+          } = initialValidation;
           if (advisoryViolations.length > 0 && !shouldAutoFix) {
             logSystem(
               `[constraints] Advisory findings only (no auto-fix): ${advisoryViolations.slice(0, 8).join(', ')}${
@@ -3256,23 +3518,8 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
             logSystem(
               `[constraints] Critical auto-fix required. Missing features: ${missingFeatures.join(', ') || 'none'}${qualitySummary}${routingSummary}${namingSummary}${hiddenSummary} | Retrieval coverage=${retrievalCoverageScore}%`
             );
-            const repairPrompt = buildConstraintsRepairPrompt(
-              [
-                ...missingFeatures,
-                ...criticalViolations.map((issue) => `critical:${issue}`),
-                ...hiddenIssues.map((issue) => `hidden:${issue}`)
-              ],
-              generationConstraints
-            );
-            await runStream(repairPrompt);
-
-            const postAutoFixHealed = applyDeterministicHiddenSyntaxSelfHeal();
-            if (postAutoFixHealed.length > 0) {
-              logSystem(`[constraints] Post auto-fix syntax self-heal: ${postAutoFixHealed.join(', ')}`);
-            }
-
-            const postFixValidation = validateConstraints(useProjectStore.getState().files, generationConstraints);
-            if (postFixValidation.shouldAutoFix || !postFixValidation.readyForFinalize) {
+            const postFixValidation = await runSmartConstraintAutoFix(initialValidation);
+            if (hasBlockingConstraintIssues(postFixValidation)) {
               const unresolved = [
                 ...postFixValidation.missingFeatures.map((x) => `missing:${x}`),
                 ...postFixValidation.criticalViolations.map((x) => `critical:${x}`),

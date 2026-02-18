@@ -169,11 +169,31 @@ export const mergePromptWithConstraints = (prompt: string, constraints: Generati
 
 export const buildConstraintsRepairPrompt = (
   issues: string[],
-  constraints: GenerationConstraints
+  constraints: GenerationConstraints,
+  options?: {
+    focus?: string;
+    attempt?: number;
+    maxAttempts?: number;
+    recentlyHealedFiles?: string[];
+  }
 ): string => {
   const issueList = issues.map((id) => `- ${id}`).join('\n');
+  const focus = String(options?.focus || '').trim();
+  const attempt = Number(options?.attempt || 0);
+  const maxAttempts = Number(options?.maxAttempts || 0);
+  const recentHeals =
+    Array.isArray(options?.recentlyHealedFiles) && options?.recentlyHealedFiles.length > 0
+      ? options.recentlyHealedFiles.map((file) => `- ${file}`).join('\n')
+      : '- none';
+
   return [
     'SMART AUTO-FIX: patch ONLY critical blockers in the current project.',
+    '',
+    '[AUTO-FIX CONTEXT]',
+    `Focus Area: ${focus || 'general'}`,
+    `Attempt: ${attempt > 0 ? attempt : 1}${maxAttempts > 0 ? `/${maxAttempts}` : ''}`,
+    'Deterministic pre-heals:',
+    recentHeals,
     '',
     '[CRITICAL ISSUES]',
     issueList || '- none',

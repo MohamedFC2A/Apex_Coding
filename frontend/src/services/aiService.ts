@@ -104,6 +104,37 @@ const getErrorMessage = (err: any, fallback: string) => {
   );
 };
 
+const BACKEND_CHAT_PROMPT_LIMIT = 80_000;
+const BACKEND_PLAN_PROMPT_LIMIT = 30_000;
+const CLIENT_PROMPT_SAFETY_MARGIN = 0.9;
+
+const trimPromptForBackend = (rawPrompt: string, backendLimit: number) => {
+  const prompt = String(rawPrompt || '');
+  const safeLimit = Math.max(2_000, Math.floor(Number(backendLimit || 0) * CLIENT_PROMPT_SAFETY_MARGIN));
+  if (prompt.length <= safeLimit) {
+    return { prompt, truncated: false, omittedChars: 0, safeLimit };
+  }
+
+  const marker =
+    `\n\n[PROMPT_TRIMMED_FOR_TRANSPORT]\n` +
+    `Some middle context was omitted to fit backend request limits.\n` +
+    `Prioritize the latest request details and end constraints.\n\n`;
+  const available = Math.max(1_000, safeLimit - marker.length);
+  const headSize = Math.floor(available * 0.62);
+  const tailSize = Math.max(300, available - headSize);
+  const head = prompt.slice(0, headSize);
+  const tail = prompt.slice(Math.max(headSize, prompt.length - tailSize));
+  const compact = `${head}${marker}${tail}`;
+  const finalPrompt = compact.length > safeLimit ? compact.slice(0, safeLimit) : compact;
+
+  return {
+    prompt: finalPrompt,
+    truncated: true,
+    omittedChars: Math.max(0, prompt.length - finalPrompt.length),
+    safeLimit
+  };
+};
+
 export const aiService = {
   async getProviderStatus(): Promise<{ configured: boolean; code?: string; hint?: string | null; provider?: string }> {
     const response = await fetch(apiUrl('/ai/provider-status'), {
@@ -173,9 +204,10 @@ STRICT PLANNING RULES:
           const selectedProjectType = constraints?.projectMode || projectType;
           const normalizedProjectType = (selectedProjectType === 'FULL_STACK' ? 'FULL_STACK' : 'FRONTEND_ONLY') as GenerationConstraints['projectMode'];
           const organizationPolicyBlock = buildAIOrganizationPolicyBlock(normalizedProjectType);
+          const transportPrompt = trimPromptForBackend(prompt, BACKEND_PLAN_PROMPT_LIMIT);
           const enhancedRequestPrompt = constraints
-            ? mergePromptWithConstraints(prompt, constraints)
-            : prompt;
+            ? mergePromptWithConstraints(transportPrompt.prompt, constraints)
+            : transportPrompt.prompt;
           const explicitFrameworkRequested = hasExplicitFrameworkRequest(enhancedRequestPrompt);
 
           // Add projectType-specific guidelines
@@ -376,6 +408,8 @@ QUALITY:
       const typingMsRaw = Number(options.typingMs ?? 26);
       const typingMs = Number.isFinite(typingMsRaw) ? typingMsRaw : 26;
       const resumeContext = options.resumeContext;
+      const transportPrompt = trimPromptForBackend(prompt, BACKEND_CHAT_PROMPT_LIMIT);
+      const effectivePrompt = transportPrompt.prompt;
 
       // Inject Deep Context
       const projectState = useProjectStore.getState();
@@ -385,7 +419,7 @@ QUALITY:
         files: projectState.files,
         activeFile: projectState.activeFile,
         recentPreviewErrors: previewState.logs.slice(-24).map((entry) => String(entry.message || '')),
-        prompt,
+        prompt: effectivePrompt,
         mode: constraints?.contextIntelligenceMode || 'balanced_graph',
         maxFiles: constraints?.contextIntelligenceMode === 'strict_full' ? 40 : 24,
         maxChars: 120_000,
@@ -425,7 +459,7 @@ QUALITY:
         completedFiles = new Set<string>(resumeContext.completedFiles);
       }
 
-      const constrainedPrompt = constraints ? mergePromptWithConstraints(prompt, constraints) : prompt;
+      const constrainedPrompt = constraints ? mergePromptWithConstraints(effectivePrompt, constraints) : effectivePrompt;
       const explicitFrameworkRequested = hasExplicitFrameworkRequest(constrainedPrompt);
       const frontendStrictModeBanner =
         selectedProjectMode === 'FRONTEND_ONLY'
@@ -548,6 +582,12 @@ ${constrainedPrompt}
 `.trim();
 
       onMeta({ provider: 'vercel-backend', baseURL: getApiBaseUrl(), thinkingMode, architectMode });
+      if (transportPrompt.truncated) {
+        onStatus(
+          'streaming',
+          `Prompt trimmed automatically (${transportPrompt.omittedChars} chars omitted) to satisfy backend size limits.`
+        );
+      }
       onStatus('streaming', 'Generating…');
 
       // ALWAYS use enhancedPrompt to enforce strict rules and context

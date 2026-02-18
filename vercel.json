@@ -16,11 +16,12 @@
       "dest": "backend/index.js"
     },
     {
-      "handle": "filesystem"
+      "src": "/_next/(.*)",
+      "dest": "frontend/_next/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "frontend/package.json"
+      "dest": "frontend/$1"
     }
   ]
 }

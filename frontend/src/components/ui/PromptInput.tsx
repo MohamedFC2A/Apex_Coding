@@ -352,9 +352,9 @@ interface PromptInputProps {
   onToggleConstraintsPanel?: () => void;
   constraintsSummary?: string;
   constraintsLabel?: string;
-  completionSuggestion?: { question: string; actionLabel: string } | null;
-  onApplyCompletionSuggestion?: () => void;
-  onDismissCompletionSuggestion?: () => void;
+  completionSuggestions?: Array<{ question: string; actionLabel: string }>;
+  onApplyCompletionSuggestion?: (index: number) => void;
+  onDismissCompletionSuggestions?: () => void;
 }
 
 export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
@@ -375,9 +375,9 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
       onToggleConstraintsPanel,
       constraintsSummary,
       constraintsLabel,
-      completionSuggestion,
+      completionSuggestions,
       onApplyCompletionSuggestion,
-      onDismissCompletionSuggestion
+      onDismissCompletionSuggestions
     },
     forwardedRef
   ) => {
@@ -472,7 +472,7 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
           </ProjectModeSwitch>
         </ProjectModeRow>
 
-        {recommendation || completionSuggestion ? (
+        {recommendation || (completionSuggestions && completionSuggestions.length > 0) ? (
           <NoticeStack>
             {recommendation ? (
               <NoticeCard $tone="warning">
@@ -485,22 +485,27 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
               </NoticeCard>
             ) : null}
 
-            {completionSuggestion ? (
-              <NoticeCard $tone="info">
-                <NoticeText>{completionSuggestion.question}</NoticeText>
-                <NoticeActions>
-                  <NoticeActionButton type="button" onClick={onApplyCompletionSuggestion}>
-                    {completionSuggestion.actionLabel || 'Apply'}
-                  </NoticeActionButton>
-                  <NoticeDismissButton
-                    type="button"
-                    onClick={onDismissCompletionSuggestion}
-                    aria-label="Dismiss suggestion"
-                  >
-                    ×
-                  </NoticeDismissButton>
-                </NoticeActions>
-              </NoticeCard>
+            {completionSuggestions && completionSuggestions.length > 0 ? (
+              <>
+                {completionSuggestions.map((suggestion, idx) => (
+                  <NoticeCard $tone="info" key={suggestion.actionLabel + idx}>
+                    <NoticeText>{suggestion.question}</NoticeText>
+                    <NoticeActions>
+                      <NoticeActionButton type="button" onClick={() => onApplyCompletionSuggestion?.(idx)}>
+                        {suggestion.actionLabel || 'Apply'}
+                      </NoticeActionButton>
+                    </NoticeActions>
+                  </NoticeCard>
+                ))}
+                <NoticeDismissButton
+                  type="button"
+                  onClick={onDismissCompletionSuggestions}
+                  aria-label="Dismiss all suggestions"
+                  style={{ alignSelf: 'flex-end', marginTop: '-4px' }}
+                >
+                  × Dismiss All
+                </NoticeDismissButton>
+              </>
             ) : null}
           </NoticeStack>
         ) : null}

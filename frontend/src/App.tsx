@@ -53,6 +53,11 @@ type AutoResumePayload = {
   prompt: string;
   at: number;
   attempts?: number;
+  runId?: string;
+  state?: 'running' | 'completed' | 'stopped' | 'failed';
+  resumeEligible?: boolean;
+  lastPhase?: string;
+  lastWritingPath?: string;
 };
 
 const readAutoResumePayload = (): AutoResumePayload | null => {
@@ -856,6 +861,25 @@ const ChatBubbleText = styled.div`
   word-break: break-word;
 `;
 
+const ChatRoundBadge = styled.span`
+  font-size: 9px;
+  font-weight: 600;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  vertical-align: middle;
+`;
+
+const ChatTimestamp = styled.span`
+  font-size: 9px;
+  font-weight: 400;
+  margin-left: 8px;
+  color: rgba(255, 255, 255, 0.35);
+  vertical-align: middle;
+`;
+
 const ChatEmpty = styled.div`
   border: 1px dashed rgba(255, 255, 255, 0.12);
   border-radius: 10px;
@@ -1191,12 +1215,12 @@ const extractTopFolders = (paths: string[]) => {
     .join(', ');
 };
 
-const buildCompletionSuggestion = (args: {
+const buildCompletionSuggestions = (args: {
   selectedFeatures: string[];
   projectMode: ProjectType;
   files: Array<{ path?: string; name?: string; content?: string }>;
   lastPrompt: string;
-}): CompletionSuggestion | null => {
+}): CompletionSuggestion[] => {
   const { selectedFeatures, projectMode, files, lastPrompt } = args;
   const textSample = files
     .slice(0, 40)
@@ -1204,57 +1228,61 @@ const buildCompletionSuggestion = (args: {
     .join('\n')
     .toLowerCase();
 
+  const suggestions: CompletionSuggestion[] = [];
+
   if (!selectedFeatures.includes('responsive-mobile-first')) {
-    return {
+    suggestions.push({
       id: 'responsive-mobile-first',
       question: 'اقتراح: هل تريد إضافة تحسين Mobile-first كامل للواجهات؟',
       actionLabel: 'Add Mobile UX',
       prompt: 'Please improve the project with a complete mobile-first responsive pass, optimize spacing/typography for phones, and fix overflow issues across all key screens.'
-    };
+    });
   }
 
   if (!selectedFeatures.includes('a11y-landmarks')) {
-    return {
+    suggestions.push({
       id: 'a11y-landmarks',
       question: 'اقتراح: هل تضيف تحسينات Accessibility احترافية (A11y)؟',
       actionLabel: 'Add A11y',
       prompt: 'Apply a full accessibility pass: semantic landmarks, aria labels, keyboard navigation, focus states, and color contrast fixes without breaking current UI.'
-    };
+    });
   }
 
   if (!selectedFeatures.includes('performance-optimized-assets')) {
-    return {
+    suggestions.push({
       id: 'performance-optimized-assets',
       question: 'اقتراح: هل تريد تحسين أداء التحميل والـ assets؟',
       actionLabel: 'Optimize Perf',
       prompt: 'Run a performance optimization pass: lazy-load heavy sections/assets, reduce unnecessary re-renders, and optimize images/SVG loading while keeping behavior unchanged.'
-    };
+    });
   }
 
   if (!selectedFeatures.includes('seo-meta-og') && /<html|<head|meta/i.test(textSample)) {
-    return {
+    suggestions.push({
       id: 'seo-meta-og',
       question: 'اقتراح: هل تضيف SEO + Open Graph جاهز للنشر؟',
       actionLabel: 'Add SEO',
       prompt: 'Add complete SEO metadata and Open Graph tags for all relevant pages, including title/description/canonical and social preview metadata.'
-    };
+    });
   }
 
   if (projectMode === 'FRONTEND_ONLY' && !selectedFeatures.includes('api-integration-ready')) {
-    return {
+    suggestions.push({
       id: 'api-integration-ready',
       question: 'اقتراح: هل تجهز المشروع لربط API بشكل منظم؟',
       actionLabel: 'Prepare API',
       prompt: 'Prepare the frontend for API integration with a clean service layer, typed request helpers, loading states, retry handling, and consistent error boundaries.'
-    };
+    });
   }
 
-  return {
+  suggestions.push({
     id: 'quality-pass',
     question: 'اقتراح ذكي: هل تنفذ Quality pass شامل قبل التسليم؟',
     actionLabel: 'Run Quality Pass',
     prompt: `Do a final quality pass for the project built from this request: "${lastPrompt}". Focus on reliability, code organization, edge-case handling, and production readiness.`
-  };
+  });
+
+  return suggestions.slice(0, 3);
 };
 
 function App() {
@@ -1455,7 +1483,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [constraintsPanelOpen, setConstraintsPanelOpen] = useState(false);
   const [bootstrapReady, setBootstrapReady] = useState(false);
-  const [completionSuggestion, setCompletionSuggestion] = useState<CompletionSuggestion | null>(null);
+  const [completionSuggestions, setCompletionSuggestions] = useState<CompletionSuggestion[]>([]);
+  const chatRoundRef = useRef(0);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [chatAutoFollow, setChatAutoFollow] = useState(true);
   const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null);
@@ -1691,15 +1720,16 @@ function App() {
     />
   );
 
-  const handleApplyCompletionSuggestion = useCallback(() => {
-    if (!completionSuggestion?.prompt) return;
-    setPrompt(completionSuggestion.prompt);
-    setCompletionSuggestion(null);
+  const handleApplyCompletionSuggestion = useCallback((index: number) => {
+    const s = completionSuggestions[index];
+    if (!s?.prompt) return;
+    setPrompt(s.prompt);
+    setCompletionSuggestions([]);
     requestAnimationFrame(() => promptRef.current?.focus());
-  }, [completionSuggestion, setPrompt]);
+  }, [completionSuggestions, setPrompt]);
 
-  const handleDismissCompletionSuggestion = useCallback(() => {
-    setCompletionSuggestion(null);
+  const handleDismissCompletionSuggestions = useCallback(() => {
+    setCompletionSuggestions([]);
   }, []);
 
   const systemHealth = useMemo(() => {
@@ -1777,7 +1807,7 @@ function App() {
       executionPhase === 'completed'
         ? 'هل تريد أن أنفذ تحسين جودة نهائي (Quality pass) قبل التسليم النهائي؟'
         : 'هل تريد مني الاستكمال من آخر نقطة مستقرة أم تعديل المطلوب أولاً؟';
-    const followUpQuestion = completionSuggestion?.question || defaultFollowUp;
+    const followUpQuestion = completionSuggestions[0]?.question || defaultFollowUp;
     const summaryKey = [
       executionPhase,
       files.length,
@@ -1794,6 +1824,10 @@ function App() {
     if (executionPhase === 'completed') {
       addChatMessage({
         role: 'assistant',
+        kind: 'completion-summary',
+        signature: summaryKey,
+        round: chatRoundRef.current,
+        createdAt: Date.now(),
         content: [
           'تم تنفيذ المهمة بنجاح.',
           `- عدد الملفات التي تم إنشاؤها/تحديثها: ${files.length}.`,
@@ -1823,7 +1857,7 @@ function App() {
     });
   }, [
     addChatMessage,
-    completionSuggestion,
+    completionSuggestions,
     executionPhase,
     files,
     isGenerating,
@@ -2083,10 +2117,14 @@ function App() {
     const agentContextBlock = buildAgentContextBlock(basePrompt);
     const scopedPromptWithAgentContext = `${scopedPrompt}\n\n${agentContextBlock}`.trim();
 
+    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     writeAutoResumePayload({
       prompt: basePrompt,
       at: Date.now(),
-      attempts: 0
+      attempts: 0,
+      runId,
+      state: 'running',
+      resumeEligible: true
     });
 
     useAIStore.getState().saveCurrentSession();
@@ -2097,7 +2135,7 @@ function App() {
 
     autoDebugRef.current = { signature: '', attempts: 0 };
     completionWatchRef.current = { at: 0, prompt: '' };
-    setCompletionSuggestion(null);
+    setCompletionSuggestions([]);
 
     const abortController = new AbortController();
     generationAbortRef.current = abortController;
@@ -3544,8 +3582,8 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         if (generationSucceeded) {
           clearAutoResumePayload();
           completionWatchRef.current = { at: Date.now(), prompt: basePrompt };
-          setCompletionSuggestion(
-            buildCompletionSuggestion({
+          setCompletionSuggestions(
+            buildCompletionSuggestions({
               selectedFeatures: generationConstraints.selectedFeatures,
               projectMode: generationConstraints.projectMode,
               files: generatedFiles,
@@ -3716,7 +3754,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     if (isGenerating || isPlanning) return;
     const next = pendingEditRequestsRef.current.shift();
     if (!next) return;
-    addChatMessage({ role: 'user', content: next });
+    chatRoundRef.current += 1; addChatMessage({ role: 'user', content: next, round: chatRoundRef.current, createdAt: Date.now() });
     const fixPrompt = buildFixPrompt(next);
     void handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
   }, [addChatMessage, buildFixPrompt, handleGenerate, isGenerating, isPlanning]);
@@ -3737,6 +3775,10 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
     const payload = readAutoResumePayload();
     if (!payload) return;
+
+    // Only resume if state is 'running' and eligible
+    if (payload.state && payload.state !== 'running') { clearAutoResumePayload(); return; }
+    if (payload.resumeEligible === false) { clearAutoResumePayload(); return; }
 
     if (Date.now() - payload.at > AUTO_RESUME_MAX_AGE_MS) {
       clearAutoResumePayload();
@@ -3767,7 +3809,9 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     writeAutoResumePayload({
       prompt: payload.prompt,
       at: Date.now(),
-      attempts: attempts + 1
+      attempts: attempts + 1,
+      state: 'running',
+      resumeEligible: true
     });
 
     logSystem('[STATUS] Auto-resume detected after refresh. Continuing generation…');
@@ -3859,14 +3903,14 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       if (isGenerating || isPlanning) return;
       const next = pendingEditRequestsRef.current.shift();
       if (!next) return;
-      addChatMessage({ role: 'user', content: next });
+      chatRoundRef.current += 1; addChatMessage({ role: 'user', content: next, round: chatRoundRef.current, createdAt: Date.now() });
       const fixPrompt = buildFixPrompt(next);
       handleGenerate(fixPrompt, { skipPlanning: true, preserveProjectMeta: true });
       return;
     }
     const request = prompt.trim();
     if (request) {
-      addChatMessage({ role: 'user', content: request });
+      chatRoundRef.current += 1; addChatMessage({ role: 'user', content: request, round: chatRoundRef.current, createdAt: Date.now() });
     }
     handleGenerate();
   }, [
@@ -4104,7 +4148,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                         key={`${message.role}-${index}-${message.content.slice(0, 32)}`}
                         $role={message.role}
                       >
-                        <ChatBubbleRole $role={message.role}>{roleLabel}</ChatBubbleRole>
+                        <ChatBubbleRole $role={message.role}>
+                          {roleLabel}
+                          {message.round != null && <ChatRoundBadge>#{message.round}</ChatRoundBadge>}
+                          {message.createdAt && <ChatTimestamp>{new Date(message.createdAt).toLocaleTimeString()}</ChatTimestamp>}
+                        </ChatBubbleRole>
                         <ChatBubbleText>{message.content}</ChatBubbleText>
                       </ChatBubble>
                     );
@@ -4137,9 +4185,9 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                   onToggleConstraintsPanel={() => setConstraintsPanelOpen((v) => !v)}
                   constraintsSummary={constraintsSummary}
                   constraintsLabel={t('app.tools.title')}
-                  completionSuggestion={completionSuggestion ? { question: completionSuggestion.question, actionLabel: completionSuggestion.actionLabel } : null}
+                  completionSuggestions={completionSuggestions}
                   onApplyCompletionSuggestion={handleApplyCompletionSuggestion}
-                  onDismissCompletionSuggestion={handleDismissCompletionSuggestion}
+                  onDismissCompletionSuggestions={handleDismissCompletionSuggestions}
                 />
               </ChatComposerWrap>
             </ChatColumn>
@@ -4214,9 +4262,9 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                   onToggleConstraintsPanel={() => setConstraintsPanelOpen((v) => !v)}
                   constraintsSummary={constraintsSummary}
                   constraintsLabel={t('app.tools.title')}
-                  completionSuggestion={completionSuggestion ? { question: completionSuggestion.question, actionLabel: completionSuggestion.actionLabel } : null}
+                  completionSuggestions={completionSuggestions}
                   onApplyCompletionSuggestion={handleApplyCompletionSuggestion}
-                  onDismissCompletionSuggestion={handleDismissCompletionSuggestion}
+                  onDismissCompletionSuggestions={handleDismissCompletionSuggestions}
                 />
                 {(architectMode || planSteps.length > 0) && (
                   <MobilePlanPane>

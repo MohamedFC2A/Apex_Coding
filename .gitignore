@@ -46,3 +46,22 @@ coverage/
 # Convex generated
 convex/_generated/
 */convex/_generated/
+
+# Tool / IDE specific
+.qodo/
+.trae/
+.codesandbox/
+.githooks/
+.replit
+
+# Temp fix scripts
+_fix_*.ps1
+_fix_*.js
+_fix_*.sh
+
+# Screenshots & images at root
+*.png
+
+# Dev log files
+*-dev.log
+*-lint.log

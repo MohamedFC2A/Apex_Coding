@@ -538,6 +538,8 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
           pushCandidate(cleanRef);
           pushCandidate(`frontend/${cleanRef}`);
           pushCandidate(`frontend/src/${cleanRef}`);
+          pushCandidate(`frontend/public/${cleanRef}`);
+          pushCandidate(`public/${cleanRef}`);
           addSrcFallbacks(cleanRef);
         } else {
           const baseDir = dirname(fromPath);
@@ -545,6 +547,8 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
           pushCandidate(joined);
           pushCandidate(`frontend/${joined}`);
           pushCandidate(`frontend/src/${joined}`);
+          pushCandidate(`frontend/public/${cleanRef}`);
+          pushCandidate(`public/${cleanRef}`);
           addSrcFallbacks(cleanRef);
           addSrcFallbacks(joined);
         }
@@ -735,14 +739,15 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
 
       documentNode.querySelectorAll('link[href]').forEach((linkNode) => {
         const rel = String(linkNode.getAttribute('rel') || '').toLowerCase();
-        if (rel && rel !== 'stylesheet' && rel !== 'icon' && rel !== 'shortcut icon') return;
+        const handledRels = ['stylesheet', 'icon', 'shortcut icon', 'manifest', 'apple-touch-icon', 'apple-touch-icon-precomposed', 'preload', 'modulepreload'];
+        if (rel && !handledRels.includes(rel)) return;
         const value = linkNode.getAttribute('href');
         if (!value) return;
         if (isExternalAssetUrl(value)) {
           const normalized = normalizeExternalResource(value, 'style');
           if (!normalized) {
             linkNode.remove();
-            unresolved.add(`${entryHtmlPath} -> removed unsupported external stylesheet: ${value}`);
+            unresolved.add(`${entryHtmlPath} -> removed unsupported external resource: ${value}`);
             return;
           }
           linkNode.setAttribute('href', normalized);
@@ -753,7 +758,18 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
           return;
         }
         const url = resolveToResourceUrl(entryHtmlPath, value);
-        if (url) linkNode.setAttribute('href', url);
+        if (url) {
+          linkNode.setAttribute('href', url);
+        } else {
+          // Remove unresolved link elements to prevent 404 errors
+          // For manifests, replace with empty JSON data-url; for others, remove entirely
+          if (rel === 'manifest') {
+            linkNode.setAttribute('href', 'data:application/json,{}');
+          } else {
+            linkNode.remove();
+          }
+          unresolved.add(`${entryHtmlPath} -> removed unresolved ${rel || 'link'}: ${value}`);
+        }
       });
 
       documentNode.querySelectorAll('source[srcset]').forEach((source) => {

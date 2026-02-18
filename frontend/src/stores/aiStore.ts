@@ -44,6 +44,10 @@ export type ChatRole = 'system' | 'user' | 'assistant';
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  round?: number;
+  createdAt?: number;
+  signature?: string;
+  kind?: 'completion-summary' | 'general';
 }
 
 export interface PlanStep {
@@ -952,7 +956,16 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
         addChatMessage: (message) => {
           set((state) => {
+            // dedup: skip if last message has same signature
+            if (message.signature && state.chatHistory.length > 0) {
+              const last = state.chatHistory[state.chatHistory.length - 1];
+              if (last.signature === message.signature) return {};
+            }
             const updatedHistory = [...state.chatHistory, message];
+            // emergency localStorage snapshot (last 50 messages)
+            try {
+              window.localStorage.setItem('apex-chat-snapshot', JSON.stringify(updatedHistory.slice(-50)));
+            } catch { /* ignore storage issues */ }
             return {
               chatHistory: updatedHistory,
               contextBudget: calculateContextBudget(updatedHistory, normalizeFileSystem(state.files))
@@ -1576,7 +1589,19 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           customFeatureTags: Array.isArray(session.customFeatureTags) ? session.customFeatureTags : [],
           constraintsEnforcement: session.constraintsEnforcement || 'hard',
           files: cloneFileSystem(session.files),
-          chatHistory: session.chatHistory.map((msg) => ({ ...msg })),
+          chatHistory: (() => {
+            const hist = session.chatHistory.map((msg) => ({ ...msg }));
+            if (hist.length > 0) return hist;
+            // Fallback: restore from emergency localStorage snapshot
+            try {
+              const snap = window.localStorage.getItem('apex-chat-snapshot');
+              if (snap) {
+                const parsed = JSON.parse(snap);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+              }
+            } catch { /* ignore */ }
+            return hist;
+          })(),
           plan: session.plan,
           planSteps: session.planSteps.map((step) => ({ ...step })),
           prompt: '',

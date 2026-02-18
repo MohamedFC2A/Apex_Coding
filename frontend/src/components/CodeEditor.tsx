@@ -10,7 +10,6 @@ import { downloadService } from '@/services/downloadService';
 import { usePreviewStore } from '@/stores/previewStore';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 import type * as monaco from 'monaco-editor';
-import { useLanguage } from '@/context/LanguageContext';
 import { useEditorAutoFollow } from '@/hooks/useEditorAutoFollow';
 import { useStreamingEditorBridge } from '@/hooks/useStreamingEditorBridge';
 import { LanguageIconBadge } from '@/components/files/LanguageIconBadge';
@@ -21,8 +20,47 @@ interface CodeEditorProps {
   isVisible?: boolean;
 }
 
+const EDITOR_UI_TEXT = {
+  files: 'Files',
+  title: 'Editor',
+  loading: 'Loading editor...',
+  run: 'Run',
+  runHelpTitle: 'Run Preview',
+  runHelpBody: 'Builds and opens the live preview for your current files.',
+  download: 'Download',
+  downloadHelpTitle: 'Download',
+  downloadHelpBody: 'Export the full project as a ZIP archive.',
+  welcomeTitle: 'Welcome to Apex Editor',
+  welcomeDescription: 'Generate AI code to see it here',
+  working: 'Working...',
+  ready: 'Ready',
+  lines: 'Lines',
+  chars: 'Chars',
+  autoFollow: 'Auto-follow',
+  pausedFollow: 'Paused follow',
+  thinking: 'Thinking',
+  fast: 'Fast'
+} as const;
+
+const sanitizeEditorContent = (
+  raw: string,
+  options?: { trimOuterEmptyLines?: boolean }
+) => {
+  const trimOuterEmptyLines = options?.trimOuterEmptyLines !== false;
+  const normalized = String(raw || '').replace(/\r\n/g, '\n').replace(/\uFEFF/g, '');
+  const noTrailingWhitespace = normalized
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/g, ''))
+    .join('\n');
+
+  if (!trimOuterEmptyLines) return noTrailingWhitespace;
+
+  return noTrailingWhitespace
+    .replace(/^(?:[ \t]*\n)+/, '')
+    .replace(/(?:\n[ \t]*)+$/, '');
+};
+
 export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isVisible = true }) => {
-  const { t, isRTL } = useLanguage();
   const { files, activeFile, setActiveFile, updateFile, projectName, isHydrating } = useProjectStore();
 
   const [isGenerating, streamText, modelMode, isPlanning, writingFilePath, setIsPreviewOpen] = useAIStore(
@@ -44,9 +82,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
   const [svgSourcePath, setSvgSourcePath] = useState<string | null>(null);
   const [mountedEditor, setMountedEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null);
   const [editorRenderValue, setEditorRenderValue] = useState('');
+  const [editorLineCount, setEditorLineCount] = useState(0);
+  const [editorCharCount, setEditorCharCount] = useState(0);
+  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
+  const editorDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const autoPickedNonEmptyRef = useRef(false);
   const editorViewportRef = useRef<HTMLDivElement | null>(null);
 
@@ -94,17 +136,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
   );
   const isCurrentFileEmpty = Boolean(currentFile && String(currentFile.content || '').trim().length === 0);
 
-  const lineCount = useMemo(() => {
-    const content = currentFile?.content || '';
-    if (!content) return 0;
-    return content.split('\n').length;
-  }, [currentFile?.content]);
-
-  const charCount = useMemo(() => (currentFile?.content || '').length, [currentFile?.content]);
   const modeLabel = useMemo(() => {
-    if (modelMode === 'thinking') return t('app.mode.thinking');
-    return t('app.mode.fast');
-  }, [modelMode, t]);
+    if (modelMode === 'thinking') return EDITOR_UI_TEXT.thinking;
+    return EDITOR_UI_TEXT.fast;
+  }, [modelMode]);
   const svgDataUrl = useMemo(() => {
     if (!isSvgFile || !currentFile?.content) return '';
     const raw = String(currentFile.content || '').trim();
@@ -246,8 +281,77 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
 
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       editor.getAction('editor.action.formatDocument')?.run();
+      const model = editor.getModel();
+      if (!model || !activeFile) return;
+      const sanitized = sanitizeEditorContent(model.getValue(), { trimOuterEmptyLines: true });
+      if (sanitized !== model.getValue()) {
+        editor.setValue(sanitized);
+      }
+      updateFile(activeFile, sanitized);
     });
   };
+
+  useEffect(() => {
+    if (!mountedEditor) return;
+    editorDisposablesRef.current.forEach((entry) => {
+      try {
+        entry.dispose();
+      } catch {
+        // ignore
+      }
+    });
+    editorDisposablesRef.current = [];
+
+    const updateCursorState = () => {
+      const pos = mountedEditor.getPosition();
+      setCursorPosition({
+        line: pos?.lineNumber || 1,
+        column: pos?.column || 1
+      });
+    };
+
+    const updateModelStats = () => {
+      const model = mountedEditor.getModel();
+      const content = model?.getValue() || '';
+      setEditorLineCount(model?.getLineCount() || 0);
+      setEditorCharCount(content.length);
+    };
+
+    updateCursorState();
+    updateModelStats();
+
+    editorDisposablesRef.current.push(
+      mountedEditor.onDidChangeCursorPosition(updateCursorState),
+      mountedEditor.onDidChangeModelContent(updateModelStats),
+      mountedEditor.onDidBlurEditorText(() => {
+        const model = mountedEditor.getModel();
+        if (!model || !activeFile) return;
+        const current = model.getValue();
+        const sanitized = sanitizeEditorContent(current, { trimOuterEmptyLines: true });
+        if (sanitized !== current) {
+          mountedEditor.setValue(sanitized);
+        }
+        updateFile(activeFile, sanitized);
+      })
+    );
+
+    return () => {
+      editorDisposablesRef.current.forEach((entry) => {
+        try {
+          entry.dispose();
+        } catch {
+          // ignore
+        }
+      });
+      editorDisposablesRef.current = [];
+    };
+  }, [activeFile, mountedEditor, updateFile]);
+
+  useEffect(() => {
+    const fallbackContent = sourceEditorValue || '';
+    setEditorLineCount(fallbackContent.length > 0 ? fallbackContent.split('\n').length : 0);
+    setEditorCharCount(fallbackContent.length);
+  }, [sourceEditorValue]);
 
   const editorOptions: monaco.editor.IStandaloneEditorConstructionOptions = useMemo(
     () => ({
@@ -261,10 +365,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
       lineNumbersMinChars: isMobileViewport ? 3 : 4,
       glyphMargin: false,
       folding: true,
-      renderWhitespace: 'selection',
+      renderWhitespace: 'boundary',
       renderLineHighlight: 'all',
       scrollBeyondLastLine: false,
       scrollBeyondLastColumn: 3,
+      trimAutoWhitespace: true,
+      rulers: isMobileViewport ? [] : [100],
       minimap: {
         enabled: !isMobileViewport && !isStreamingView,
         side: 'right',
@@ -280,14 +386,23 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
         horizontalScrollbarSize: 0
       },
       formatOnPaste: true,
-      formatOnType: false,
+      formatOnType: true,
       tabSize: 2,
       insertSpaces: true,
+      detectIndentation: false,
       wordWrap: 'bounded',
       wordWrapColumn: isMobileViewport ? 64 : 110,
       wrappingIndent: 'indent',
       wrappingStrategy: 'advanced',
       smoothScrolling: true,
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      },
+      suggestOnTriggerCharacters: true,
+      acceptSuggestionOnEnter: 'smart',
+      cursorSmoothCaretAnimation: 'on',
       padding: { top: isMobileViewport ? 12 : 10, bottom: isMobileViewport ? 14 : 10 },
       bracketPairColorization: { enabled: true, independentColorPoolPerBracketType: true },
       guides: {
@@ -305,8 +420,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
   const handleEditorChange = (value: string | undefined) => {
     if (value === undefined) return;
     if (isGenerating && isActiveWritingFile) return;
-    setEditorRenderValue(value);
-    if (activeFile) updateFile(activeFile, value);
+    const normalized = value.replace(/\r\n/g, '\n');
+    const cleaned = normalized
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+$/g, ''))
+      .join('\n');
+    setEditorRenderValue(cleaned);
+    if (activeFile) updateFile(activeFile, cleaned);
   };
 
   const handleRun = () => {
@@ -330,10 +450,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
       <GlassCard className="h-full flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 p-4">
           <div className="h-full rounded-xl border border-cyan-500/10 bg-cyan-500/5 backdrop-blur-2xl animate-pulse flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-10 h-10 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
-              <p className="text-cyan-500/60 font-medium">{t('app.editor.loading')}</p>
-            </div>
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-10 h-10 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
+              <p className="text-cyan-500/60 font-medium">{EDITOR_UI_TEXT.loading}</p>
+              </div>
           </div>
         </div>
       </GlassCard>
@@ -341,12 +461,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
   }
 
   return (
-    <GlassCard className={`h-full min-h-0 flex flex-col overflow-hidden ${isRTL ? 'rtl' : 'ltr'}`}>
-      <div className={`flex-1 min-h-0 flex ${isRTL ? 'flex-col md:flex-row-reverse' : 'flex-col md:flex-row'}`}>
+    <GlassCard className="h-full min-h-0 flex flex-col overflow-hidden ltr">
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
         {showFileTree && !isMobileViewport && (
-          <aside className={`w-64 min-h-0 border-b md:border-b-0 ${isRTL ? 'md:border-l' : 'md:border-r'} border-white/10 bg-black/25`}>
-            <div className={`h-11 px-3 border-b border-white/10 flex items-center ${isRTL ? 'justify-end' : 'justify-start'}`}>
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-white/75">{t('app.sidebar.files')}</h3>
+          <aside className="w-64 min-h-0 border-b md:border-b-0 md:border-r border-white/10 bg-black/25">
+            <div className="h-11 px-3 border-b border-white/10 flex items-center justify-start">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-white/75">{EDITOR_UI_TEXT.files}</h3>
             </div>
             <FileTree />
           </aside>
@@ -364,7 +484,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
                       className="h-8 px-3 rounded-md border border-white/15 bg-white/5 text-white/85 text-xs font-semibold inline-flex items-center gap-2"
                     >
                       <FolderOpen className="w-4 h-4" />
-                      {t('app.sidebar.files')}
+                      {EDITOR_UI_TEXT.files}
                     </button>
                   </Trigger>
                   <Content>
@@ -374,15 +494,15 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
                 </Popover>
                 <div className="text-xs text-white/70 truncate max-w-[55vw] inline-flex items-center gap-2">
                   {currentFilePath ? <LanguageIconBadge size="sm" language={currentFileLanguage} /> : null}
-                  <span>{currentFileName || t('app.editor.title')}</span>
+                  <span>{currentFileName || EDITOR_UI_TEXT.title}</span>
                 </div>
               </div>
 
               {isMobileExplorerOpen && (
                 <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm">
-                  <div className={`h-full w-[82%] max-w-[320px] bg-[#0b0f17] border-white/10 ${isRTL ? 'ml-auto border-l' : 'border-r'}`}>
+                  <div className="h-full w-[82%] max-w-[320px] bg-[#0b0f17] border-white/10 border-r">
                     <div className="h-11 px-3 border-b border-white/10 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white/80 uppercase tracking-wide">{t('app.sidebar.files')}</span>
+                      <span className="text-xs font-semibold text-white/80 uppercase tracking-wide">{EDITOR_UI_TEXT.files}</span>
                       <button
                         type="button"
                         onClick={() => setIsMobileExplorerOpen(false)}
@@ -401,7 +521,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
           <div
             className={`border-b border-white/10 bg-black/20 flex items-center gap-2 px-2 ${
               isMobileViewport ? 'h-9' : 'h-11'
-            } ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
+            } flex-row`}
           >
             <Popover>
               <Trigger>
@@ -415,12 +535,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
                   title="Run project"
                 >
                   <Play className="w-4 h-4" />
-                  {!isMobileViewport ? t('app.editor.run') : null}
+                  {!isMobileViewport ? EDITOR_UI_TEXT.run : null}
                 </button>
               </Trigger>
               <Content>
-                <Heading>Run Preview</Heading>
-                <Description>Builds and opens the live preview for your current files.</Description>
+                <Heading>{EDITOR_UI_TEXT.runHelpTitle}</Heading>
+                <Description>{EDITOR_UI_TEXT.runHelpBody}</Description>
               </Content>
             </Popover>
 
@@ -436,12 +556,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
                   title="Download ZIP"
                 >
                   <Download className="w-4 h-4" />
-                  {!isMobileViewport ? t('app.editor.download') : null}
+                  {!isMobileViewport ? EDITOR_UI_TEXT.download : null}
                 </button>
               </Trigger>
               <Content>
-                <Heading>Download</Heading>
-                <Description>Export the full project as a ZIP archive.</Description>
+                <Heading>{EDITOR_UI_TEXT.downloadHelpTitle}</Heading>
+                <Description>{EDITOR_UI_TEXT.downloadHelpBody}</Description>
               </Content>
             </Popover>
           </div>
@@ -449,7 +569,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
           <div
             className={`border-b border-white/10 bg-black/10 flex items-center overflow-x-auto scrollbar-thin ${
               isMobileViewport ? 'h-8' : 'h-10'
-            } ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
+            } flex-row`}
           >
               {tabPaths.map((path) => {
                 const active = activeFile === path;
@@ -553,8 +673,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
                   <Sparkles size={34} className="text-cyan-300" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white/80">{t('app.editor.welcome')}</h3>
-                  <p className="text-sm text-white/45 mt-1">{t('app.editor.welcomeDesc')}</p>
+                  <h3 className="text-base font-bold text-white/80">{EDITOR_UI_TEXT.welcomeTitle}</h3>
+                  <p className="text-sm text-white/45 mt-1">{EDITOR_UI_TEXT.welcomeDescription}</p>
                 </div>
               </div>
             )}
@@ -563,23 +683,25 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
           <div
             className={`px-3 border-t border-white/10 bg-black/20 flex items-center justify-between ${
               isMobileViewport ? (isCompactMobile ? 'h-7' : 'h-8') : 'h-9'
-            } ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
+            } flex-row`}
           >
             <div className="text-xs text-white/70">
               {isPlanning
-                ? `${t('app.plan.status.working')}...`
+                ? EDITOR_UI_TEXT.working
                 : isGenerating
-                  ? `${t('app.plan.status.working')}...`
-                  : t('app.editor.ready')}
+                  ? EDITOR_UI_TEXT.working
+                  : EDITOR_UI_TEXT.ready}
             </div>
-            <div className={`text-xs text-white/55 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-              {!isMobileViewport ? <span>{t('app.status.line')} {lineCount}</span> : null}
+            <div className="text-xs text-white/55 flex items-center gap-2 flex-row">
+              {!isMobileViewport ? <span>{EDITOR_UI_TEXT.lines} {editorLineCount}</span> : null}
               {!isMobileViewport ? <span className="opacity-30">•</span> : null}
-              {!isMobileViewport ? <span>{charCount} {t('app.status.chars')}</span> : null}
-              {isMobileViewport ? <span className="truncate max-w-[100px]">{currentFileName || t('app.editor.title')}</span> : null}
+              {!isMobileViewport ? <span>{EDITOR_UI_TEXT.chars} {editorCharCount}</span> : null}
+              {!isMobileViewport ? <span className="opacity-30">•</span> : null}
+              {!isMobileViewport ? <span>Ln {cursorPosition.line}, Col {cursorPosition.column}</span> : null}
+              {isMobileViewport ? <span className="truncate max-w-[100px]">{currentFileName || EDITOR_UI_TEXT.title}</span> : null}
               <span className="opacity-30">•</span>
               <span className={followState.mode === 'following' ? 'text-emerald-300/85' : 'text-amber-300/85'}>
-                {followState.mode === 'following' ? 'Auto-follow' : 'Paused follow'}
+                {followState.mode === 'following' ? EDITOR_UI_TEXT.autoFollow : EDITOR_UI_TEXT.pausedFollow}
               </span>
               <span className="opacity-30">•</span>
               <span className="text-cyan-300/80 font-semibold">{modeLabel}</span>

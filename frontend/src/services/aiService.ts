@@ -136,7 +136,7 @@ export const aiService = {
         const postOnce = async () => {
           const controller = new AbortController();
           let abortedByUser = false;
-          const timeoutMs = thinkingMode ? 600_000 : 300_000; // Increased timeout for Replit/Vercel
+          const timeoutMs = thinkingMode ? 300_000 : 180_000;
           const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
           const externalAbortListener = () => {
@@ -269,7 +269,7 @@ QUALITY:
 
       let response: Response | null = null;
       let lastError: any = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
           response = await postOnce();
           if (response.ok) break;
@@ -281,7 +281,7 @@ QUALITY:
         } catch (e: any) {
           if (isAbortLike(e)) throw e;
           lastError = e;
-          if (attempt >= 2) {
+          if (attempt >= 1) {
             const message = String(lastError?.message || '').toLowerCase();
             if (message.includes('failed to fetch') || message.includes('networkerror')) {
               throw new Error(`Cannot reach backend (${getApiBaseUrl()}). Check if API server is running.`);

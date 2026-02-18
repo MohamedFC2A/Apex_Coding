@@ -1233,7 +1233,7 @@ const buildCompletionSuggestions = (args: {
   if (!selectedFeatures.includes('responsive-mobile-first')) {
     suggestions.push({
       id: 'responsive-mobile-first',
-      question: 'اقتراح: هل تريد إضافة تحسين Mobile-first كامل للواجهات؟',
+      question: 'Suggestion: do you want a complete mobile-first UI optimization pass?',
       actionLabel: 'Add Mobile UX',
       prompt: 'Please improve the project with a complete mobile-first responsive pass, optimize spacing/typography for phones, and fix overflow issues across all key screens.'
     });
@@ -1242,7 +1242,7 @@ const buildCompletionSuggestions = (args: {
   if (!selectedFeatures.includes('a11y-landmarks')) {
     suggestions.push({
       id: 'a11y-landmarks',
-      question: 'اقتراح: هل تضيف تحسينات Accessibility احترافية (A11y)؟',
+      question: 'Suggestion: do you want a professional accessibility (A11y) pass?',
       actionLabel: 'Add A11y',
       prompt: 'Apply a full accessibility pass: semantic landmarks, aria labels, keyboard navigation, focus states, and color contrast fixes without breaking current UI.'
     });
@@ -1251,7 +1251,7 @@ const buildCompletionSuggestions = (args: {
   if (!selectedFeatures.includes('performance-optimized-assets')) {
     suggestions.push({
       id: 'performance-optimized-assets',
-      question: 'اقتراح: هل تريد تحسين أداء التحميل والـ assets؟',
+      question: 'Suggestion: do you want loading and asset performance improvements?',
       actionLabel: 'Optimize Perf',
       prompt: 'Run a performance optimization pass: lazy-load heavy sections/assets, reduce unnecessary re-renders, and optimize images/SVG loading while keeping behavior unchanged.'
     });
@@ -1260,7 +1260,7 @@ const buildCompletionSuggestions = (args: {
   if (!selectedFeatures.includes('seo-meta-og') && /<html|<head|meta/i.test(textSample)) {
     suggestions.push({
       id: 'seo-meta-og',
-      question: 'اقتراح: هل تضيف SEO + Open Graph جاهز للنشر؟',
+      question: 'Suggestion: add SEO + Open Graph metadata ready for production?',
       actionLabel: 'Add SEO',
       prompt: 'Add complete SEO metadata and Open Graph tags for all relevant pages, including title/description/canonical and social preview metadata.'
     });
@@ -1269,7 +1269,7 @@ const buildCompletionSuggestions = (args: {
   if (projectMode === 'FRONTEND_ONLY' && !selectedFeatures.includes('api-integration-ready')) {
     suggestions.push({
       id: 'api-integration-ready',
-      question: 'اقتراح: هل تجهز المشروع لربط API بشكل منظم؟',
+      question: 'Suggestion: prepare the project for clean API integration?',
       actionLabel: 'Prepare API',
       prompt: 'Prepare the frontend for API integration with a clean service layer, typed request helpers, loading states, retry handling, and consistent error boundaries.'
     });
@@ -1277,7 +1277,7 @@ const buildCompletionSuggestions = (args: {
 
   suggestions.push({
     id: 'quality-pass',
-    question: 'اقتراح ذكي: هل تنفذ Quality pass شامل قبل التسليم؟',
+    question: 'Smart suggestion: run a full quality pass before final delivery?',
     actionLabel: 'Run Quality Pass',
     prompt: `Do a final quality pass for the project built from this request: "${lastPrompt}". Focus on reliability, code organization, edge-case handling, and production readiness.`
   });
@@ -1805,8 +1805,8 @@ function App() {
     const planDone = planSteps.filter((step) => step.completed).length;
     const defaultFollowUp =
       executionPhase === 'completed'
-        ? 'هل تريد أن أنفذ تحسين جودة نهائي (Quality pass) قبل التسليم النهائي؟'
-        : 'هل تريد مني الاستكمال من آخر نقطة مستقرة أم تعديل المطلوب أولاً؟';
+        ? 'Do you want me to run a final quality pass before final delivery?'
+        : 'Do you want me to resume from the last stable point or adjust the request first?';
     const followUpQuestion = completionSuggestions[0]?.question || defaultFollowUp;
     const summaryKey = [
       executionPhase,
@@ -1829,13 +1829,13 @@ function App() {
         round: chatRoundRef.current,
         createdAt: Date.now(),
         content: [
-          'تم تنفيذ المهمة بنجاح.',
-          `- عدد الملفات التي تم إنشاؤها/تحديثها: ${files.length}.`,
-          planTotal > 0 ? `- التقدّم في الخطة: ${planDone}/${planTotal}.` : '',
-          recent.length > 0 ? `- آخر الملفات المتأثرة: ${recent.join(', ')}.` : '',
-          `- حالة المعاينة الحالية: ${runtimeStatus}${runtimeMessage ? ` (${runtimeMessage})` : ''}.`,
+          'Task executed successfully.',
+          `- Files created/updated: ${files.length}.`,
+          planTotal > 0 ? `- Plan progress: ${planDone}/${planTotal}.` : '',
+          recent.length > 0 ? `- Recent affected files: ${recent.join(', ')}.` : '',
+          `- Current preview status: ${runtimeStatus}${runtimeMessage ? ` (${runtimeMessage})` : ''}.`,
           '',
-          `سؤال متابعة: ${followUpQuestion}`
+          `Follow-up question: ${followUpQuestion}`
         ]
           .filter(Boolean)
           .join('\n')
@@ -1846,11 +1846,11 @@ function App() {
     addChatMessage({
       role: 'assistant',
       content: [
-        'التنفيذ توقف قبل الاكتمال.',
-        recent.length > 0 ? `- آخر الملفات التي تم العمل عليها: ${recent.join(', ')}.` : '',
-        `- حالة المعاينة الحالية: ${runtimeStatus}${runtimeMessage ? ` (${runtimeMessage})` : ''}.`,
+        'Execution stopped before completion.',
+        recent.length > 0 ? `- Last files worked on: ${recent.join(', ')}.` : '',
+        `- Current preview status: ${runtimeStatus}${runtimeMessage ? ` (${runtimeMessage})` : ''}.`,
         '',
-        `سؤال متابعة: ${followUpQuestion}`
+        `Follow-up question: ${followUpQuestion}`
       ]
         .filter(Boolean)
         .join('\n')
@@ -2253,6 +2253,21 @@ function App() {
         return lines.join('\n') + (lines.length > 0 ? '\n' : '');
       };
 
+      const normalizeGeneratedContent = (text: string) => {
+        const normalized = String(text || '')
+          .replace(/\r\n/g, '\n')
+          .replace(/\uFEFF/g, '');
+
+        const noTrailingWhitespace = normalized
+          .split('\n')
+          .map((line) => line.replace(/[ \t]+$/g, ''))
+          .join('\n');
+
+        return noTrailingWhitespace
+          .replace(/^(?:[ \t]*\n)+/, '')
+          .replace(/(?:\n[ \t]*)+$/, '');
+      };
+
       const BRANDING_FOOTER = `<footer style="text-align: center; padding: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.1);">
   © 2026 Apex Coding | AI-Powered Developer Platform
 </footer>`;
@@ -2327,7 +2342,7 @@ function App() {
         const cleaned = stripPartialMarkerAtEnd(existing.content || '');
         const healed = partial ? healHtmlDocument(cleaned) : cleaned;
         const branded = injectBrandingFooter(healed);
-        const finalText = branded;
+        const finalText = normalizeGeneratedContent(branded);
 
         updateFile(path, finalText);
         upsertFileNode(path, finalText);
@@ -3070,6 +3085,16 @@ function App() {
           }
 
           let latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '';
+          latest = normalizeGeneratedContent(latest);
+          updateFile(resolvedPath, latest);
+          upsertFileNode(resolvedPath, latest);
+          upsertFile({
+            name: resolvedPath.split('/').pop() || resolvedPath,
+            path: resolvedPath,
+            content: latest,
+            language: getLanguageFromExtension(resolvedPath)
+          });
+
           const extension = resolvedPath.includes('.') ? (resolvedPath.split('.').pop() || '').toLowerCase() : '';
 
           if (!effectivePartial && extension === 'js') {
@@ -3196,7 +3221,10 @@ function App() {
           .slice(-14);
       };
 
-      const runStream = async (streamPrompt: string) => {
+      const runStream = async (
+        streamPrompt: string,
+        options?: { useMultiAgent?: boolean }
+      ) => {
         await aiService.generateCodeStream(
           streamPrompt,
           (token) => {
@@ -3305,7 +3333,7 @@ function App() {
           },
           {
             thinkingMode: isThinkingMode,
-            architectMode,
+            architectMode: Boolean(options?.useMultiAgent),
             includeReasoning: isThinkingMode,
             typingMs: 26,
             onFileEvent: handleFileEvent,
@@ -3394,7 +3422,7 @@ function App() {
               maxAttempts: MAX_AUTO_FIX_ROUNDS,
               recentlyHealedFiles: deterministicHeals
             });
-            await runStream(repairPrompt);
+            await runStream(repairPrompt, { useMultiAgent: false });
 
             const postHeals = applyDeterministicHiddenSyntaxSelfHeal();
             if (postHeals.length > 0) {
@@ -3453,7 +3481,7 @@ function App() {
 
         if (isResuming && partialFile) {
           logSystem('[STATUS] Resuming partial file before continuing plan…');
-          await runStream(baseStreamPrompt);
+          await runStream(baseStreamPrompt, { useMultiAgent: true });
         }
 
         for (const step of planStepsLocal) {
@@ -3476,7 +3504,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
 Output ONLY the code for these files.
 `.trim();
-          await runStream(stepPrompt);
+          await runStream(stepPrompt, { useMultiAgent: true });
           useAIStore.getState().setPlanStepCompleted(step.id, true);
           if (useAIStore.getState().executionPhase === 'interrupted') break;
         }
@@ -3507,7 +3535,7 @@ Output ONLY the code for these files.
 
         if (steps.length === 0) {
           setExecutionPhase('executing');
-          await runStream(baseStreamPrompt);
+          await runStream(baseStreamPrompt, { useMultiAgent: false });
         } else {
           const plannedExecutionSteps =
             !isResuming && shouldGenerateFreshPlan ? steps.map((s) => ({ ...s, completed: false })) : steps;
@@ -3519,7 +3547,7 @@ Output ONLY the code for these files.
 
           if (isResuming && partialFile) {
             logSystem('[STATUS] Resuming partial file before continuing plan…');
-            await runStream(baseStreamPrompt);
+            await runStream(baseStreamPrompt, { useMultiAgent: true });
           }
           
           for (const step of plannedExecutionSteps) {
@@ -3545,7 +3573,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
  Output ONLY the code for these files.
  `.trim();
               
-              await runStream(stepPrompt);
+              await runStream(stepPrompt, { useMultiAgent: true });
               useAIStore.getState().setPlanStepCompleted(step.id, true);
               
               // Safety check for interruptions
@@ -3554,7 +3582,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         }
       } else {
         setExecutionPhase('executing');
-        await runStream(baseStreamPrompt);
+        await runStream(baseStreamPrompt, { useMultiAgent: false });
       }
 
       if (useAIStore.getState().executionPhase !== 'interrupted' && partialPaths.size === 0) {

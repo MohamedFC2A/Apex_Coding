@@ -678,7 +678,9 @@ const getExecutorRouting = (thinkingMode, modelRouting = {}) => {
   return { provider, model };
 };
 
-const shouldUseMultiAgentArchitect = ({ architectMode, modelRouting }) => {
+const shouldUseMultiAgentArchitect = ({ architectMode, modelRouting, stage = 'generate' }) => {
+  // Plan stage stays single-agent for speed and stability.
+  if (stage === 'plan') return false;
   return isMultiAgentArchitectEnabled({
     architectMode: Boolean(architectMode),
     modelRouting: modelRouting || {}
@@ -1357,7 +1359,8 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     const plannerRoute = getPlannerRouting(modelRouting);
     const multiAgentEnabled = shouldUseMultiAgentArchitect({
       architectMode,
-      modelRouting
+      modelRouting,
+      stage: 'plan'
     });
     console.log(
       `[plan] [${req.requestId}] prompt_length=${prompt.length} mode=${thinkingMode ? 'thinking' : 'fast'} type=${effectiveProjectType} planner=${plannerRoute.provider}:${plannerRoute.model} architect=${Boolean(architectMode)} multiAgent=${multiAgentEnabled} session=${contextMeta?.sessionId || 'none'}`
@@ -1574,7 +1577,8 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
     const model = executorRoute.model;
     const multiAgentEnabled = shouldUseMultiAgentArchitect({
       architectMode,
-      modelRouting
+      modelRouting,
+      stage: 'generate'
     });
     const resumePrompt = isResumePrompt(finalPrompt);
 

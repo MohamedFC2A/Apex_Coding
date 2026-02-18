@@ -39,6 +39,7 @@ import { validateConstraints } from './services/constraintValidator';
 import type { GenerationConstraints } from './types/constraints';
 import { createFileMutationEngine } from './services/fileMutationEngine';
 import { buildContextBundle } from './services/contextRetrievalEngine';
+import { buildFrontendProjectModeScaffold, FRONTEND_PROJECT_MODE_VERSION } from './services/frontendProjectModeV12';
 
 // ============================================================================
 // GLOBAL AUTOSAVE - INDEPENDENT OF CHAT/COMPONENT LIFECYCLE
@@ -1305,6 +1306,7 @@ function App() {
     systemConsoleContent,
     isPreviewOpen,
     writingFilePath,
+    fileStatuses,
     contextBudget,
     brainEvents,
     setPrompt,
@@ -1332,6 +1334,7 @@ function App() {
     resetFiles,
     resolveFilePath,
     upsertFileNode,
+    upsertDirectoryNode,
     setFilesFromProjectFiles,
     addChatMessage,
     error,
@@ -1743,6 +1746,15 @@ function App() {
     return 'OK';
   }, [isGenerating, lastTokenAt, runtimeMessage, runtimeStatus]);
 
+  const queuedFilePaths = useMemo(
+    () =>
+      Object.entries(fileStatuses || {})
+        .filter(([, status]) => status === 'queued')
+        .map(([path]) => path)
+        .sort((a, b) => a.localeCompare(b)),
+    [fileStatuses]
+  );
+
   const stamp = () => new Date().toLocaleTimeString([], { hour12: false });
   const logSystem = useCallback(
     (message: string, source: 'system' | 'stream' | 'file' | 'preview' | 'user' = 'system') => {
@@ -2025,6 +2037,112 @@ function App() {
     };
   }, [constraintsEnforcement, customFeatureTags, effectiveProjectType, selectedFeatures]);
 
+  const applyFrontendProjectModeV12 = useCallback(
+    (planStepHints?: Array<{ files?: string[] }>) => {
+      if (effectiveProjectType !== 'FRONTEND_ONLY') return;
+
+      const projectSnapshot = useProjectStore.getState();
+      const scaffold = buildFrontendProjectModeScaffold({
+        planSteps: planStepHints,
+        existingFiles: projectSnapshot.files
+      });
+
+      const normalize = (value: string) =>
+        String(value || '')
+          .replace(/\\/g, '/')
+          .replace(/^\/+/, '')
+          .trim();
+
+      const existingStructure = new Map(
+        (projectSnapshot.fileStructure || []).map((entry) => [normalize(entry.path), entry.type])
+      );
+      let structureChanged = false;
+      for (const directoryPath of scaffold.directories) {
+        const normalizedDir = normalize(directoryPath);
+        if (!normalizedDir) continue;
+        upsertDirectoryNode(normalizedDir);
+        if (!existingStructure.has(normalizedDir)) {
+          existingStructure.set(normalizedDir, 'directory');
+          structureChanged = true;
+        }
+      }
+
+      if (structureChanged) {
+        setFileStructure(
+          Array.from(existingStructure.entries()).map(([path, type]) => ({
+            path,
+            type
+          }))
+        );
+      }
+
+      const existingFileSet = new Set(
+        useProjectStore
+          .getState()
+          .files.map((file) => normalize(file.path || file.name || ''))
+          .filter(Boolean)
+      );
+
+      let createdFiles = 0;
+      for (const filePath of scaffold.requiredFiles) {
+        const normalizedPath = normalize(filePath);
+        if (!normalizedPath || existingFileSet.has(normalizedPath)) continue;
+        upsertFile({
+          name: normalizedPath.split('/').pop() || normalizedPath,
+          path: normalizedPath,
+          content: '',
+          language: getLanguageFromExtension(normalizedPath)
+        });
+        upsertFileNode(normalizedPath, '');
+        existingFileSet.add(normalizedPath);
+        createdFiles += 1;
+      }
+
+      if (createdFiles > 0) {
+        setFilesFromProjectFiles(useProjectStore.getState().files);
+      }
+
+      const aiSnapshot = useAIStore.getState();
+      const completedSet = new Set((aiSnapshot.completedFiles || []).map((path) => normalize(path)));
+      const currentWritingPath = normalize(aiSnapshot.writingFilePath || '');
+      let queuedCount = 0;
+
+      for (const hintedPath of scaffold.queuedFiles) {
+        const resolvedPath = resolveFilePath(hintedPath) || hintedPath;
+        const normalizedPath = normalize(resolvedPath);
+        if (!normalizedPath) continue;
+        if (completedSet.has(normalizedPath)) continue;
+        if (normalizedPath === currentWritingPath) continue;
+        const status = useAIStore.getState().fileStatuses?.[normalizedPath];
+        if (status === 'writing' || status === 'partial' || status === 'compromised') continue;
+        if (status !== 'queued') {
+          setFileStatus(normalizedPath, 'queued');
+          queuedCount += 1;
+        }
+      }
+
+      if (createdFiles > 0 || queuedCount > 0) {
+        addBrainEvent({
+          source: 'system',
+          level: 'info',
+          message: `Frontend Project Mode v${FRONTEND_PROJECT_MODE_VERSION}: scaffold ready (dirs=${scaffold.directories.length}, created=${createdFiles}, queued=${queuedCount})`,
+          phase: 'planning'
+        });
+      }
+    },
+    [
+      addBrainEvent,
+      effectiveProjectType,
+      resolveFilePath,
+      setFileStatus,
+      setFileStructure,
+      setFilesFromProjectFiles,
+      upsertDirectoryNode,
+      upsertFile,
+      upsertFileNode
+    ]
+  );
+
   const buildAgentContextBlock = useCallback((requestPrompt: string) => {
     const projectState = useProjectStore.getState();
     const aiState = useAIStore.getState();
@@ -2067,6 +2185,9 @@ function App() {
       '[AGENT WORKSPACE INTELLIGENCE]',
       `User Intent: ${requestPrompt || '(empty)'}`,
       `Project Mode: ${effectiveProjectType}`,
+      effectiveProjectType === 'FRONTEND_ONLY'
+        ? `Project Mode Version: Frontend Project Mode v${FRONTEND_PROJECT_MODE_VERSION}`
+        : '',
       `Project Name: ${projectState.projectName || '(untitled)'}`,
       `Stack: ${projectState.stack || '(auto)'}`,
       `Known Files Count: ${paths.length}`,
@@ -2164,6 +2285,9 @@ function App() {
     }
     if (!String(useProjectStore.getState().projectId || '').trim()) {
       setProjectId(createProjectId(projectName || basePrompt));
+    }
+    if (!isResuming) {
+      applyFrontendProjectModeV12();
     }
 
     if (fileFlushTimerRef.current) {
@@ -2981,6 +3105,17 @@ function App() {
         filesByBaseName.set(baseName.toLowerCase(), resolvedPath);
 
         if (event.type === 'start') {
+          const previousWritingPath = useAIStore.getState().writingFilePath;
+          if (previousWritingPath && previousWritingPath !== resolvedPath) {
+            logSystem(`[STATUS] Switching file ${previousWritingPath} -> ${resolvedPath}`);
+            addBrainEvent({
+              source: 'file',
+              level: 'info',
+              message: `Switching ${previousWritingPath} -> ${resolvedPath}`,
+              path: resolvedPath,
+              phase: 'writing'
+            });
+          }
           const label = event.mode === 'edit' ? 'Editing' : 'Writing';
           logSystem(`[STATUS] ${label} ${resolvedPath}...`);
           addBrainEvent({
@@ -3475,6 +3610,7 @@ function App() {
         const planStepsLocal = normalizePlanStepsForProfile(generatedSteps, effectiveProjectType);
         setPlanSteps(planStepsLocal);
         setLastPlannedPrompt(scopedPrompt);
+        applyFrontendProjectModeV12(planStepsLocal.map((step) => ({ files: step.files })));
         logSystem('[WORKFLOW] Mapping automated logic nodes...');
         setExecutionPhase('executing');
         logSystem('[SUPER-THINKING] Deep-Thinking Engine Engaged...');
@@ -3532,6 +3668,7 @@ Output ONLY the code for these files.
         }
 
         setPlanSteps(steps);
+        applyFrontendProjectModeV12(steps.map((step) => ({ files: step.files })));
 
         if (steps.length === 0) {
           setExecutionPhase('executing');
@@ -3635,6 +3772,12 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       }
 
       if (useAIStore.getState().executionPhase !== 'interrupted') {
+        const queuedLeftovers = Object.entries(useAIStore.getState().fileStatuses || {})
+          .filter(([, status]) => status === 'queued')
+          .map(([path]) => path);
+        for (const path of queuedLeftovers) {
+          setFileStatus(path, 'ready');
+        }
         setExecutionPhase('completed');
         const generatedFiles = useProjectStore.getState().files;
         generationSucceeded = generatedFiles.length > 0;
@@ -3678,6 +3821,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
   }, [
     architectMode,
     appendStreamText,
+    applyFrontendProjectModeV12,
     addBrainEvent,
     clearBrainEvents,
     clearThinkingContent,
@@ -4564,6 +4708,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         events={brainEvents}
         executionPhase={executionPhase}
         writingFilePath={writingFilePath}
+        queuedFileCount={queuedFilePaths.length}
+        nextQueuedFilePath={queuedFilePaths[0] || null}
+        projectModeVersion={
+          effectiveProjectType === 'FRONTEND_ONLY' ? `Frontend Project Mode v${FRONTEND_PROJECT_MODE_VERSION}` : null
+        }
         contextUtilizationPct={contextBudget.utilizationPct}
         contextStatus={contextBudget.status}
         runtimeStatus={runtimeStatus}

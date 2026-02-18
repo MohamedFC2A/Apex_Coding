@@ -29,6 +29,104 @@ const getStatusColor = (status: NodeStatus) => {
   return 'rgba(34, 197, 94, 0.95)';
 };
 
+const normalizePath = (value: string) =>
+  String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .trim();
+
+const buildTreeFromFlatStructure = (entries: Array<{ path: string; type: 'file' | 'directory' }>): FileStructure[] => {
+  const nodeMap = new Map<string, FileStructure>();
+
+  const ensureDirectoryNode = (path: string) => {
+    const normalized = normalizePath(path);
+    if (!normalized) return null;
+    const existing = nodeMap.get(normalized);
+    if (existing) {
+      if (!existing.children) existing.children = [];
+      return existing;
+    }
+    const parts = normalized.split('/');
+    const name = parts[parts.length - 1] || normalized;
+    const created: FileStructure = {
+      name,
+      path: normalized,
+      type: 'directory',
+      children: []
+    };
+    nodeMap.set(normalized, created);
+    return created;
+  };
+
+  const ensureNode = (path: string, type: 'file' | 'directory') => {
+    const normalized = normalizePath(path);
+    if (!normalized) return null;
+
+    const parts = normalized.split('/').filter(Boolean);
+    let parentPath = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      parentPath = parentPath ? `${parentPath}/${parts[i]}` : parts[i];
+      ensureDirectoryNode(parentPath);
+    }
+
+    const existing = nodeMap.get(normalized);
+    if (existing) {
+      if (type === 'directory' && !existing.children) existing.children = [];
+      return existing;
+    }
+
+    const name = parts[parts.length - 1] || normalized;
+    const node: FileStructure =
+      type === 'directory'
+        ? { name, path: normalized, type: 'directory', children: [] }
+        : { name, path: normalized, type: 'file' };
+    nodeMap.set(normalized, node);
+    return node;
+  };
+
+  for (const entry of entries) {
+    ensureNode(entry.path, entry.type);
+  }
+
+  const roots: FileStructure[] = [];
+  const sortedNodes = Array.from(nodeMap.values()).sort((a, b) => {
+    const depthA = normalizePath(a.path).split('/').length;
+    const depthB = normalizePath(b.path).split('/').length;
+    if (depthA !== depthB) return depthA - depthB;
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  for (const node of sortedNodes) {
+    const normalizedPath = normalizePath(node.path);
+    const parentPath = normalizedPath.includes('/')
+      ? normalizedPath.slice(0, normalizedPath.lastIndexOf('/'))
+      : '';
+    if (!parentPath) {
+      roots.push(node);
+      continue;
+    }
+    const parent = nodeMap.get(parentPath);
+    if (!parent || parent.type !== 'directory') {
+      roots.push(node);
+      continue;
+    }
+    if (!parent.children) parent.children = [];
+    if (!parent.children.some((child) => child.path === node.path)) {
+      parent.children.push(node);
+      parent.children.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+    }
+  }
+
+  return roots.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+};
+
 const FileTreeNode: React.FC<FileTreeNodeProps> = ({ node, depth, isRTL }) => {
   const [isOpen, setIsOpen] = React.useState(true);
   const { activeFile, setActiveFile } = useProjectStore();
@@ -176,9 +274,16 @@ export const FileTree: React.FC = () => {
     );
   }
 
-  const tree = fileStructure.length > 0 
-    ? fileStructure 
-    : files.filter(f => f.path).map(f => ({ path: f.path!, type: 'file' as const }));
+  const flatEntries: Array<{ path: string; type: 'file' | 'directory' }> =
+    fileStructure.length > 0
+      ? fileStructure.map((entry) => ({
+          path: normalizePath(entry.path),
+          type: entry.type === 'directory' ? 'directory' : 'file'
+        }))
+      : files
+          .filter((f) => f.path)
+          .map((f) => ({ path: normalizePath(f.path || ''), type: 'file' as const }));
+  const tree = buildTreeFromFlatStructure(flatEntries.filter((entry) => entry.path.length > 0));
 
   return (
     <div className="p-2 scrollbar-thin overflow-y-auto" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>

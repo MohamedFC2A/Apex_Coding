@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
-  ListChecks,
   PauseCircle,
   PlayCircle,
   Terminal,
@@ -295,6 +294,9 @@ interface BrainConsoleProps {
   events?: BrainEvent[];
   executionPhase?: string;
   writingFilePath?: string | null;
+  queuedFileCount?: number;
+  nextQueuedFilePath?: string | null;
+  projectModeVersion?: string | null;
   contextUtilizationPct?: number;
   contextStatus?: ContextStatus;
   runtimeStatus?: string;
@@ -336,6 +338,9 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({
   events = [],
   executionPhase,
   writingFilePath,
+  queuedFileCount = 0,
+  nextQueuedFilePath = null,
+  projectModeVersion = null,
   contextUtilizationPct = 0,
   contextStatus = 'ok',
   runtimeStatus = 'idle',
@@ -517,6 +522,18 @@ export const BrainConsole: React.FC<BrainConsoleProps> = ({
                       <Stat>
                         <StatLabel>Writing File</StatLabel>
                         <StatValue>{writingFilePath || '-'}</StatValue>
+                      </Stat>
+                      <Stat>
+                        <StatLabel>Queued Files</StatLabel>
+                        <StatValue>{queuedFileCount}</StatValue>
+                      </Stat>
+                      <Stat>
+                        <StatLabel>Next File</StatLabel>
+                        <StatValue>{nextQueuedFilePath || '-'}</StatValue>
+                      </Stat>
+                      <Stat>
+                        <StatLabel>Project Mode</StatLabel>
+                        <StatValue>{projectModeVersion || 'default'}</StatValue>
                       </Stat>
                       <Stat>
                         <StatLabel>Context</StatLabel>

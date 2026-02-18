@@ -85,6 +85,12 @@ export interface HistorySession {
   contextBudget: ContextBudgetState;
   compressionSnapshot: CompressionSnapshot;
   activeModelProfile: ActiveModelProfile;
+  executionPhase?: ExecutionPhase;
+  writingFilePath?: string | null;
+  fileStatuses?: Record<string, FileStreamStatus>;
+  completedFiles?: string[];
+  lastSuccessfulFile?: string | null;
+  lastSuccessfulLine?: number;
 }
 
 interface AISections {
@@ -341,7 +347,16 @@ const readEmergencySession = (): Partial<HistorySession> | null => {
       planSteps: Array.isArray(parsed?.planSteps) ? parsed.planSteps : [],
       contextBudget: parsed?.contextBudget || DEFAULT_CONTEXT_BUDGET,
       compressionSnapshot: parsed?.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
-      activeModelProfile: parsed?.activeModelProfile || getActiveModelProfile()
+      activeModelProfile: parsed?.activeModelProfile || getActiveModelProfile(),
+      executionPhase: (parsed?.executionPhase || 'idle') as ExecutionPhase,
+      writingFilePath: parsed?.writingFilePath ? String(parsed.writingFilePath) : null,
+      fileStatuses:
+        parsed?.fileStatuses && typeof parsed.fileStatuses === 'object'
+          ? (parsed.fileStatuses as Record<string, FileStreamStatus>)
+          : {},
+      completedFiles: Array.isArray(parsed?.completedFiles) ? parsed.completedFiles.map((v: any) => String(v || '')) : [],
+      lastSuccessfulFile: parsed?.lastSuccessfulFile ? String(parsed.lastSuccessfulFile) : null,
+      lastSuccessfulLine: Number(parsed?.lastSuccessfulLine || 0)
     };
   } catch {
     return null;
@@ -1383,7 +1398,13 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           contextSize,
           contextBudget,
           compressionSnapshot: compressed.snapshot,
-          activeModelProfile
+          activeModelProfile,
+          executionPhase: state.executionPhase,
+          writingFilePath: state.writingFilePath,
+          fileStatuses: { ...state.fileStatuses },
+          completedFiles: [...state.completedFiles],
+          lastSuccessfulFile: state.lastSuccessfulFile,
+          lastSuccessfulLine: state.lastSuccessfulLine
         };
 
         // Always move latest snapshot to the top so history ordering stays consistent.
@@ -1436,7 +1457,13 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             contextSize: snapshot.contextSize,
             contextBudget: snapshot.contextBudget,
             compressionSnapshot: snapshot.compressionSnapshot,
-            activeModelProfile: snapshot.activeModelProfile
+            activeModelProfile: snapshot.activeModelProfile,
+            executionPhase: snapshot.executionPhase,
+            writingFilePath: snapshot.writingFilePath,
+            fileStatuses: snapshot.fileStatuses || {},
+            completedFiles: Array.isArray(snapshot.completedFiles) ? snapshot.completedFiles : [],
+            lastSuccessfulFile: snapshot.lastSuccessfulFile || null,
+            lastSuccessfulLine: Number(snapshot.lastSuccessfulLine || 0)
           };
           void saveSessionToDisk(stored).catch(() => undefined);
 
@@ -1459,7 +1486,13 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               planSteps: snapshot.planSteps,
               contextBudget: snapshot.contextBudget,
               compressionSnapshot: snapshot.compressionSnapshot,
-              activeModelProfile: snapshot.activeModelProfile
+              activeModelProfile: snapshot.activeModelProfile,
+              executionPhase: snapshot.executionPhase,
+              writingFilePath: snapshot.writingFilePath,
+              fileStatuses: snapshot.fileStatuses || {},
+              completedFiles: snapshot.completedFiles || [],
+              lastSuccessfulFile: snapshot.lastSuccessfulFile || null,
+              lastSuccessfulLine: Number(snapshot.lastSuccessfulLine || 0)
             };
             window.localStorage.setItem(AI_EMERGENCY_SESSION_KEY, JSON.stringify(emergencyPayload));
           }
@@ -1504,7 +1537,16 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               contextSize: Number(emergency.contextBudget?.usedChars || 0),
               contextBudget: emergency.contextBudget || DEFAULT_CONTEXT_BUDGET,
               compressionSnapshot: emergency.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
-              activeModelProfile: emergency.activeModelProfile || getActiveModelProfile()
+              activeModelProfile: emergency.activeModelProfile || getActiveModelProfile(),
+              executionPhase: (emergency.executionPhase || 'idle') as ExecutionPhase,
+              writingFilePath: emergency.writingFilePath || null,
+              fileStatuses:
+                emergency.fileStatuses && typeof emergency.fileStatuses === 'object'
+                  ? (emergency.fileStatuses as Record<string, FileStreamStatus>)
+                  : {},
+              completedFiles: Array.isArray(emergency.completedFiles) ? emergency.completedFiles : [],
+              lastSuccessfulFile: emergency.lastSuccessfulFile || null,
+              lastSuccessfulLine: Number(emergency.lastSuccessfulLine || 0)
             };
             set((prev) => ({
               history: [recovered, ...prev.history].slice(0, MAX_HISTORY_SESSIONS),
@@ -1547,7 +1589,16 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             contextSize: Number(s.contextSize || 0),
             contextBudget: s.contextBudget || DEFAULT_CONTEXT_BUDGET,
             compressionSnapshot: s.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
-            activeModelProfile: s.activeModelProfile || getActiveModelProfile()
+            activeModelProfile: s.activeModelProfile || getActiveModelProfile(),
+            executionPhase: (s.executionPhase || 'idle') as ExecutionPhase,
+            writingFilePath: s.writingFilePath || null,
+            fileStatuses:
+              s.fileStatuses && typeof s.fileStatuses === 'object'
+                ? (s.fileStatuses as Record<string, FileStreamStatus>)
+                : {},
+            completedFiles: Array.isArray(s.completedFiles) ? s.completedFiles : [],
+            lastSuccessfulFile: s.lastSuccessfulFile || null,
+            lastSuccessfulLine: Number(s.lastSuccessfulLine || 0)
           }));
 
           set((prev) => ({
@@ -1616,11 +1667,18 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           streamText: '',
           thinkingContent: '',
           systemConsoleContent: '',
-          fileStatuses: {},
-          writingFilePath: null,
+          fileStatuses:
+            session.fileStatuses && typeof session.fileStatuses === 'object'
+              ? { ...session.fileStatuses }
+              : {},
+          writingFilePath: session.writingFilePath || null,
           sections: {},
           isGenerating: false,
           isPlanning: false,
+          executionPhase: (session.executionPhase || 'idle') as ExecutionPhase,
+          completedFiles: Array.isArray(session.completedFiles) ? session.completedFiles : [],
+          lastSuccessfulFile: session.lastSuccessfulFile || null,
+          lastSuccessfulLine: Number(session.lastSuccessfulLine || 0),
           generationStatus: {
             isGenerating: false,
             currentStep: 'idle' as const,
@@ -1661,6 +1719,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           sections: {},
           isGenerating: false,
           isPlanning: false,
+          executionPhase: 'idle',
+          completedFiles: [],
+          lastSuccessfulFile: null,
+          lastSuccessfulLine: 0,
           generationStatus: {
             isGenerating: false,
             currentStep: 'idle' as const,

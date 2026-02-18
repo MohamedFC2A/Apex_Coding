@@ -43,6 +43,12 @@ export type StoredHistorySession = {
   contextBudget: ContextBudgetState;
   compressionSnapshot: CompressionSnapshot;
   activeModelProfile: ActiveModelProfile;
+  executionPhase?: 'idle' | 'planning' | 'executing' | 'confirming' | 'interrupted' | 'completed';
+  writingFilePath?: string | null;
+  fileStatuses?: Record<string, 'ready' | 'queued' | 'writing' | 'partial' | 'compromised'>;
+  completedFiles?: string[];
+  lastSuccessfulFile?: string | null;
+  lastSuccessfulLine?: number;
 };
 
 const DB_NAME = 'apex-coding-workspace';

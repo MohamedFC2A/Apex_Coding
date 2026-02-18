@@ -63,13 +63,14 @@ const sanitizeEditorContent = (
 export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isVisible = true }) => {
   const { files, activeFile, setActiveFile, updateFile, projectName, isHydrating } = useProjectStore();
 
-  const [isGenerating, streamText, modelMode, isPlanning, writingFilePath, setIsPreviewOpen] = useAIStore(
+  const [isGenerating, streamText, modelMode, isPlanning, writingFilePath, fileStatuses, setIsPreviewOpen] = useAIStore(
     (state) => [
       state.isGenerating,
       state.streamText,
       state.modelMode,
       state.isPlanning,
       state.writingFilePath,
+      state.fileStatuses,
       state.setIsPreviewOpen
     ],
     shallow
@@ -116,6 +117,27 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
       currentFilePath &&
       writingFilePath === currentFilePath
   );
+  const queuedFilePaths = useMemo(
+    () =>
+      Object.entries(fileStatuses || {})
+        .filter(([, status]) => status === 'queued')
+        .map(([path]) => path)
+        .sort((a, b) => a.localeCompare(b)),
+    [fileStatuses]
+  );
+  const aiWorkflowLabel = useMemo(() => {
+    if (!isGenerating && !isPlanning) return EDITOR_UI_TEXT.ready;
+    if (writingFilePath) {
+      const current = writingFilePath.split('/').pop() || writingFilePath;
+      return `AI writing ${current}`;
+    }
+    if (queuedFilePaths.length > 0) {
+      const next = queuedFilePaths[0];
+      const nextName = next.split('/').pop() || next;
+      return queuedFilePaths.length > 1 ? `AI queue ${nextName} +${queuedFilePaths.length - 1}` : `AI queue ${nextName}`;
+    }
+    return isPlanning ? 'AI planning files' : 'AI preparing files';
+  }, [isGenerating, isPlanning, queuedFilePaths, writingFilePath]);
 
   const tabPaths = useMemo(() => {
     const unique = Array.from(new Set(files.map((f) => f.path || f.name).filter(Boolean)));
@@ -564,6 +586,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
                 <Description>{EDITOR_UI_TEXT.downloadHelpBody}</Description>
               </Content>
             </Popover>
+            <div className="ml-auto max-w-[60%] truncate rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[10px] font-semibold text-cyan-200/85">
+              {aiWorkflowLabel}
+            </div>
           </div>
 
           <div
@@ -700,6 +725,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ showFileTree = true, isV
               {!isMobileViewport ? <span>Ln {cursorPosition.line}, Col {cursorPosition.column}</span> : null}
               {isMobileViewport ? <span className="truncate max-w-[100px]">{currentFileName || EDITOR_UI_TEXT.title}</span> : null}
               <span className="opacity-30">•</span>
+              {isGenerating || isPlanning ? (
+                <>
+                  <span className="text-cyan-200/90 truncate max-w-[180px]">{aiWorkflowLabel}</span>
+                  <span className="opacity-30">•</span>
+                </>
+              ) : null}
               <span className={followState.mode === 'following' ? 'text-emerald-300/85' : 'text-amber-300/85'}>
                 {followState.mode === 'following' ? EDITOR_UI_TEXT.autoFollow : EDITOR_UI_TEXT.pausedFollow}
               </span>

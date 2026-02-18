@@ -425,6 +425,8 @@ QUALITY:
               '[FRONTEND STRICT MODE]',
               '- Default architecture: adaptive multi-page vanilla HTML/CSS/JS.',
               '- Use single-page only for simple requests; otherwise split into linked pages.',
+              '- Decide the full target file map first, then implement files in deterministic order.',
+              '- Keep folder-first organization: pages/, components/, styles/, scripts/, assets/, data/.',
               '- Keep shared styling/behavior centralized unless architecture requires scoped files.',
               '- Do not produce React/Next/Vite scaffolding unless explicitly requested.',
               `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.`,
@@ -453,6 +455,7 @@ EXECUTION RULES:
 2. **WEB PROJECT REQUIREMENTS (PREVIEW RUNNER READY)**:
    - **STRUCTURE**:
      - If project mode is FRONTEND_ONLY: default to adaptive multi-page vanilla frontend architecture.
+     - For FRONTEND_ONLY: lock a full file plan before writing code and execute file patches in a stable sequence.
      - Use single-page only for simple requests; otherwise create linked pages with coherent navigation.
      - Keep shared style.css and script.js defaults for static mode unless scoped files are clearly justified.
      - Only generate React/Next/Vite structure when explicitly requested by the user.

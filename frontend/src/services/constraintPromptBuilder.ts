@@ -59,6 +59,7 @@ export const buildFrontendPlanningPolicyBlock = (): string =>
 export const buildFrontendProfessionalBaselineBlock = (): string =>
   [
     '[FRONTEND PROFESSIONAL BASELINE]',
+    '- Project Mode Frontend v1.2: decide full file map first, then implement files in deterministic order.',
     '- Default output for static frontend is adaptive multi-page vanilla HTML/CSS/JS.',
     '- For simple requests: index.html + style.css + script.js. For broader scope: linked pages with shared style/script.',
     '- Keep naming stable and predictable: route-oriented kebab-case pages + shared style.css/script.js.',

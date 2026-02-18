@@ -701,20 +701,28 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         documentNode.head.appendChild(viewportMeta);
       }
 
-      const rewriteElementAttr = (selector: string, attr: string) => {
+      const rewriteElementAttr = (selector: string, attr: string, removeOnFail = true) => {
         documentNode.querySelectorAll(selector).forEach((element) => {
           const value = element.getAttribute(attr);
           if (!value || isExternalAssetUrl(value)) return;
           const url = resolveToResourceUrl(entryHtmlPath, value);
-          if (url) element.setAttribute(attr, url);
+          if (url) {
+            element.setAttribute(attr, url);
+          } else if (removeOnFail) {
+            element.remove();
+            unresolved.add(`${entryHtmlPath} -> removed unresolved ${selector}: ${value}`);
+          } else {
+            element.removeAttribute(attr);
+            unresolved.add(`${entryHtmlPath} -> blanked unresolved ${attr} on ${selector}: ${value}`);
+          }
         });
       };
 
-      rewriteElementAttr('img[src]', 'src');
-      rewriteElementAttr('video[poster]', 'poster');
-      rewriteElementAttr('source[src]', 'src');
-      rewriteElementAttr('audio[src]', 'src');
-      rewriteElementAttr('object[data]', 'data');
+      rewriteElementAttr('img[src]', 'src', false);
+      rewriteElementAttr('video[poster]', 'poster', false);
+      rewriteElementAttr('source[src]', 'src', true);
+      rewriteElementAttr('audio[src]', 'src', true);
+      rewriteElementAttr('object[data]', 'data', true);
 
       documentNode.querySelectorAll('script[src]').forEach((scriptNode) => {
         const value = scriptNode.getAttribute('src');
@@ -734,7 +742,12 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
           return;
         }
         const url = resolveToResourceUrl(entryHtmlPath, value);
-        if (url) scriptNode.setAttribute('src', url);
+        if (url) {
+          scriptNode.setAttribute('src', url);
+        } else {
+          scriptNode.remove();
+          unresolved.add(`${entryHtmlPath} -> removed unresolved script: ${value}`);
+        }
       });
 
       documentNode.querySelectorAll('link[href]').forEach((linkNode) => {
@@ -779,19 +792,47 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
           .split(',')
           .map((entry) => {
             const parts = entry.trim().split(/\s+/);
-            if (parts.length === 0) return entry;
+            if (parts.length === 0) return '';
             const local = parts[0];
             if (isExternalAssetUrl(local)) return entry;
             const url = resolveToResourceUrl(entryHtmlPath, local);
-            if (!url) return entry;
+            if (!url) return ''; // drop unresolved srcset entries
             return [url, ...parts.slice(1)].join(' ');
           })
+          .filter(Boolean)
           .join(', ');
-        source.setAttribute('srcset', rewritten);
+        if (rewritten) {
+          source.setAttribute('srcset', rewritten);
+        } else {
+          source.remove();
+        }
       });
 
       documentNode.querySelectorAll('style').forEach((styleNode) => {
         styleNode.textContent = rewriteCssUrls(styleNode.textContent || '', entryHtmlPath, resolveToResourceUrl);
+      });
+
+      // Prevent any remaining relative URLs from resolving against the parent page
+      if (!documentNode.querySelector('base')) {
+        const baseTag = documentNode.createElement('base');
+        baseTag.setAttribute('href', 'about:blank');
+        documentNode.head.prepend(baseTag);
+      }
+
+      // Strip meta tags with local content URLs (og:image, twitter:image, etc.)
+      documentNode.querySelectorAll('meta[content]').forEach((metaNode) => {
+        const property = metaNode.getAttribute('property') || metaNode.getAttribute('name') || '';
+        if (!/(image|url|icon)/i.test(property)) return;
+        const content = metaNode.getAttribute('content') || '';
+        if (!content || isExternalAssetUrl(content) || content.startsWith('data:')) return;
+        // It's a local URL reference in meta — try to resolve, remove if not found
+        const url = resolveToResourceUrl(entryHtmlPath, content);
+        if (url) {
+          metaNode.setAttribute('content', url);
+        } else {
+          metaNode.remove();
+          unresolved.add(`${entryHtmlPath} -> removed unresolved meta ${property}: ${content}`);
+        }
       });
 
       documentNode.querySelectorAll('script:not([src])').forEach((scriptNode) => {

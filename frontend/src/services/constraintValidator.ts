@@ -222,6 +222,67 @@ const isCriticalViolationCode = (code: string) => {
   return CRITICAL_PREFIXES.some((prefix) => value.startsWith(prefix));
 };
 
+const hasCssBraceMismatch = (source: string) => {
+  const text = String(source || '');
+  let brace = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let inBlockComment = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (inSingle) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '\'') inSingle = false;
+      continue;
+    }
+
+    if (inDouble) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inDouble = false;
+      continue;
+    }
+
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '\'') {
+      inSingle = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace < 0) return true;
+    }
+  }
+
+  if (inSingle || inDouble || inBlockComment) return true;
+  return brace !== 0;
+};
+
 const hasCriticalSyntaxFailure = (files: ProjectFile[]) => {
   const issues: string[] = [];
 
@@ -241,9 +302,7 @@ const hasCriticalSyntaxFailure = (files: ProjectFile[]) => {
     const content = String(file.content || '');
 
     if (path.endsWith('.css')) {
-      const opens = (content.match(/{/g) || []).length;
-      const closes = (content.match(/}/g) || []).length;
-      if (opens !== closes) {
+      if (hasCssBraceMismatch(content)) {
         issues.push(`HIDDEN_CSS_BRACE_MISMATCH:${path}`);
       }
     }

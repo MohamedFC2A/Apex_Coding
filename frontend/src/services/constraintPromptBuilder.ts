@@ -183,6 +183,8 @@ export const buildConstraintsRepairPrompt = (
     'Rules:',
     '- Modify only files needed to resolve the listed critical issues.',
     '- Do not rewrite stable files or perform cosmetic refactors.',
+    '- If issue is HIDDEN_CSS_BRACE_MISMATCH:* then make that CSS file brace-balanced and syntactically complete.',
+    '- If issue is HIDDEN_JS_SYNTAX_ERROR:* then return syntactically valid JavaScript with guarded DOM access.',
     '- Output only valid file markers and full code changes.'
   ].join('\n');
 };

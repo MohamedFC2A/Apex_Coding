@@ -2433,6 +2433,207 @@ function App() {
         return { ok: true as const, reason: '' };
       };
 
+      const analyzeCssIntegrity = (source: string) => {
+        const text = String(source || '');
+        if (!text.trim()) return { ok: true as const, reason: '' };
+
+        let brace = 0;
+        let inSingle = false;
+        let inDouble = false;
+        let inBlockComment = false;
+        let escaped = false;
+
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          const next = text[i + 1];
+
+          if (inBlockComment) {
+            if (ch === '*' && next === '/') {
+              inBlockComment = false;
+              i += 1;
+            }
+            continue;
+          }
+
+          if (inSingle) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '\'') inSingle = false;
+            continue;
+          }
+
+          if (inDouble) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inDouble = false;
+            continue;
+          }
+
+          if (ch === '/' && next === '*') {
+            inBlockComment = true;
+            i += 1;
+            continue;
+          }
+
+          if (ch === '\'') {
+            inSingle = true;
+            continue;
+          }
+          if (ch === '"') {
+            inDouble = true;
+            continue;
+          }
+
+          if (ch === '{') brace += 1;
+          else if (ch === '}') {
+            brace -= 1;
+            if (brace < 0) {
+              return { ok: false as const, reason: 'Unexpected closing brace' };
+            }
+          }
+        }
+
+        if (inSingle || inDouble || inBlockComment) {
+          return { ok: false as const, reason: 'Unterminated CSS string/comment' };
+        }
+        if (brace !== 0) {
+          return { ok: false as const, reason: 'Unbalanced CSS braces' };
+        }
+        return { ok: true as const, reason: '' };
+      };
+
+      const repairCssBraceMismatch = (source: string) => {
+        const text = String(source || '');
+        if (!text.trim()) return text;
+
+        let brace = 0;
+        let inSingle = false;
+        let inDouble = false;
+        let inBlockComment = false;
+        let escaped = false;
+        let changed = false;
+        const out: string[] = [];
+
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          const next = text[i + 1];
+
+          if (inBlockComment) {
+            out.push(ch);
+            if (ch === '*' && next === '/') {
+              out.push(next);
+              inBlockComment = false;
+              i += 1;
+            }
+            continue;
+          }
+
+          if (inSingle) {
+            out.push(ch);
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '\'') inSingle = false;
+            continue;
+          }
+
+          if (inDouble) {
+            out.push(ch);
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inDouble = false;
+            continue;
+          }
+
+          if (ch === '/' && next === '*') {
+            out.push(ch, next);
+            inBlockComment = true;
+            i += 1;
+            continue;
+          }
+
+          if (ch === '\'') {
+            out.push(ch);
+            inSingle = true;
+            continue;
+          }
+
+          if (ch === '"') {
+            out.push(ch);
+            inDouble = true;
+            continue;
+          }
+
+          if (ch === '{') {
+            brace += 1;
+            out.push(ch);
+            continue;
+          }
+
+          if (ch === '}') {
+            if (brace <= 0) {
+              changed = true;
+              continue;
+            }
+            brace -= 1;
+            out.push(ch);
+            continue;
+          }
+
+          out.push(ch);
+        }
+
+        if (brace > 0) {
+          changed = true;
+          out.push(`\n${'}\n'.repeat(brace)}`);
+        }
+
+        return changed ? out.join('') : text;
+      };
+
+      const deterministicCssSelfHeal = (path: string, source: string) => {
+        const current = String(source || '');
+        const integrity = analyzeCssIntegrity(current);
+        if (integrity.ok) return { content: current, repaired: false, ok: true as const, reason: '' };
+
+        const repaired = repairCssBraceMismatch(current);
+        if (repaired !== current) {
+          const post = analyzeCssIntegrity(repaired);
+          return { content: repaired, repaired: true, ok: post.ok, reason: post.reason };
+        }
+
+        return { content: current, repaired: false, ok: false as const, reason: integrity.reason };
+      };
+
+      const applyDeterministicHiddenSyntaxSelfHeal = () => {
+        const filesSnapshot = useProjectStore.getState().files;
+        const touched: string[] = [];
+
+        for (const file of filesSnapshot) {
+          const path = String(file.path || file.name || '').trim();
+          if (!path) continue;
+          if (!path.toLowerCase().endsWith('.css')) continue;
+
+          const result = deterministicCssSelfHeal(path, String(file.content || ''));
+          if (!result.repaired) continue;
+
+          updateFile(path, result.content);
+          upsertFileNode(path, result.content);
+          upsertFile({
+            name: path.split('/').pop() || path,
+            path,
+            content: result.content,
+            language: getLanguageFromExtension(path)
+          });
+          touched.push(path);
+        }
+
+        if (touched.length > 0) {
+          setFilesFromProjectFiles(useProjectStore.getState().files);
+        }
+
+        return touched;
+      };
+
 
       const SENSITIVE_PATH_RE = /(^|\/)(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|vite\.config\.(js|ts)|next\.config\.(js|mjs|ts)|tsconfig\.json)$/i;
       const normalizeRefPath = (value: string) =>
@@ -2673,6 +2874,35 @@ function App() {
                 language: getLanguageFromExtension(resolvedPath)
               });
               logSystem(`[REPAIR] Fixed glued comment/code boundary in ${resolvedPath}`);
+            }
+          }
+
+          if (!effectivePartial && extension === 'css') {
+            const cssResult = deterministicCssSelfHeal(resolvedPath, latest);
+            if (cssResult.repaired) {
+              latest = cssResult.content;
+              updateFile(resolvedPath, latest);
+              upsertFileNode(resolvedPath, latest);
+              upsertFile({
+                name: resolvedPath.split('/').pop() || resolvedPath,
+                path: resolvedPath,
+                content: latest,
+                language: getLanguageFromExtension(resolvedPath)
+              });
+              logSystem(`[REPAIR] Balanced CSS braces in ${resolvedPath}`);
+            }
+
+            if (!cssResult.ok) {
+              effectivePartial = true;
+              setFileStatus(resolvedPath, 'partial');
+              logSystem(`[STATUS] CSS integrity check failed for ${resolvedPath}: ${cssResult.reason}. Marked as partial for auto-resume.`);
+              addBrainEvent({
+                source: 'file',
+                level: 'warn',
+                message: `Integrity mismatch in ${resolvedPath} -> auto-resume`,
+                path: resolvedPath,
+                phase: 'recovering'
+              });
             }
           }
 
@@ -2992,6 +3222,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       }
 
       if (useAIStore.getState().executionPhase !== 'interrupted' && partialPaths.size === 0) {
+        const preGateHealed = applyDeterministicHiddenSyntaxSelfHeal();
+        if (preGateHealed.length > 0) {
+          logSystem(`[constraints] Deterministic syntax self-heal: ${preGateHealed.join(', ')}`);
+        }
+
         const currentFiles = useProjectStore.getState().files;
         if (generationConstraints.enforcement === 'hard') {
           const {
@@ -3030,6 +3265,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
               generationConstraints
             );
             await runStream(repairPrompt);
+
+            const postAutoFixHealed = applyDeterministicHiddenSyntaxSelfHeal();
+            if (postAutoFixHealed.length > 0) {
+              logSystem(`[constraints] Post auto-fix syntax self-heal: ${postAutoFixHealed.join(', ')}`);
+            }
 
             const postFixValidation = validateConstraints(useProjectStore.getState().files, generationConstraints);
             if (postFixValidation.shouldAutoFix || !postFixValidation.readyForFinalize) {

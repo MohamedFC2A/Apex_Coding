@@ -16,8 +16,11 @@
       "dest": "backend/index.js"
     },
     {
+      "handle": "filesystem"
+    },
+    {
       "src": "/(.*)",
-      "dest": "frontend/$1"
+      "dest": "frontend/package.json"
     }
   ]
 }

@@ -1217,7 +1217,7 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
       });
     }
 
-    const TIMEOUT_MS = thinkingMode ? 290_000 : 110_000;
+    const TIMEOUT_MS = thinkingMode ? 420_000 : 240_000;
     const plannerRoute = getPlannerRouting(modelRouting);
     const multiAgentEnabled = shouldUseMultiAgentArchitect({
       architectMode,
@@ -1235,27 +1235,35 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     }
 
     if (multiAgentEnabled) {
-      const multiAgentResult = await runPlanMultiAgent({
-        prompt: constrainedPrompt,
-        thinkingMode: Boolean(thinkingMode),
-        modelRouting: modelRouting || {},
-        plannerSystemPrompt: selectedSystemPrompt,
-        createChatCompletion: (payload) => provider.createChatCompletion(payload),
-        timeoutMs: TIMEOUT_MS,
-        onStatus: (phase, message) => {
-          console.log(`[plan] [${req.requestId}] [multi-agent] ${phase}:${message}`);
-        }
-      });
+      try {
+        const multiAgentResult = await runPlanMultiAgent({
+          prompt: constrainedPrompt,
+          thinkingMode: Boolean(thinkingMode),
+          modelRouting: modelRouting || {},
+          plannerSystemPrompt: selectedSystemPrompt,
+          createChatCompletion: (payload) => provider.createChatCompletion(payload),
+          timeoutMs: TIMEOUT_MS,
+          onStatus: (phase, message) => {
+            console.log(`[plan] [${req.requestId}] [multi-agent] ${phase}:${message}`);
+          }
+        });
 
-      console.log(`[plan] [${req.requestId}] Success (multi-agent)`);
-      return res.json({
-        title: multiAgentResult.plan.title,
-        description: multiAgentResult.plan.description,
-        stack: multiAgentResult.plan.stack,
-        fileTree: multiAgentResult.plan.fileTree,
-        steps: multiAgentResult.plan.steps,
-        requestId: req.requestId
-      });
+        console.log(`[plan] [${req.requestId}] Success (multi-agent)`);
+        return res.json({
+          title: multiAgentResult.plan.title,
+          description: multiAgentResult.plan.description,
+          stack: multiAgentResult.plan.stack,
+          fileTree: multiAgentResult.plan.fileTree,
+          steps: multiAgentResult.plan.steps,
+          requestId: req.requestId
+        });
+      } catch (multiAgentError) {
+        const details = getErrorDetails(multiAgentError);
+        const code = String(multiAgentError?.code || '').trim().toUpperCase() || 'UNKNOWN';
+        console.warn(
+          `[plan] [${req.requestId}] Multi-agent failed (${code}): ${details.message}. Falling back to single-agent planner.`
+        );
+      }
     }
 
     const request = {
@@ -1426,36 +1434,45 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
         provider = getLLMProvider('deepseek');
       }
 
-      const multiAgentResult = await runGenerateMultiAgent({
-        prompt: finalPrompt,
-        thinkingMode: Boolean(thinkingMode),
-        modelRouting: modelRouting || {},
-        codeSystemPrompt: CODE_STREAM_SYSTEM_PROMPT,
-        createChatCompletion: (payload) => provider.createChatCompletion(payload),
-        timeoutMs: thinkingMode ? 480_000 : 360_000,
-        onStatus: (phase, message) => {
-          writeSse('status', `${phase}:${message}`);
-        }
-      });
-
-      if (!multiAgentResult?.bypass) {
-        const fileOpParser = createFileOpParser((event) => {
-          writeSse('file_op', JSON.stringify(event));
+      try {
+        const multiAgentResult = await runGenerateMultiAgent({
+          prompt: finalPrompt,
+          thinkingMode: Boolean(thinkingMode),
+          modelRouting: modelRouting || {},
+          codeSystemPrompt: CODE_STREAM_SYSTEM_PROMPT,
+          createChatCompletion: (payload) => provider.createChatCompletion(payload),
+          timeoutMs: thinkingMode ? 480_000 : 360_000,
+          onStatus: (phase, message) => {
+            writeSse('status', `${phase}:${message}`);
+          }
         });
-        writeSse('status', 'streaming:Receiving tokens');
 
-        const merged = String(multiAgentResult?.text || '');
-        const CHUNK_SIZE = 1500;
-        for (let idx = 0; idx < merged.length; idx += CHUNK_SIZE) {
-          const chunk = merged.slice(idx, idx + CHUNK_SIZE);
-          fileOpParser.push(chunk);
-          writeSse('token', chunk);
+        if (!multiAgentResult?.bypass) {
+          const fileOpParser = createFileOpParser((event) => {
+            writeSse('file_op', JSON.stringify(event));
+          });
+          writeSse('status', 'streaming:Receiving tokens');
+
+          const merged = String(multiAgentResult?.text || '');
+          const CHUNK_SIZE = 1500;
+          for (let idx = 0; idx < merged.length; idx += CHUNK_SIZE) {
+            const chunk = merged.slice(idx, idx + CHUNK_SIZE);
+            fileOpParser.push(chunk);
+            writeSse('token', chunk);
+          }
+          fileOpParser.finalize();
+
+          writeSse('status', 'done:Complete');
+          res.end();
+          return;
         }
-        fileOpParser.finalize();
-
-        writeSse('status', 'done:Complete');
-        res.end();
-        return;
+      } catch (multiAgentError) {
+        const details = getErrorDetails(multiAgentError);
+        const code = String(multiAgentError?.code || '').trim().toUpperCase() || 'UNKNOWN';
+        console.warn(
+          `[generate] [${req.requestId}] Multi-agent failed (${code}): ${details.message}. Falling back to single-agent stream.`
+        );
+        writeSse('status', `recovering:Multi-agent fallback (${code})`);
       }
     }
 

@@ -6,6 +6,7 @@ import { usePreviewStore } from '@/stores/previewStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { diffPreviewFileMaps, toPreviewFileMap, type FileMap } from '@/utils/previewFilesUtils';
 import { apiUrl } from '@/services/apiBase';
+import { normalizePreviewUrl } from '@/utils/previewUrl';
 
 interface PreviewRunnerPreviewProps {
   className?: string;
@@ -164,15 +165,15 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
 
       const data: any = await res.json();
       const id = typeof data?.id === 'string' ? data.id : null;
-      const url = typeof data?.url === 'string' ? data.url : null;
+      const normalizedUrl = normalizePreviewUrl(typeof data?.url === 'string' ? data.url : null);
 
-      if (!id || !url) throw new Error('Invalid preview runner response');
+      if (!id || !normalizedUrl) throw new Error('Invalid preview runner response');
 
       // Success!
       setSessionId(id);
       sessionIdRef.current = id;
-      setIframeUrl(url);
-      setPreviewUrl(url);
+      setIframeUrl(normalizedUrl);
+      setPreviewUrl(normalizedUrl);
       setRuntimeStatus('starting');
       prevMapRef.current = toPreviewFileMap(initialFiles);
       logStatus(`✅ Session ready: ${id}`);
@@ -294,7 +295,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
           try {
             const parsed = JSON.parse(text);
             const nextId = typeof parsed?.id === 'string' ? parsed.id : null;
-            const nextUrl = typeof parsed?.url === 'string' ? parsed.url : null;
+            const nextUrl = normalizePreviewUrl(typeof parsed?.url === 'string' ? parsed.url : null);
             if (nextId && nextId !== sessionIdRef.current) {
               setSessionId(nextId);
               sessionIdRef.current = nextId;

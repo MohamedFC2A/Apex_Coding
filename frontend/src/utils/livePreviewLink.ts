@@ -8,7 +8,36 @@ export type LivePreviewSnapshot = {
   meta: Record<string, unknown>;
 };
 
-const normalizeProjectId = (value: string) => String(value || '').trim();
+const normalizeProjectId = (value: string) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const unwrapPathLike = (candidate: string) => {
+    const clean = String(candidate || '').trim().replace(/^\/+|\/+$/g, '');
+    if (!clean) return '';
+    const parts = clean.split('/').filter(Boolean);
+    return parts[parts.length - 1] || '';
+  };
+
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      const parsed = new URL(raw);
+      return decodeURIComponent(unwrapPathLike(parsed.pathname));
+    } catch {
+      return raw;
+    }
+  }
+
+  const withoutQuery = raw.split(/[?#]/, 1)[0] || raw;
+  const candidate = unwrapPathLike(withoutQuery);
+  if (!candidate) return '';
+
+  try {
+    return decodeURIComponent(candidate).trim();
+  } catch {
+    return candidate;
+  }
+};
 
 const getStorageKey = (projectId: string) => `${LIVE_PREVIEW_STORAGE_PREFIX}${normalizeProjectId(projectId)}`;
 

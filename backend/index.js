@@ -946,8 +946,17 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
 
 3. PATCH-FIRST EDITING:
    - Use [[PATCH_FILE: path | mode: edit]] for edits and [[PATCH_FILE: path | mode: create]] for new files.
-   - Always include complete runnable file body between marker and [[END_FILE]].
+   - Always include the complete updated file body between marker and [[END_FILE]].
    - Do not output SEARCH/REPLACE instructions.
+
+   SURGICAL EDIT RULES (CRITICAL - MUST FOLLOW):
+   - When modifying an EXISTING project, ONLY emit files that ACTUALLY CHANGE.
+   - Do NOT re-emit files that need no changes. Leave them completely alone.
+   - If the user says change X or fix Y, identify the MINIMAL set of files affected and ONLY output those.
+   - For each changed file, output the FULL updated content of THAT file only.
+   - Example: if user says change background to blue and only style.css changes, output ONLY style.css. Do NOT re-output index.html or script.js.
+   - Unchanged files MUST be kept intact. Never touch them.
+   - This is the most important rule for edit operations. Violating it wastes time and risks breaking working code.
 
 4. AUTO-CONTINUE RULES:
    If you were cut off mid-file:
@@ -1170,7 +1179,7 @@ const buildContextBundlePrompt = (contextBundle) => {
   for (const file of topFiles) {
     const path = String(file?.path || '').trim();
     if (!path) continue;
-    const snippet = String(file?.content || '').slice(0, 1800);
+    const snippet = String(file?.content || '').slice(0, 6000);
     lines.push(`[[CTX_FILE: ${path}]]`);
     if (snippet) lines.push(snippet);
     lines.push('[[END_CTX_FILE]]');

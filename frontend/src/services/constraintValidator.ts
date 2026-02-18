@@ -7,6 +7,10 @@ type ConstraintValidationResult = {
   qualityViolations: string[];
   routingViolations: string[];
   namingViolations: string[];
+  criticalViolations: string[];
+  advisoryViolations: string[];
+  hiddenIssues: string[];
+  shouldAutoFix: boolean;
   retrievalCoverageScore: number;
   readyForFinalize: boolean;
 };
@@ -200,6 +204,68 @@ const computeRetrievalCoverageScore = (files: ProjectFile[]): number => {
   return Math.max(0, Math.min(100, Math.round((resolved / refs) * 100)));
 };
 
+const CRITICAL_PREFIXES = [
+  'STRUCTURE_MISSING_',
+  'STRUCTURE_SINGLE_PAGE_MISSING_INDEX_HTML',
+  'STRUCTURE_SHARED_STYLE_CSS_MISSING',
+  'STRUCTURE_SHARED_SCRIPT_JS_MISSING',
+  'HTML_MISSING_ENTRY',
+  'CSS_MISSING_FILE',
+  'JS_MISSING_FILE',
+  'JS_EMPTY_FILE',
+  'ROUTE_BROKEN_LINK',
+  'ROUTE_MISSING_SITE_MAP_CONTRACT'
+];
+
+const isCriticalViolationCode = (code: string) => {
+  const value = String(code || '');
+  return CRITICAL_PREFIXES.some((prefix) => value.startsWith(prefix));
+};
+
+const hasCriticalSyntaxFailure = (files: ProjectFile[]) => {
+  const issues: string[] = [];
+
+  const indexHtml = findFile(files, (p) => p.endsWith('/index.html') || p === 'index.html');
+  if (indexHtml) {
+    const html = String(indexHtml.content || '').toLowerCase();
+    if (!html.includes('<body') || !html.includes('</body>')) {
+      issues.push('HIDDEN_HTML_BODY_TAG_MISMATCH');
+    }
+    if (!html.includes('</html>')) {
+      issues.push('HIDDEN_HTML_MISSING_CLOSING_HTML_TAG');
+    }
+  }
+
+  for (const file of files) {
+    const path = normalizePath(file.path || file.name || '');
+    const content = String(file.content || '');
+
+    if (path.endsWith('.css')) {
+      const opens = (content.match(/{/g) || []).length;
+      const closes = (content.match(/}/g) || []).length;
+      if (opens !== closes) {
+        issues.push(`HIDDEN_CSS_BRACE_MISMATCH:${path}`);
+      }
+    }
+
+    if (path.endsWith('.js')) {
+      const text = content.trim();
+      if (!text) continue;
+      const hasEsmSyntax = /\bimport\s+|^\s*export\s+/m.test(text);
+      if (!hasEsmSyntax) {
+        try {
+          // Syntax sanity check for classic scripts. This catches hidden broken outputs early.
+          new Function(text);
+        } catch {
+          issues.push(`HIDDEN_JS_SYNTAX_ERROR:${path}`);
+        }
+      }
+    }
+  }
+
+  return Array.from(new Set(issues));
+};
+
 export const validateConstraints = (
   files: ProjectFile[],
   constraints: GenerationConstraints
@@ -228,16 +294,25 @@ export const validateConstraints = (
     namingViolations.push(...validateNamingConventions(files));
   }
 
+  const hiddenIssues = hasCriticalSyntaxFailure(files);
+  const allViolations = [...qualityViolations, ...routingViolations, ...namingViolations];
+  const criticalViolations = allViolations.filter((code) => isCriticalViolationCode(code));
+  const advisoryViolations = allViolations.filter((code) => !isCriticalViolationCode(code));
+  const shouldAutoFix = missingFeatures.length > 0 || criticalViolations.length > 0 || hiddenIssues.length > 0;
+
   return {
     missingFeatures,
     qualityViolations,
     routingViolations,
     namingViolations,
+    criticalViolations,
+    advisoryViolations,
+    hiddenIssues,
+    shouldAutoFix,
     retrievalCoverageScore,
     readyForFinalize:
       missingFeatures.length === 0 &&
-      qualityViolations.length === 0 &&
-      routingViolations.length === 0 &&
-      namingViolations.length === 0
+      criticalViolations.length === 0 &&
+      hiddenIssues.length === 0
   };
 };

@@ -226,6 +226,7 @@ const translations: Record<Language, Translations> = {
 
     // Generation Statuses
     'app.plan.status.initializing': 'Initializing...',
+    'app.plan.status.planning': 'Planning',
     'app.plan.status.thinking': 'Thinking...',
     'app.plan.status.working': 'Generating code...',
     'app.plan.status.validating': 'Validating output...',
@@ -234,6 +235,12 @@ const translations: Record<Language, Translations> = {
     'app.plan.status.reasoning': 'Reasoning...',
     'app.plan.status.done': 'Done',
     'app.plan.status.pending': 'Pending',
+    'app.plan.stage.planner': 'Planner',
+    'app.plan.stage.html': 'HTML',
+    'app.plan.stage.css': 'CSS',
+    'app.plan.stage.javascript': 'JavaScript',
+    'app.plan.stage.resolver': 'Resolver',
+    'app.plan.stage.strictGate': 'Strict gate',
 
     // Project Type Dialog
     'app.project.selectType': 'Select Project Type',
@@ -466,6 +473,7 @@ const translations: Record<Language, Translations> = {
 
     // Generation Statuses
     'app.plan.status.initializing': 'جاري التهيئة...',
+    'app.plan.status.planning': 'جاري التخطيط',
     'app.plan.status.thinking': 'جاري التفكير...',
     'app.plan.status.working': 'جاري إنشاء الكود...',
     'app.plan.status.validating': 'جاري التحقق من المخرجات...',
@@ -474,6 +482,12 @@ const translations: Record<Language, Translations> = {
     'app.plan.status.reasoning': 'جاري الاستنتاج...',
     'app.plan.status.done': 'تم',
     'app.plan.status.pending': 'قيد الانتظار',
+    'app.plan.stage.planner': 'المخطط',
+    'app.plan.stage.html': 'HTML',
+    'app.plan.stage.css': 'CSS',
+    'app.plan.stage.javascript': 'JavaScript',
+    'app.plan.stage.resolver': 'الموحّد',
+    'app.plan.stage.strictGate': 'التحقق الصارم',
 
     // Project Type Dialog
     'app.project.selectType': 'حدد نوع المشروع',

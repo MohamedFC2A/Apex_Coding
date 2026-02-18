@@ -202,7 +202,8 @@ export const archiveCurrentWorkspaceAsSession = async (
     },
     activeModelProfile: {
       plannerModel: 'planner:auto',
-      executorModel: 'executor:auto'
+      executorModel: 'executor:auto',
+      specialistModels: {}
     }
   };
 

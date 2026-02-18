@@ -27,6 +27,7 @@ export interface CompressionSnapshot {
 export interface ActiveModelProfile {
   plannerModel: string;
   executorModel: string;
+  specialistModels?: Record<string, string>;
 }
 
 export interface FileNode {

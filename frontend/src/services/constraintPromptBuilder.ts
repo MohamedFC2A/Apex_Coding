@@ -168,18 +168,21 @@ export const mergePromptWithConstraints = (prompt: string, constraints: Generati
 };
 
 export const buildConstraintsRepairPrompt = (
-  missingFeatures: string[],
+  issues: string[],
   constraints: GenerationConstraints
 ): string => {
-  const missingList = missingFeatures.map((id) => `- ${id}`).join('\n');
+  const issueList = issues.map((id) => `- ${id}`).join('\n');
   return [
-    'AUTO-FIX: apply missing constraints in the current project.',
+    'SMART AUTO-FIX: patch ONLY critical blockers in the current project.',
     '',
-    '[MISSING CONSTRAINTS]',
-    missingList || '- none',
+    '[CRITICAL ISSUES]',
+    issueList || '- none',
     '',
     buildGenerationConstraintsBlock(constraints),
     '',
-    'Output only valid file markers and full code changes to satisfy missing constraints.'
+    'Rules:',
+    '- Modify only files needed to resolve the listed critical issues.',
+    '- Do not rewrite stable files or perform cosmetic refactors.',
+    '- Output only valid file markers and full code changes.'
   ].join('\n');
 };

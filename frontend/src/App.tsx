@@ -2744,16 +2744,40 @@ function App() {
               });
               return;
             }
+            const compactStageKey = String(message || '').trim().toLowerCase();
+            const compactStageLabel =
+              compactStageKey === 'planner'
+                ? t('app.plan.stage.planner')
+                : compactStageKey === 'html'
+                  ? t('app.plan.stage.html')
+                  : compactStageKey === 'css'
+                    ? t('app.plan.stage.css')
+                    : compactStageKey === 'javascript'
+                      ? t('app.plan.stage.javascript')
+                      : compactStageKey === 'resolver'
+                        ? t('app.plan.stage.resolver')
+                        : /strict gate/i.test(compactStageKey)
+                          ? t('app.plan.stage.strictGate')
+                          : message;
             const writing = useAIStore.getState().writingFilePath;
             if (writing && phase === 'streaming') {
               setThinkingStatus(`Writing ${writing.split('/').pop() || writing}…`);
+            } else if (phase === 'planning') {
+              setThinkingStatus(`${t('app.plan.status.planning')}: ${compactStageLabel}`);
             } else if (phase === 'thinking') setThinkingStatus('Thinking…');
             else if (phase === 'streaming') setThinkingStatus('Generating…');
-            else if (phase === 'validating') setThinkingStatus('Validating…');
+            else if (phase === 'validating') {
+              if (/strict gate/i.test(String(message || ''))) {
+                setThinkingStatus(`${t('app.plan.status.validating')}: ${t('app.plan.stage.strictGate')}`);
+              } else {
+                setThinkingStatus('Validating…');
+              }
+            }
             else if (phase === 'done') setThinkingStatus('Complete');
             else if (phase === 'recovering') setThinkingStatus('Recovering…');
             else setThinkingStatus(message);
-            if (message) logSystem(`[STATUS] ${message}`);
+            const shouldSkipVerboseLog = phase === 'planning' || (phase === 'validating' && /strict gate/i.test(String(message || '')));
+            if (message && !shouldSkipVerboseLog) logSystem(`[STATUS] ${message}`);
             if (message) {
               addBrainEvent({
                 source: 'stream',
@@ -2821,7 +2845,8 @@ function App() {
           false,
           abortController.signal,
           generationConstraints.projectMode,
-          generationConstraints
+          generationConstraints,
+          true
         );
         const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
         const generatedSteps = rawSteps
@@ -2947,26 +2972,53 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
             qualityViolations,
             routingViolations,
             namingViolations,
+            criticalViolations,
+            advisoryViolations,
+            hiddenIssues,
+            shouldAutoFix,
             retrievalCoverageScore,
             readyForFinalize
           } = validateConstraints(currentFiles, generationConstraints);
-          if (!readyForFinalize) {
+          if (advisoryViolations.length > 0 && !shouldAutoFix) {
+            logSystem(
+              `[constraints] Advisory findings only (no auto-fix): ${advisoryViolations.slice(0, 8).join(', ')}${
+                advisoryViolations.length > 8 ? ' ...' : ''
+              } | Retrieval coverage=${retrievalCoverageScore}%`
+            );
+          }
+          if (shouldAutoFix) {
             const qualitySummary = qualityViolations.length > 0 ? ` | Quality issues: ${qualityViolations.join(', ')}` : '';
             const routingSummary = routingViolations.length > 0 ? ` | Routing: ${routingViolations.join(', ')}` : '';
             const namingSummary = namingViolations.length > 0 ? ` | Naming: ${namingViolations.join(', ')}` : '';
+            const hiddenSummary = hiddenIssues.length > 0 ? ` | Hidden: ${hiddenIssues.join(', ')}` : '';
             logSystem(
-              `[constraints] Auto-fix required. Missing features: ${missingFeatures.join(', ') || 'none'}${qualitySummary}${routingSummary}${namingSummary} | Retrieval coverage=${retrievalCoverageScore}%`
+              `[constraints] Critical auto-fix required. Missing features: ${missingFeatures.join(', ') || 'none'}${qualitySummary}${routingSummary}${namingSummary}${hiddenSummary} | Retrieval coverage=${retrievalCoverageScore}%`
             );
             const repairPrompt = buildConstraintsRepairPrompt(
               [
                 ...missingFeatures,
-                ...qualityViolations.map((issue) => `quality:${issue}`),
-                ...routingViolations.map((issue) => `routing:${issue}`),
-                ...namingViolations.map((issue) => `naming:${issue}`)
+                ...criticalViolations.map((issue) => `critical:${issue}`),
+                ...hiddenIssues.map((issue) => `hidden:${issue}`)
               ],
               generationConstraints
             );
             await runStream(repairPrompt);
+
+            const postFixValidation = validateConstraints(useProjectStore.getState().files, generationConstraints);
+            if (postFixValidation.shouldAutoFix || !postFixValidation.readyForFinalize) {
+              const unresolved = [
+                ...postFixValidation.missingFeatures.map((x) => `missing:${x}`),
+                ...postFixValidation.criticalViolations.map((x) => `critical:${x}`),
+                ...postFixValidation.hiddenIssues.map((x) => `hidden:${x}`)
+              ];
+              throw new Error(
+                `QUALITY_GATE_BLOCKED: unresolved critical issues after smart auto-fix -> ${unresolved.slice(0, 10).join(', ')}${
+                  unresolved.length > 10 ? ' ...' : ''
+                }`
+              );
+            }
+          } else if (!readyForFinalize) {
+            logSystem('[constraints] Non-critical issues detected. Finalizing without extra edits to avoid unnecessary token usage.');
           }
         }
       }
@@ -3061,7 +3113,8 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     effectiveProjectType,
     projectName,
     stack,
-    description
+    description,
+    t
   ]);
 
   const buildFixPrompt = useCallback(

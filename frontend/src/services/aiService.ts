@@ -42,13 +42,21 @@ export type StreamFileEvent =
       safetyCheckPassed?: boolean;
     };
 
-const buildModelRoutingPayload = (thinkingMode: boolean) => {
+const buildModelRoutingPayload = (thinkingMode: boolean, architectMode: boolean = false) => {
   return {
     plannerProvider: 'deepseek',
     plannerModel: 'deepseek-chat',
     executorProvider: 'deepseek',
     executorModel: thinkingMode ? 'deepseek-reasoner' : 'deepseek-chat',
-    fallbackPolicy: 'planner->executor->default'
+    fallbackPolicy: 'planner->executor->default',
+    multiAgent: {
+      enabled: true,
+      activation: 'architect_only',
+      strictGate: 'strict',
+      visibility: 'compact',
+      specialistSet: 'planner_html_css_js_v1',
+      architectMode: Boolean(architectMode)
+    }
   };
 };
 
@@ -117,7 +125,8 @@ export const aiService = {
     thinkingMode: boolean = false,
     abortSignal?: AbortSignal,
     projectType?: 'FULL_STACK' | 'FRONTEND_ONLY' | null,
-    constraints?: GenerationConstraints
+    constraints?: GenerationConstraints,
+    architectMode: boolean = false
   ): Promise<{ title?: string; description?: string; stack?: string; fileTree?: string[]; steps: Array<{ id: string; title: string; category?: string; files?: string[]; description?: string }> }> {
     try {
       const PLAN_URL = apiUrl('/ai/plan');
@@ -233,10 +242,11 @@ QUALITY:
               body: JSON.stringify({
                 prompt: enhancedPlanPrompt,
                 thinkingMode,
+                architectMode,
                 projectType: selectedProjectType,
                 constraints,
                 contextMeta: buildContextMetaPayload(),
-                modelRouting: buildModelRoutingPayload(thinkingMode)
+                modelRouting: buildModelRoutingPayload(thinkingMode, architectMode)
               })
             });
           } catch (e: any) {
@@ -1000,7 +1010,7 @@ ${constrainedPrompt}
               history: options.history || [],
               constraints,
               contextMeta: buildContextMetaPayload({ retrievalTrace }),
-              modelRouting: buildModelRoutingPayload(thinkingMode)
+              modelRouting: buildModelRoutingPayload(thinkingMode, architectMode)
             })
           });
         } catch (e: any) {

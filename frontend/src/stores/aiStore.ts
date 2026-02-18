@@ -350,7 +350,8 @@ const normalizeModelMode = (mode: ModelMode): ModelMode => {
 
 const getActiveModelProfile = (): ActiveModelProfile => ({
   plannerModel: 'planner:auto',
-  executorModel: 'executor:auto'
+  executorModel: 'executor:auto',
+  specialistModels: {}
 });
 
 // Calculate total context size in characters.
@@ -984,7 +985,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             fileControlMode: 'safe_full' as const,
             contextIntelligenceMode: 'balanced_graph' as const
           };
-          const data = await aiService.generatePlan(prompt, thinkingMode, abortSignal, projectType, constraints);
+          const data = await aiService.generatePlan(prompt, thinkingMode, abortSignal, projectType, constraints, get().architectMode);
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
 
           const planSteps: PlanStep[] = rawSteps

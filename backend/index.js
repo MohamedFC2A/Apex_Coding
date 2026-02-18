@@ -13,6 +13,12 @@ const { createRateLimiter } = require('./middleware/rateLimit');
 const { parseAllowedOrigins } = require('./utils/security');
 const { getCodeSandboxApiKey, createSandboxPreview, patchSandboxFiles, hibernateSandbox } = require('./utils/codesandbox');
 const { createFileOpParser } = require('./utils/fileOpParser');
+const {
+  isMultiAgentArchitectEnabled,
+  isResumePrompt,
+  runPlanMultiAgent,
+  runGenerateMultiAgent
+} = require('./utils/multiAgentOrchestrator');
 
 const app = express();
 
@@ -196,6 +202,10 @@ app.get(['/ai/provider-status', '/api/ai/provider-status'], (req, res) => {
   return res.json({
     provider: 'deepseek',
     configured,
+    capabilities: {
+      multiAgentArchitect: true,
+      specialists: ['planner', 'html', 'css', 'javascript', 'resolver']
+    },
     code: configured ? 'OK' : 'LLM_NOT_CONFIGURED',
     hint: configured
       ? null
@@ -666,6 +676,13 @@ const getExecutorRouting = (thinkingMode, modelRouting = {}) => {
       (thinkingMode ? 'deepseek-reasoner' : 'deepseek-chat')
   ).trim();
   return { provider, model };
+};
+
+const shouldUseMultiAgentArchitect = ({ architectMode, modelRouting }) => {
+  return isMultiAgentArchitectEnabled({
+    architectMode: Boolean(architectMode),
+    modelRouting: modelRouting || {}
+  });
 };
 
 const cleanAndParseJSON = (text) => {
@@ -1173,7 +1190,7 @@ const planLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 app.post(planRouteRegex, planLimiter, async (req, res) => {
   console.log(`[plan] [${req.requestId}] Received request`);
   try {
-    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting } = req.body || {};
+    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, architectMode } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       console.log(`[plan] [${req.requestId}] Error: Prompt is required`);
       return res.status(400).json({ error: 'Prompt is required', requestId: req.requestId });
@@ -1185,11 +1202,6 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     const constraints = normalizeConstraints(rawConstraints, projectType);
     const effectiveProjectType = constraints.projectMode;
     const constrainedPrompt = attachConstraintsToPrompt(prompt, constraints);
-
-    const plannerRoute = getPlannerRouting(modelRouting);
-    console.log(
-      `[plan] [${req.requestId}] prompt_length=${prompt.length} mode=${thinkingMode ? 'thinking' : 'fast'} type=${effectiveProjectType} planner=${plannerRoute.provider}:${plannerRoute.model} session=${contextMeta?.sessionId || 'none'}`
-    );
 
     // Select constraints based on projectType
     let selectedSystemPrompt = PLAN_SYSTEM_PROMPT_FULLSTACK; // Default
@@ -1206,6 +1218,45 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     }
 
     const TIMEOUT_MS = thinkingMode ? 290_000 : 110_000;
+    const plannerRoute = getPlannerRouting(modelRouting);
+    const multiAgentEnabled = shouldUseMultiAgentArchitect({
+      architectMode,
+      modelRouting
+    });
+    console.log(
+      `[plan] [${req.requestId}] prompt_length=${prompt.length} mode=${thinkingMode ? 'thinking' : 'fast'} type=${effectiveProjectType} planner=${plannerRoute.provider}:${plannerRoute.model} architect=${Boolean(architectMode)} multiAgent=${multiAgentEnabled} session=${contextMeta?.sessionId || 'none'}`
+    );
+
+    let provider;
+    try {
+      provider = getLLMProvider(plannerRoute.provider);
+    } catch {
+      provider = getLLMProvider('deepseek');
+    }
+
+    if (multiAgentEnabled) {
+      const multiAgentResult = await runPlanMultiAgent({
+        prompt: constrainedPrompt,
+        thinkingMode: Boolean(thinkingMode),
+        modelRouting: modelRouting || {},
+        plannerSystemPrompt: selectedSystemPrompt,
+        createChatCompletion: (payload) => provider.createChatCompletion(payload),
+        timeoutMs: TIMEOUT_MS,
+        onStatus: (phase, message) => {
+          console.log(`[plan] [${req.requestId}] [multi-agent] ${phase}:${message}`);
+        }
+      });
+
+      console.log(`[plan] [${req.requestId}] Success (multi-agent)`);
+      return res.json({
+        title: multiAgentResult.plan.title,
+        description: multiAgentResult.plan.description,
+        stack: multiAgentResult.plan.stack,
+        fileTree: multiAgentResult.plan.fileTree,
+        steps: multiAgentResult.plan.steps,
+        requestId: req.requestId
+      });
+    }
 
     const request = {
       model: plannerRoute.model,
@@ -1217,12 +1268,6 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     };
 
     let completion;
-    let provider;
-    try {
-      provider = getLLMProvider(plannerRoute.provider);
-    } catch {
-      provider = getLLMProvider('deepseek');
-    }
     try {
       console.log(`[plan] [${req.requestId}] Requesting AI completion...`);
       completion = await Promise.race([
@@ -1279,6 +1324,13 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
       requestId: req.requestId
     });
   } catch (error) {
+    if (String(error?.code || '').toUpperCase() === 'MULTI_AGENT_GATE_FAILED' || Number(error?.statusCode) === 422) {
+      return res.status(422).json({
+        error: 'MULTI_AGENT_GATE_FAILED',
+        details: Array.isArray(error?.issues) ? error.issues : [String(error?.message || 'Strict gate failed')],
+        requestId: req.requestId
+      });
+    }
     if (String(error?.message || '').includes('PLAN_TIMEOUT')) {
       return res.status(504).json({
         error: 'PLAN_TIMEOUT',
@@ -1322,7 +1374,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
   };
 
   try {
-    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, contextBundle } = req.body || {};
+    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, contextBundle, architectMode } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       res.status(400).send('Prompt is required');
       return;
@@ -1356,10 +1408,56 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
 
     const executorRoute = getExecutorRouting(Boolean(thinkingMode), modelRouting);
     const model = executorRoute.model;
+    const multiAgentEnabled = shouldUseMultiAgentArchitect({
+      architectMode,
+      modelRouting
+    });
+    const resumePrompt = isResumePrompt(finalPrompt);
 
     console.log(
-      `[generate] [${req.requestId}] model=${executorRoute.provider}:${executorRoute.model} session=${contextMeta?.sessionId || 'none'}`
+      `[generate] [${req.requestId}] model=${executorRoute.provider}:${executorRoute.model} architect=${Boolean(architectMode)} multiAgent=${multiAgentEnabled} resume=${resumePrompt} session=${contextMeta?.sessionId || 'none'}`
     );
+
+    if (multiAgentEnabled && !resumePrompt) {
+      let provider;
+      try {
+        provider = getLLMProvider(executorRoute.provider);
+      } catch {
+        provider = getLLMProvider('deepseek');
+      }
+
+      const multiAgentResult = await runGenerateMultiAgent({
+        prompt: finalPrompt,
+        thinkingMode: Boolean(thinkingMode),
+        modelRouting: modelRouting || {},
+        codeSystemPrompt: CODE_STREAM_SYSTEM_PROMPT,
+        createChatCompletion: (payload) => provider.createChatCompletion(payload),
+        timeoutMs: thinkingMode ? 220_000 : 140_000,
+        onStatus: (phase, message) => {
+          writeSse('status', `${phase}:${message}`);
+        }
+      });
+
+      if (!multiAgentResult?.bypass) {
+        const fileOpParser = createFileOpParser((event) => {
+          writeSse('file_op', JSON.stringify(event));
+        });
+        writeSse('status', 'streaming:Receiving tokens');
+
+        const merged = String(multiAgentResult?.text || '');
+        const CHUNK_SIZE = 1500;
+        for (let idx = 0; idx < merged.length; idx += CHUNK_SIZE) {
+          const chunk = merged.slice(idx, idx + CHUNK_SIZE);
+          fileOpParser.push(chunk);
+          writeSse('token', chunk);
+        }
+        fileOpParser.finalize();
+
+        writeSse('status', 'done:Complete');
+        res.end();
+        return;
+      }
+    }
 
     // Legacy demo fallback (kept for compatibility but unreachable when provider is required).
     const explicitFrameworkRequested = hasExplicitFrameworkRequest(finalPrompt);
@@ -1741,7 +1839,13 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
     const details = getErrorDetails(error);
     console.error(`[generate] [${req.requestId}] error=${details.message}`);
     try {
-      writeSse('status', `error:${details.message}`);
+      const errorCode = String(error?.code || '').trim().toUpperCase();
+      if (errorCode === 'MULTI_AGENT_GATE_FAILED') {
+        const issueList = Array.isArray(error?.issues) ? error.issues.join(' | ') : details.message;
+        writeSse('status', `error:MULTI_AGENT_GATE_FAILED: ${issueList}`);
+      } else {
+        writeSse('status', `error:${details.message}`);
+      }
     } catch {
       // ignore
     }

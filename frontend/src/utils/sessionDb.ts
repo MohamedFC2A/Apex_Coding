@@ -102,17 +102,34 @@ export const saveSessionToDisk = async (session: StoredHistorySession) => {
 export const loadSessionsFromDisk = async (limit = 40): Promise<StoredHistorySession[]> => {
   return withTx([SESSIONS_STORE], 'readonly', async (tx) => {
     const store = tx.objectStore(SESSIONS_STORE);
-    const index = store.index('by_updatedAt');
-    const out: StoredHistorySession[] = [];
+    const canUseUpdatedAtIndex = Array.from(store.indexNames).includes('by_updatedAt');
+
+    if (canUseUpdatedAtIndex) {
+      try {
+        const index = store.index('by_updatedAt');
+        const out: StoredHistorySession[] = [];
+        return await new Promise<StoredHistorySession[]>((resolve, reject) => {
+          const req = index.openCursor(null, 'prev');
+          req.onsuccess = () => {
+            const cursor = req.result as IDBCursorWithValue | null;
+            if (!cursor) return resolve(out);
+            out.push(cursor.value as StoredHistorySession);
+            if (out.length >= limit) return resolve(out);
+            cursor.continue();
+          };
+          req.onerror = () => reject(req.error);
+        });
+      } catch {
+        // fallback to full scan below
+      }
+    }
 
     return new Promise<StoredHistorySession[]>((resolve, reject) => {
-      const req = index.openCursor(null, 'prev');
+      const req = store.getAll();
       req.onsuccess = () => {
-        const cursor = req.result as IDBCursorWithValue | null;
-        if (!cursor) return resolve(out);
-        out.push(cursor.value as StoredHistorySession);
-        if (out.length >= limit) return resolve(out);
-        cursor.continue();
+        const records = (Array.isArray(req.result) ? req.result : []) as StoredHistorySession[];
+        records.sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
+        resolve(records.slice(0, limit));
       };
       req.onerror = () => reject(req.error);
     });

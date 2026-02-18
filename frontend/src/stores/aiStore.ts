@@ -282,6 +282,7 @@ const KEEP_RECENT_MESSAGES = 8;
 const SUMMARY_CHUNK_SIZE = 5;
 const MAX_HISTORY_SESSIONS = 40;
 const AI_EMERGENCY_SESSION_KEY = 'apex-ai-emergency-session';
+export const AI_NEW_CHAT_GUARD_KEY = 'apex-ai-new-chat-guard';
 
 // Keep long-running sessions responsive: cap large UI strings.
 const MAX_THINKING_CHARS = 120_000;
@@ -1486,7 +1487,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             };
             set((prev) => ({
               history: [recovered, ...prev.history].slice(0, MAX_HISTORY_SESSIONS),
-              currentSessionId: prev.currentSessionId || recovered.id
+              currentSessionId: prev.currentSessionId || null
             }));
             return;
           }
@@ -1530,7 +1531,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
           set((prev) => ({
             history: sessions.slice(0, MAX_HISTORY_SESSIONS),
-            currentSessionId: prev.currentSessionId || sessions[0]?.id || null
+            currentSessionId: prev.currentSessionId || null
           }));
         } catch {
           // ignore
@@ -1603,6 +1604,13 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
       startNewChat: () => {
          get().saveCurrentSession();
+         if (typeof window !== 'undefined') {
+           try {
+             window.localStorage.setItem(AI_NEW_CHAT_GUARD_KEY, String(Date.now()));
+           } catch {
+             // ignore
+           }
+         }
 
          set({
           files: createInitialFiles(),

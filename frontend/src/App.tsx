@@ -5,7 +5,7 @@ import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { SubscriptionIndicator } from './components/SubscriptionIndicator';
 import { useLanguage } from './context/LanguageContext';
 
-import { useAIStore } from './stores/aiStore';
+import { AI_NEW_CHAT_GUARD_KEY, useAIStore } from './stores/aiStore';
 import { useProjectStore } from './stores/projectStore';
 import { usePreviewStore } from './stores/previewStore';
 import { aiService, type StreamFileEvent } from './services/aiService';
@@ -46,6 +46,7 @@ let globalAutosaveTimer: number | null = null;
 const AUTO_RESUME_KEY = 'apex-ai-pending-run';
 const AUTO_RESUME_MAX_ATTEMPTS = 2;
 const AUTO_RESUME_MAX_AGE_MS = 1000 * 60 * 60 * 6;
+const NEW_CHAT_GUARD_TTL_MS = 45_000;
 
 type AutoResumePayload = {
   prompt: string;
@@ -84,6 +85,20 @@ const clearAutoResumePayload = () => {
     window.localStorage.removeItem(AUTO_RESUME_KEY);
   } catch {
     // ignore storage issues
+  }
+};
+
+const consumeNewChatGuard = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = window.localStorage.getItem(AI_NEW_CHAT_GUARD_KEY);
+    if (!raw) return false;
+    window.localStorage.removeItem(AI_NEW_CHAT_GUARD_KEY);
+    const at = Number(raw);
+    if (!Number.isFinite(at) || at <= 0) return false;
+    return Date.now() - at <= NEW_CHAT_GUARD_TTL_MS;
+  } catch {
+    return false;
   }
 };
 
@@ -1313,12 +1328,48 @@ function App() {
     let cancelled = false;
 
     const bootstrapHistory = async () => {
+      const hasFreshNewChatGuard = consumeNewChatGuard();
+      if (hasFreshNewChatGuard) {
+        useAIStore.setState({
+          files: {},
+          chatHistory: [],
+          plan: '',
+          planSteps: [],
+          prompt: '',
+          lastPlannedPrompt: '',
+          decisionTrace: '',
+          streamText: '',
+          thinkingContent: '',
+          systemConsoleContent: '',
+          fileStatuses: {},
+          writingFilePath: null,
+          sections: {},
+          isGenerating: false,
+          isPlanning: false,
+          generationStatus: {
+            isGenerating: false,
+            currentStep: 'idle',
+            progress: 0
+          },
+          error: null,
+          currentSessionId: null
+        });
+      }
+
       await useProjectStore.getState().hydrateFromDisk();
       if (cancelled) return;
+
+      if (hasFreshNewChatGuard) {
+        await useProjectStore.getState().clearDisk();
+        if (cancelled) return;
+        useProjectStore.getState().reset();
+      }
 
       const ai = useAIStore.getState();
       await ai.hydrateHistoryFromDisk();
       if (cancelled) return;
+
+      if (hasFreshNewChatGuard) return;
 
       const latestAI = useAIStore.getState();
       const hasLiveContext =
@@ -1328,10 +1379,10 @@ function App() {
       if (hasLiveContext) return;
 
       const targetSessionId =
-        (latestAI.currentSessionId &&
+        latestAI.currentSessionId &&
         latestAI.history.some((session) => session.id === latestAI.currentSessionId)
           ? latestAI.currentSessionId
-          : latestAI.history[0]?.id) || null;
+          : null;
 
       if (!targetSessionId) return;
       useAIStore.getState().restoreSession(targetSessionId);

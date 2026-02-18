@@ -6,7 +6,8 @@ import { useAIStore } from '@/stores/aiStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import type { GenerationConstraints } from '@/types/constraints';
 import { buildAIOrganizationPolicyBlock, mergePromptWithConstraints } from '@/services/constraintPromptBuilder';
-import { selectContextRetrievalTrace } from '@/services/contextGraph';
+import { buildContextBundle } from '@/services/contextRetrievalEngine';
+import { parseFileOpEventPayload } from '@/services/fileOpEvents';
 
 interface AIResponse {
   plan: string;
@@ -94,6 +95,23 @@ const getErrorMessage = (err: any, fallback: string) => {
 };
 
 export const aiService = {
+  async getProviderStatus(): Promise<{ configured: boolean; code?: string; hint?: string | null; provider?: string }> {
+    const response = await fetch(apiUrl('/ai/provider-status'), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) {
+      throw new Error(`Provider status failed (${response.status})`);
+    }
+    const data: any = await response.json();
+    return {
+      configured: Boolean(data?.configured),
+      code: typeof data?.code === 'string' ? data.code : undefined,
+      hint: typeof data?.hint === 'string' ? data.hint : null,
+      provider: typeof data?.provider === 'string' ? data.provider : undefined
+    };
+  },
+
   async generatePlan(
     prompt: string,
     thinkingMode: boolean = false,
@@ -273,6 +291,9 @@ QUALITY:
         const text = await response.text().catch(() => '');
         if (response.status === 404) throw new Error('Backend not found (404). Check API URL.');
         if (response.status === 504) throw new Error('Gateway Timeout (504). AI is taking too long.');
+        if (response.status === 503 && /LLM_NOT_CONFIGURED/i.test(text)) {
+          throw new Error('LLM_NOT_CONFIGURED: Backend AI provider is not configured. Set valid DEEPSEEK_API_KEY.');
+        }
         throw new Error(text || `Plan failed (${response.status})`);
       }
 
@@ -344,22 +365,16 @@ QUALITY:
       const projectState = useProjectStore.getState();
       const aiState = useAIStore.getState();
       const previewState = usePreviewStore.getState();
-      const retrievalTrace = selectContextRetrievalTrace({
+      const contextBundle = buildContextBundle({
         files: projectState.files,
         activeFile: projectState.activeFile,
         recentPreviewErrors: previewState.logs.slice(-24).map((entry) => String(entry.message || '')),
-        mode: constraints?.contextIntelligenceMode || 'balanced_graph'
+        prompt,
+        mode: constraints?.contextIntelligenceMode || 'balanced_graph',
+        maxFiles: 24
       });
-      const selectedPathSet = new Set(retrievalTrace.selected.map((item) => item.path));
-      
-      const normalizedFiles = Array.from(
-        new Set(
-          projectState.files
-            .map((f: ProjectFile) => String(f.path || f.name || '').replace(/\\/g, '/').trim())
-            .filter((path) => selectedPathSet.has(path) || selectedPathSet.has(path.replace(/^\/+/, '')))
-            .filter(Boolean)
-        )
-      ).sort((a, b) => a.localeCompare(b));
+      const retrievalTrace = contextBundle.retrievalTrace;
+      const normalizedFiles = contextBundle.files.map((item) => item.path);
 
       const selectedProjectMode: GenerationConstraints['projectMode'] =
         constraints?.projectMode ||
@@ -537,6 +552,7 @@ ${constrainedPrompt}
         return { eventName, dataText };
       };
 
+      const patchToken = '[[PATCH_FILE:';
       const startToken = '[[START_FILE:';
       const editToken = '[[EDIT_FILE:';
       const editNodeToken = '[[EDIT_NODE:';
@@ -578,17 +594,19 @@ ${constrainedPrompt}
           while (this.scan.length > 0) {
             if (!this.inFile) {
               const startIdx = this.scan.indexOf(startToken);
+              const patchIdx = this.scan.indexOf(patchToken);
               const editIdx = this.scan.indexOf(editToken);
               const editNodeIdx = this.scan.indexOf(editNodeToken);
               const deleteIdx = this.scan.indexOf(deleteToken);
               const moveIdx = this.scan.indexOf(moveToken);
               const nextIdx =
-                [startIdx, editIdx, editNodeIdx, deleteIdx, moveIdx]
+                [patchIdx, startIdx, editIdx, editNodeIdx, deleteIdx, moveIdx]
                   .filter((v) => v !== -1)
                   .sort((a, b) => a - b)[0] ?? -1;
 
               if (nextIdx === -1) {
                 const keep = Math.max(
+                  patchToken.length - 1,
                   startToken.length - 1,
                   editToken.length - 1,
                   editNodeToken.length - 1,
@@ -640,19 +658,28 @@ ${constrainedPrompt}
                 continue;
               }
 
+              const isPatch = patchIdx !== -1 && patchIdx === nextIdx;
               const isEdit = (editIdx !== -1 && editIdx === nextIdx) || (editNodeIdx !== -1 && editNodeIdx === nextIdx);
-              const token = startIdx === nextIdx ? startToken : isEdit && editNodeIdx === nextIdx ? editNodeToken : editToken;
+              const token = isPatch
+                ? patchToken
+                : startIdx === nextIdx
+                  ? startToken
+                  : isEdit && editNodeIdx === nextIdx
+                    ? editNodeToken
+                    : editToken;
               const closeIdx = this.scan.indexOf(']]', nextIdx);
               if (closeIdx === -1) {
                 this.scan = this.scan.slice(nextIdx);
                 return;
               }
 
-              const rawPath = this.scan.slice(nextIdx + token.length, closeIdx).trim();
+              const payload = this.scan.slice(nextIdx + token.length, closeIdx).trim();
+              const patchPayload = isPatch ? this.parsePatchPayload(payload) : null;
+              const rawPath = patchPayload?.path || payload;
               this.currentPath = rawPath;
               this.inFile = true;
               this.currentLine = 1;
-              this.currentMode = isEdit ? 'edit' : 'create';
+              this.currentMode = patchPayload?.mode || (isEdit ? 'edit' : 'create');
               this.scan = this.scan.slice(closeIdx + 2);
 
               options.onFileEvent?.({
@@ -666,13 +693,14 @@ ${constrainedPrompt}
             }
 
             const endIdx = this.scan.indexOf(endToken);
+            const nextPatchIdx = this.scan.indexOf(patchToken);
             const nextStartIdx = this.scan.indexOf(startToken);
             const nextEditIdx = this.scan.indexOf(editToken);
             const nextEditNodeIdx = this.scan.indexOf(editNodeToken);
             const nextDeleteIdx = this.scan.indexOf(deleteToken);
             const nextMoveIdx = this.scan.indexOf(moveToken);
             const nextMarkerIdx =
-              [nextStartIdx, nextEditIdx, nextEditNodeIdx, nextDeleteIdx, nextMoveIdx]
+              [nextPatchIdx, nextStartIdx, nextEditIdx, nextEditNodeIdx, nextDeleteIdx, nextMoveIdx]
                 .filter((v) => v !== -1)
                 .sort((a, b) => a - b)[0] ?? -1;
 
@@ -698,6 +726,7 @@ ${constrainedPrompt}
             }
 
             const keep = Math.max(
+              patchToken.length + 8,
               startToken.length + 8,
               editToken.length + 8,
               editNodeToken.length + 8,
@@ -736,6 +765,26 @@ ${constrainedPrompt}
           const reasonPart = parts.slice(1).join(' | ');
           const reason = reasonPart ? reasonPart.replace(/^reason\s*[:=]\s*/i, '').trim() : undefined;
           return { path, reason };
+        }
+
+        private parsePatchPayload(payload: string): { path: string; mode?: 'create' | 'edit'; reason?: string } {
+          const text = String(payload || '').trim();
+          if (!text) return { path: '' };
+          const parts = text.split('|').map((item) => item.trim()).filter(Boolean);
+          const path = parts[0] || '';
+          let mode: 'create' | 'edit' | undefined;
+          let reason: string | undefined;
+          for (const part of parts.slice(1)) {
+            const modeMatch = part.match(/^mode\s*[:=]\s*(create|edit)\s*$/i);
+            if (modeMatch) {
+              mode = modeMatch[1].toLowerCase() as 'create' | 'edit';
+              continue;
+            }
+            if (/^reason\s*[:=]/i.test(part)) {
+              reason = part.replace(/^reason\s*[:=]\s*/i, '').trim();
+            }
+          }
+          return { path, mode, reason };
         }
 
         private parseMovePayload(payload: string): { from: string; to: string; reason?: string } {
@@ -851,11 +900,11 @@ ${constrainedPrompt}
           `CONTINUE THIS EXACT FILE FROM LINE ${cutLine + 1}`,
           '',
           'ABSOLUTE RULES:',
-          `1. Output [[START_FILE: ${cutPath}]] and continue from line ${cutLine + 1}`,
+          `1. Output [[PATCH_FILE: ${cutPath} | mode: edit]] and continue from line ${cutLine + 1}`,
           `2. DO NOT create a NEW file - continue the SAME file: ${cutPath}`,
           `3. DO NOT create ${cutFileName} in a different folder`,
           '4. DO NOT restart the file from the beginning',
-          '5. DO NOT output any text except [[START_FILE:...]], code, and [[END_FILE]]',
+          '5. DO NOT output any text except [[PATCH_FILE:...]], code, and [[END_FILE]]',
           '6. NO "Continuing...", NO "Here is", NO explanations',
           '',
           completedList ? `ALREADY COMPLETED (do NOT repeat): ${completedList}` : '',
@@ -863,7 +912,7 @@ ${constrainedPrompt}
           'LAST CODE RECEIVED (continue from here):',
           tail ? tail : '(no tail available)',
           '',
-          `NOW OUTPUT: [[START_FILE: ${cutPath}]] then continue the code from line ${cutLine + 1}`
+          `NOW OUTPUT: [[PATCH_FILE: ${cutPath} | mode: edit]] then continue the code from line ${cutLine + 1}`
         ]
           .filter(Boolean)
           .join('\n');
@@ -879,10 +928,7 @@ ${constrainedPrompt}
           /^Replaced .* with .*$/gm,
           /^Processing\.{0,3}$/gm,
           /^Working\.{0,3}$/gm,
-          /^Continuing\.{0,3}$/gm,
-          /^\[\[SEARCH\]\]\s*$/gm,
-          /^\[\[REPLACE\]\]\s*$/gm,
-          /^\[\[END_EDIT\]\]\s*$/gm
+          /^Continuing\.{0,3}$/gm
         ];
         let result = text;
         for (const pattern of noisePatterns) {
@@ -896,6 +942,7 @@ ${constrainedPrompt}
         let abortedByUser = false;
         let sawAnyToken = false;
         let sawAnyStreamSignal = false;
+        let sawFileOpEvent = false;
 
         const externalAbortListener = () => {
           abortedByUser = true;
@@ -949,6 +996,7 @@ ${constrainedPrompt}
               architectMode,
               includeReasoning,
               context,
+              contextBundle,
               history: options.history || [],
               constraints,
               contextMeta: buildContextMetaPayload({ retrievalTrace }),
@@ -968,6 +1016,9 @@ ${constrainedPrompt}
           const errorText = await response.text().catch(() => '');
           if (response.status === 404) message = 'Backend not found (404). Check API URL.';
           else if (response.status === 504) message = 'Gateway Timeout (504). AI is taking too long.';
+          else if (response.status === 503 && /LLM_NOT_CONFIGURED/i.test(errorText)) {
+            message = 'LLM_NOT_CONFIGURED: Backend AI provider is not configured. Set valid DEEPSEEK_API_KEY.';
+          }
           else if (errorText) message = errorText;
           throw new Error(message);
         }
@@ -1013,7 +1064,9 @@ ${constrainedPrompt}
         const markerParser = new FileMarkerParser();
         markerParser.setResumeAppendPath(resumeAppendPath);
         const player = new TypedStreamPlayer(typingMs, (out) => {
-          markerParser.push(out);
+          if (!sawFileOpEvent) {
+            markerParser.push(out);
+          }
           onToken(out);
         });
 
@@ -1088,6 +1141,23 @@ ${constrainedPrompt}
                 continue;
               }
 
+              if (eventName === 'file_op') {
+                sawAnyStreamSignal = true;
+                stopPreTokenTimer();
+                if (dataText.trim().length > 0) kickStallTimer();
+                const parsedEvent = parseFileOpEventPayload(dataText);
+                if (parsedEvent) {
+                  sawFileOpEvent = true;
+                  if (!requestCharged) {
+                    incrementRequests();
+                    requestCharged = true;
+                  }
+                  sawAnyToken = true;
+                  options.onFileEvent?.(parsedEvent);
+                }
+                continue;
+              }
+
               if (eventName === 'token') {
                 consumeToken(dataText);
                 continue;
@@ -1125,7 +1195,7 @@ ${constrainedPrompt}
           onStatus('streaming', 'Connection stalled; attempting resume…');
         }
 
-        return { markerParser };
+        return { markerParser, sawFileOpEvent };
         } finally {
           if (abortSignal) {
             try {
@@ -1139,7 +1209,7 @@ ${constrainedPrompt}
 
       const maxResumeAttempts = 5;
 
-      let first: { markerParser: any } | null = null;
+      let first: { markerParser: any; sawFileOpEvent: boolean } | null = null;
       for (let attempt = 0; attempt < 4; attempt++) {
         try {
           first = await runStreamOnce(streamPrompt);
@@ -1152,7 +1222,7 @@ ${constrainedPrompt}
         }
       }
       if (!first) throw new Error('Streaming failed');
-      let cut = first.markerParser.finalize();
+      let cut = first.sawFileOpEvent ? null : first.markerParser.finalize();
       let resumeAttempt = 0;
       while (cut && resumeAttempt < maxResumeAttempts) {
         resumeAttempt += 1;
@@ -1161,7 +1231,7 @@ ${constrainedPrompt}
 
         const resumePrompt = buildResumePrompt(cut.cutPath, cut.cutLine);
         const resumed = await runStreamOnce(resumePrompt, cut.cutPath);
-        cut = resumed.markerParser.finalize();
+        cut = resumed.sawFileOpEvent ? null : resumed.markerParser.finalize();
 
         if (cut && resumeAttempt < maxResumeAttempts) {
           const backoffMs = 550 * resumeAttempt;
@@ -1172,7 +1242,7 @@ ${constrainedPrompt}
       onJSON({
         project_files: [],
         metadata: {
-          protocol: 'file-marker',
+          protocol: first?.sawFileOpEvent ? 'file-op-v2' : 'file-marker',
           completedFiles: completedFiles.size,
           partialFiles: partialFiles.size,
           lastSuccessfulFile,

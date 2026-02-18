@@ -105,6 +105,8 @@ const ModeButton = styled.button<{ $active: boolean; $color: string }>`
   `}
 `;
 
+const LEGACY_PROMPT_PANEL_DISABLED = true;
+
 export const PromptPanel: React.FC = () => {
   const { t, isRTL } = useLanguage();
   const [localPrompt, setLocalPrompt] = useState('');
@@ -156,6 +158,10 @@ export const PromptPanel: React.FC = () => {
   }, [isGenerating, lastTokenAt, thinkingStatus]);
 
   const handleGenerate = async () => {
+    if (LEGACY_PROMPT_PANEL_DISABLED) {
+      setError('PromptPanel is deprecated. Use the main workspace generation pipeline in App.tsx.');
+      return;
+    }
     if (!localPrompt.trim() || (isGenerating && executionPhase !== 'interrupted')) return;
 
     setPrompt(localPrompt);

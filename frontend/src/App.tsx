@@ -36,6 +36,8 @@ import {
 } from './services/constraintPromptBuilder';
 import { validateConstraints } from './services/constraintValidator';
 import type { GenerationConstraints } from './types/constraints';
+import { createFileMutationEngine } from './services/fileMutationEngine';
+import { buildContextBundle } from './services/contextRetrievalEngine';
 
 // ============================================================================
 // GLOBAL AUTOSAVE - INDEPENDENT OF CHAT/COMPONENT LIFECYCLE
@@ -1289,6 +1291,26 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+    const checkProvider = async () => {
+      try {
+        const status = await aiService.getProviderStatus();
+        if (cancelled) return;
+        setLlmConfigured(Boolean(status.configured));
+        setLlmConfigHint(String(status.hint || ''));
+      } catch {
+        if (cancelled) return;
+        setLlmConfigured(false);
+        setLlmConfigHint('Cannot verify backend AI provider. Check backend connectivity and DEEPSEEK_API_KEY.');
+      }
+    };
+    void checkProvider();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
 
     const bootstrapHistory = async () => {
       await useProjectStore.getState().hydrateFromDisk();
@@ -1368,6 +1390,8 @@ function App() {
   const [completionSuggestion, setCompletionSuggestion] = useState<CompletionSuggestion | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [chatAutoFollow, setChatAutoFollow] = useState(true);
+  const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null);
+  const [llmConfigHint, setLlmConfigHint] = useState<string>('');
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const chatResumeTimerRef = useRef<number | null>(null);
@@ -1903,6 +1927,15 @@ function App() {
     const projectState = useProjectStore.getState();
     const aiState = useAIStore.getState();
     const previewState = usePreviewStore.getState();
+    const recentPreviewErrors = previewState.logs.slice(-24).map((entry) => String(entry.message || ''));
+    const contextBundle = buildContextBundle({
+      files: projectState.files,
+      activeFile: projectState.activeFile,
+      recentPreviewErrors,
+      prompt: requestPrompt,
+      mode: 'balanced_graph',
+      maxFiles: 12
+    });
 
     const paths = projectState.files
       .map((f) => String(f.path || f.name || '').replace(/\\/g, '/').trim())
@@ -1914,6 +1947,10 @@ function App() {
       .filter(Boolean)
       .join(' | ')
       .slice(0, 2200);
+    const contextSnippets = contextBundle.files
+      .slice(0, 8)
+      .map((file) => `[[CTX_FILE: ${file.path} | score=${file.score.toFixed(1)}]]\n${String(file.snippet || '').slice(0, 1200)}\n[[END_CTX_FILE]]`)
+      .join('\n');
     const frontendCompletionTarget =
       effectiveProjectType === 'FRONTEND_ONLY'
         ? [
@@ -1937,6 +1974,7 @@ function App() {
       `Context Utilization: ${Number(aiState.contextBudget?.utilizationPct || 0).toFixed(1)}%`,
       `Preview Runtime: ${previewState.runtimeStatus}${previewState.runtimeMessage ? ` (${previewState.runtimeMessage})` : ''}`,
       recentLogTail ? `Recent Preview Logs: ${recentLogTail}` : 'Recent Preview Logs: (none)',
+      contextSnippets ? `Retrieved Context Snippets:\n${contextSnippets}` : 'Retrieved Context Snippets: (none)',
       frontendCompletionTarget,
       'Agent Duties: diagnose, implement, self-verify, and auto-heal preview/runtime issues before finalizing.'
     ]
@@ -1953,6 +1991,24 @@ function App() {
     const fallbackPrompt = requestedResume ? String(useAIStore.getState().lastPlannedPrompt || '').trim() : '';
     const basePrompt = (rawPrompt || fallbackPrompt).trim();
     if (!basePrompt || isPlanning || isGenerating) return;
+    try {
+      const providerStatus = await aiService.getProviderStatus();
+      setLlmConfigured(providerStatus.configured);
+      setLlmConfigHint(String(providerStatus.hint || ''));
+      if (!providerStatus.configured) {
+        const msg = providerStatus.hint || 'LLM_NOT_CONFIGURED: backend AI provider is not configured.';
+        setError(msg);
+        logSystem(`[STATUS] ${msg}`);
+        return;
+      }
+    } catch {
+      const msg = 'LLM_NOT_CONFIGURED: cannot verify backend AI provider. Check API server and DEEPSEEK_API_KEY.';
+      setLlmConfigured(false);
+      setLlmConfigHint(msg);
+      setError(msg);
+      logSystem(`[STATUS] ${msg}`);
+      return;
+    }
     const generationConstraints = getGenerationConstraints();
     const constraintsBlock = buildGenerationConstraintsBlock(generationConstraints);
     const scopedPrompt = mergePromptWithConstraints(basePrompt, generationConstraints);
@@ -2022,8 +2078,13 @@ function App() {
       let generationSucceeded = false;
       const filePathMap = new Map<string, string>();
       const partialPaths = new Set<string>();
-      const editOriginalByPath = new Map<string, string>();
       const filesByBaseName = new Map<string, string>();
+      for (const file of useProjectStore.getState().files) {
+        const existingPath = String(file.path || file.name || '').replace(/\\/g, '/').trim();
+        if (!existingPath) continue;
+        const base = (existingPath.split('/').pop() || existingPath).toLowerCase();
+        filesByBaseName.set(base, existingPath);
+      }
 
       const resumeSnapshot = useAIStore.getState();
       const resumeContext = isResuming
@@ -2051,6 +2112,20 @@ function App() {
         filePathMap.set(rawPath, finalPath);
         return finalPath;
       };
+      const fileMutationEngine = createFileMutationEngine({
+        resolvePath: resolveGeneratedPath,
+        basenameRegistry: filesByBaseName,
+        duplicateSensitiveBasenames: new Set([
+          'index.html',
+          'style.css',
+          'styles.css',
+          'script.js',
+          'main.js',
+          'app.js',
+          'index.css',
+          'package.json'
+        ])
+      });
 
       const stripPartialMarkerAtEnd = (text: string) => {
         const lines = String(text || '').split(/\r?\n/);
@@ -2287,51 +2362,6 @@ function App() {
         return { ok: true as const, reason: '' };
       };
 
-      const parseSearchReplaceBlocks = (raw: string) => {
-        const text = String(raw || '');
-        const blocks: Array<{ search: string; replace: string }> = [];
-        let cursor = 0;
-
-        while (cursor < text.length) {
-          const searchIdx = text.indexOf('[[SEARCH]]', cursor);
-          if (searchIdx === -1) break;
-          const replaceIdx = text.indexOf('[[REPLACE]]', searchIdx);
-          if (replaceIdx === -1) break;
-          const endIdx = text.indexOf('[[END_EDIT]]', replaceIdx);
-          if (endIdx === -1) break;
-
-          const search = text.slice(searchIdx + '[[SEARCH]]'.length, replaceIdx).replace(/^\r?\n/, '').replace(/\r?\n$/, '');
-          const replace = text.slice(replaceIdx + '[[REPLACE]]'.length, endIdx).replace(/^\r?\n/, '').replace(/\r?\n$/, '');
-          blocks.push({ search, replace });
-          cursor = endIdx + '[[END_EDIT]]'.length;
-        }
-
-        return blocks;
-      };
-
-      const applySearchReplaceBlocks = (original: string, blocks: Array<{ search: string; replace: string }>) => {
-        let out = original;
-        let appliedChanges = 0;
-        
-        for (const block of blocks) {
-          if (!block.search) continue;
-          
-          if (block.search === block.replace) continue;
-          
-          if (!out.includes(block.search)) continue;
-          
-          out = out.replace(block.search, block.replace);
-          appliedChanges++;
-        }
-        
-        if (blocks.length > 0 && appliedChanges === 0) {
-          logSystem('[STATUS] Edit mode: No changes applied (search blocks not found or identical to replace)');
-        } else if (appliedChanges > 0) {
-          logSystem(`[STATUS] Edit mode: Applied ${appliedChanges} change(s)`);
-        }
-        
-        return out;
-      };
 
       const SENSITIVE_PATH_RE = /(^|\/)(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|vite\.config\.(js|ts)|next\.config\.(js|mjs|ts)|tsconfig\.json)$/i;
       const normalizeRefPath = (value: string) =>
@@ -2365,7 +2395,9 @@ function App() {
           String(reason || '')
         );
 
-      const handleFileEvent = (event: StreamFileEvent) => {
+      const handleFileEvent = (incomingEvent: StreamFileEvent) => {
+        const event = fileMutationEngine.applyFileOperation(incomingEvent);
+        if (!event) return;
         if (event.type === 'delete') {
           const resolvedPath = resolveGeneratedPath(event.path || '');
           if (!resolvedPath) return;
@@ -2454,21 +2486,9 @@ function App() {
 
         let resolvedPath = resolveGeneratedPath(event.path || '');
         if (!resolvedPath) return;
-        
+
         const baseName = resolvedPath.split('/').pop() || resolvedPath;
-        const existingPath = filesByBaseName.get(baseName.toLowerCase());
-        
-        if (event.type === 'start' && event.mode === 'create') {
-          if (existingPath && existingPath !== resolvedPath) {
-            const commonDuplicates = ['styles.css', 'style.css', 'script.js', 'main.js', 'app.js', 'index.css'];
-            if (commonDuplicates.includes(baseName.toLowerCase())) {
-              logSystem(`[STATUS] Prevented duplicate: ${resolvedPath} -> using existing ${existingPath}`);
-              resolvedPath = existingPath;
-            }
-          } else {
-            filesByBaseName.set(baseName.toLowerCase(), resolvedPath);
-          }
-        }
+        filesByBaseName.set(baseName.toLowerCase(), resolvedPath);
 
         if (event.type === 'start') {
           const label = event.mode === 'edit' ? 'Editing' : 'Writing';
@@ -2490,10 +2510,6 @@ function App() {
 
           if (!existing) {
             upsertFile({ name, path: resolvedPath, content: '', language: getLanguageFromExtension(resolvedPath) });
-          }
-
-          if (event.mode === 'edit') {
-            editOriginalByPath.set(resolvedPath, existing?.content || '');
           }
 
           if (event.append) {
@@ -2572,18 +2588,6 @@ function App() {
 
           let latest = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath)?.content || '';
           const extension = resolvedPath.includes('.') ? (resolvedPath.split('.').pop() || '').toLowerCase() : '';
-
-          if (event.mode === 'edit') {
-            const original = editOriginalByPath.get(resolvedPath) ?? '';
-            const blocks = parseSearchReplaceBlocks(latest);
-            if (blocks.length > 0) {
-              const next = applySearchReplaceBlocks(original, blocks);
-              updateFile(resolvedPath, next);
-              upsertFileNode(resolvedPath, next);
-              upsertFile({ name: resolvedPath.split('/').pop() || resolvedPath, path: resolvedPath, content: next, language: getLanguageFromExtension(resolvedPath) });
-              latest = next;
-            }
-          }
 
           if (!effectivePartial && extension === 'js') {
             const healed = repairCommentKeywordGlue(latest);
@@ -2989,6 +2993,8 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     setPreviewUrl,
     setPlanSteps,
     setSections,
+    setLlmConfigured,
+    setLlmConfigHint,
     setStack,
     setStreamText,
     setThinkingStatus,
@@ -3055,19 +3061,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         constraintsBlock,
         '',
         'Use ONLY these markers:',
-        '  - [[EDIT_NODE: path/to/file.ext]] ... [[END_FILE]] for edits',
-        '  - [[START_FILE: path/to/file.ext]] ... [[END_FILE]] for new files',
+        '  - [[PATCH_FILE: path/to/file.ext | mode: edit | reason: ...]] ... [[END_FILE]] for edits',
+        '  - [[PATCH_FILE: path/to/file.ext | mode: create | reason: ...]] ... [[END_FILE]] for new files',
         '  - [[DELETE_FILE: path/to/file.ext | reason: ...]] for safe deletes',
         '  - [[MOVE_FILE: from/path.ext -> to/path.ext | reason: ...]] for safe moves',
-        'Prefer [[EDIT_NODE]] whenever possible. Do NOT repeat unchanged files.',
-        'When editing, use search/replace blocks:',
-        '  [[EDIT_NODE: path/to/file.ext]]',
-        '  [[SEARCH]]',
-        '  <exact text to find>',
-        '  [[REPLACE]]',
-        '  <replacement text>',
-        '  [[END_EDIT]]',
-        '  [[END_FILE]]',
+        'Prefer [[PATCH_FILE ... mode: edit]] whenever possible. Do NOT repeat unchanged files.',
         continueInstructions,
         '',
         agentContextBlock,
@@ -3214,6 +3212,10 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
 
   const handleMainActionClick = useCallback(() => {
+    if (llmConfigured === false) {
+      setError(llmConfigHint || 'LLM_NOT_CONFIGURED: backend AI provider is not configured.');
+      return;
+    }
     if (mainActionState === 'planning' || mainActionState === 'coding') {
       stopGeneration();
       return;
@@ -3258,8 +3260,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     isGenerating,
     isPlanning,
     mainActionState,
+    llmConfigured,
+    llmConfigHint,
     prompt,
     setInteractionMode,
+    setError,
     setPrompt
   ]);
 
@@ -3289,6 +3294,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
             state={mainActionState}
             onClick={handleMainActionClick}
             disabled={
+              llmConfigured === false ||
               (mainActionState === 'idle' && !prompt.trim()) ||
               (mainActionState === 'done' && interactionMode === 'edit' && !prompt.trim())
             }
@@ -3318,6 +3324,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
             state={mainActionState}
             onClick={handleMainActionClick}
             disabled={
+              llmConfigured === false ||
               (mainActionState === 'idle' && !prompt.trim()) ||
               (mainActionState === 'done' && interactionMode === 'edit' && !prompt.trim())
             }

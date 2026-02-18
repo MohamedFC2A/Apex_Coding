@@ -12,6 +12,7 @@ const { requestIdMiddleware } = require('./middleware/requestId');
 const { createRateLimiter } = require('./middleware/rateLimit');
 const { parseAllowedOrigins } = require('./utils/security');
 const { getCodeSandboxApiKey, createSandboxPreview, patchSandboxFiles, hibernateSandbox } = require('./utils/codesandbox');
+const { createFileOpParser } = require('./utils/fileOpParser');
 
 const app = express();
 
@@ -169,6 +170,36 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
+    requestId: req.requestId
+  });
+});
+
+const isMissingOrPlaceholderSecret = (raw) => {
+  const value = String(raw || '').trim();
+  if (!value) return true;
+  const lower = value.toLowerCase();
+  if (lower.length < 12) return true;
+  return (
+    lower.includes('replace') ||
+    lower.includes('placeholder') ||
+    lower.includes('example') ||
+    lower.includes('invalid') ||
+    lower === 'null' ||
+    lower === 'undefined'
+  );
+};
+
+const isDeepSeekConfigured = () => !isMissingOrPlaceholderSecret(process.env.DEEPSEEK_API_KEY);
+
+app.get(['/ai/provider-status', '/api/ai/provider-status'], (req, res) => {
+  const configured = isDeepSeekConfigured();
+  return res.json({
+    provider: 'deepseek',
+    configured,
+    code: configured ? 'OK' : 'LLM_NOT_CONFIGURED',
+    hint: configured
+      ? null
+      : 'Set a valid DEEPSEEK_API_KEY in backend env (no placeholders), then restart the server.',
     requestId: req.requestId
   });
 });
@@ -511,7 +542,9 @@ const normalizeDeepSeekBaseUrl = (raw) => {
 
 const getDeepSeekConfig = () => {
   const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) throw new Error('API Key missing on Backend');
+  if (isMissingOrPlaceholderSecret(apiKey)) {
+    throw new Error('LLM_NOT_CONFIGURED: DEEPSEEK_API_KEY is missing or placeholder');
+  }
   const baseURL = normalizeDeepSeekBaseUrl(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com');
   return { apiKey, baseURL };
 };
@@ -855,21 +888,21 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
 1. FILE DUPLICATION IS FORBIDDEN (ZERO TOLERANCE):
    - NEVER create the same file twice (e.g., styles.css in two locations)
    - NEVER create duplicate CSS/JS files
-   - If a file exists, use [[EDIT_NODE:]] to modify it, NEVER [[START_FILE:]]
+   - If a file exists, use [[PATCH_FILE: path | mode: edit]] to modify it, NEVER recreate duplicates
    - Prefer one shared style.css + one shared script.js for static projects
    
    DECISION TREE — before writing ANY file:
-   a) Does a file with the SAME PATH already exist? → Use [[EDIT_NODE:]]
-   b) Does a file with the SAME BASENAME exist at a different path? → Do NOT create it. Use [[EDIT_NODE:]] on the existing one.
-   c) Does a file with the SAME PURPOSE exist (e.g., another CSS file)? → Do NOT create it. Append to the existing one via [[EDIT_NODE:]].
+   a) Does a file with the SAME PATH already exist? → Use [[PATCH_FILE: ... | mode: edit]]
+   b) Does a file with the SAME BASENAME exist at a different path? → Do NOT create it. Patch the existing canonical file.
+   c) Does a file with the SAME PURPOSE exist (e.g., another CSS file)? → Do NOT create it. Patch the existing one.
    d) If reorganization is needed, use [[MOVE_FILE: from -> to | reason: ...]]
    e) If stale duplicate is proven unused, use [[DELETE_FILE: path | reason: ...]]
-   f) Only if NONE of the above → Use [[START_FILE:]]
+   f) Only if NONE of the above → Use [[PATCH_FILE: ... | mode: create]]
    
    SINGLE-SOURCE-OF-TRUTH:
    - ALL CSS goes in ONE file (style.css or styles.css). Never split into multiple CSS files.
    - ALL JavaScript goes in ONE file (script.js or app.js). Never split into multiple JS files for simple sites.
-   - If a CSS file already exists, do NOT use inline styles. Add classes to the CSS file via [[EDIT_NODE:]].
+   - If a CSS file already exists, do NOT use inline styles. Patch classes in the CSS file.
    - If you have already output style.css, do NOT output styles.css or main.css. They are the SAME file.
 
 2. PROJECT STRUCTURE - ADAPTIVE MULTI-PAGE STATIC BY DEFAULT:
@@ -894,15 +927,15 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - Use import.meta.env.VITE_* in frontend code.
    - NEVER use process.env.NEXT_PUBLIC_* in Vite projects.
 
-3. NEVER REWRITE FROM SCRATCH:
-   - If editing, use [[EDIT_NODE:]] with [[SEARCH]]/[[REPLACE]] blocks
-   - NEVER output entire file contents when editing
-   - Only output the CHANGED parts
+3. PATCH-FIRST EDITING:
+   - Use [[PATCH_FILE: path | mode: edit]] for edits and [[PATCH_FILE: path | mode: create]] for new files.
+   - Always include complete runnable file body between marker and [[END_FILE]].
+   - Do not output SEARCH/REPLACE instructions.
 
 4. AUTO-CONTINUE RULES:
    If you were cut off mid-file:
    - Continue the SAME file from where you stopped
-   - Use [[START_FILE: exact/same/path.ext]] to continue
+   - Use [[PATCH_FILE: exact/same/path.ext | mode: edit]] to continue
    - Do NOT create a new file with different name
    - Do NOT restart the file from beginning
    - Continue from the EXACT line where you stopped
@@ -947,18 +980,9 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - Never glue comment text and executable tokens on the same line.
    - Keep a clean newline after comment-only lines before code.
 
-FILE-MARKER PROTOCOL:
-[[START_FILE: path/to/file.ext]]
+FILE-OP PROTOCOL (V2):
+[[PATCH_FILE: path/to/file.ext | mode: create|edit | reason: short_reason]]
 <file contents>
-[[END_FILE]]
-
-EDIT PROTOCOL:
-[[EDIT_NODE: path/to/file.ext]]
-[[SEARCH]]
-<exact text>
-[[REPLACE]]
-<new text>
-[[END_EDIT]]
 [[END_FILE]]
 
 DELETE PROTOCOL:
@@ -972,7 +996,7 @@ SAFETY RULES FOR DELETE/MOVE:
 - Never move files in a way that breaks imports/routes/links without emitting corresponding edits in the same response.
 
 STATIC SITE EXAMPLE (Preferred Structure):
-[[START_FILE: index.html]]
+[[PATCH_FILE: index.html | mode: create]]
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -988,11 +1012,11 @@ STATIC SITE EXAMPLE (Preferred Structure):
 </html>
 [[END_FILE]]
 
-[[START_FILE: style.css]]
+[[PATCH_FILE: style.css | mode: create]]
 /* ALL styles in ONE file */
 [[END_FILE]]
 
-[[START_FILE: script.js]]
+[[PATCH_FILE: script.js | mode: create]]
 // ALL JavaScript in ONE file
 document.addEventListener('DOMContentLoaded', () => {
     console.log('App loaded');
@@ -1093,6 +1117,51 @@ const attachConstraintsToPrompt = (prompt, constraints) => {
   return `${String(prompt || '').trim()}\n\n${buildConstraintsBlock(constraints, prompt)}`.trim();
 };
 
+const buildContextBundlePrompt = (contextBundle) => {
+  if (!contextBundle || typeof contextBundle !== 'object') return '';
+  const files = Array.isArray(contextBundle.files) ? contextBundle.files : [];
+  const activeFile = contextBundle.activeFile && typeof contextBundle.activeFile === 'object'
+    ? contextBundle.activeFile
+    : null;
+  const retrieval = contextBundle.retrievalTrace && typeof contextBundle.retrievalTrace === 'object'
+    ? contextBundle.retrievalTrace
+    : null;
+
+  const lines = ['[CONTEXT BUNDLE V2]'];
+  lines.push(`files.count=${files.length}`);
+  if (activeFile?.path) {
+    lines.push(`active.path=${String(activeFile.path)}`);
+    const activeContent = String(activeFile.content || '').slice(0, 4000);
+    if (activeContent) {
+      lines.push('active.snippet=');
+      lines.push(activeContent);
+    }
+  }
+
+  if (retrieval) {
+    lines.push(`retrieval.strategy=${String(retrieval.strategy || 'unknown')}`);
+    const selected = Array.isArray(retrieval.selected) ? retrieval.selected.slice(0, 30) : [];
+    if (selected.length > 0) {
+      const selectedList = selected
+        .map((item) => `${String(item?.path || '').trim()} (${Number(item?.score || 0)})`)
+        .filter(Boolean);
+      if (selectedList.length > 0) lines.push(`retrieval.selected=${selectedList.join(', ')}`);
+    }
+  }
+
+  const topFiles = files.slice(0, 24);
+  for (const file of topFiles) {
+    const path = String(file?.path || '').trim();
+    if (!path) continue;
+    const snippet = String(file?.content || '').slice(0, 1800);
+    lines.push(`[[CTX_FILE: ${path}]]`);
+    if (snippet) lines.push(snippet);
+    lines.push('[[END_CTX_FILE]]');
+  }
+
+  return lines.join('\n').trim();
+};
+
 // /ai/plan (mapped from /api/ai/plan by the middleware above)
 // Using regex to reliably match both /ai/plan and /api/ai/plan regardless of Vercel rewrites
 const planRouteRegex = /^\/api\/ai\/plan|^\/ai\/plan/;
@@ -1128,9 +1197,12 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
       selectedSystemPrompt = PLAN_SYSTEM_PROMPT_FRONTEND;
     }
 
-    // Fallback plan when AI provider is not configured (demo mode)
-    if (!process.env.DEEPSEEK_API_KEY) {
-      // ... existing fallback ...
+    if (!isDeepSeekConfigured()) {
+      return res.status(503).json({
+        error: 'LLM_NOT_CONFIGURED',
+        hint: 'Set a valid DEEPSEEK_API_KEY in backend env (no placeholders), then restart.',
+        requestId: req.requestId
+      });
     }
 
     const TIMEOUT_MS = thinkingMode ? 290_000 : 110_000;
@@ -1208,18 +1280,11 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     });
   } catch (error) {
     if (String(error?.message || '').includes('PLAN_TIMEOUT')) {
-      console.warn(`[plan] [${req.requestId}] timeout - returning demo fallback`);
-      const title = 'Plan (Demo Fallback)';
-      const description = 'انتهت مهلة توليد الخطة. تم إرجاع خطة سريعة بديلة.';
-      const stack = 'html-css-javascript';
-      const fileTree = ['index.html', 'style.css', 'script.js', 'site-map.json'];
-      const steps = [
-        { id: '1', title: 'تهيئة هيكل الصفحات وخريطة المسارات', category: 'setup', files: ['site-map.json'], description: '' },
-        { id: '2', title: 'بناء صفحة البداية وروابط التنقل', category: 'layout', files: ['index.html'], description: '' },
-        { id: '3', title: 'إضافة التصميم المتجاوب المشترك', category: 'styling', files: ['style.css'], description: '' },
-        { id: '4', title: 'إضافة السلوكيات التفاعلية المشتركة', category: 'interactivity', files: ['script.js'], description: '' }
-      ];
-      return res.json({ title, description, stack, fileTree, steps, requestId: req.requestId });
+      return res.status(504).json({
+        error: 'PLAN_TIMEOUT',
+        hint: 'Model response timed out. Retry with a shorter prompt or lower context.',
+        requestId: req.requestId
+      });
     }
     const details = getErrorDetails(error);
     console.error(`[plan] [${req.requestId}] error=${details.message}`);
@@ -1257,7 +1322,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
   };
 
   try {
-    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting } = req.body || {};
+    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, contextBundle } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       res.status(400).send('Prompt is required');
       return;
@@ -1266,9 +1331,20 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       res.status(400).send('Prompt is too long');
       return;
     }
+    if (!isDeepSeekConfigured()) {
+      return res.status(503).json({
+        error: 'LLM_NOT_CONFIGURED',
+        hint: 'Set a valid DEEPSEEK_API_KEY in backend env (no placeholders), then restart.',
+        requestId: req.requestId
+      });
+    }
 
     const constraints = normalizeConstraints(rawConstraints, projectType);
     const constrainedPrompt = attachConstraintsToPrompt(prompt, constraints);
+    const contextBundlePrompt = buildContextBundlePrompt(contextBundle);
+    const finalPrompt = contextBundlePrompt
+      ? `${constrainedPrompt}\n\n${contextBundlePrompt}`.trim()
+      : constrainedPrompt;
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -1285,9 +1361,9 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       `[generate] [${req.requestId}] model=${executorRoute.provider}:${executorRoute.model} session=${contextMeta?.sessionId || 'none'}`
     );
 
-    // Fallback streaming when AI provider is not configured (demo mode)
-    const explicitFrameworkRequested = hasExplicitFrameworkRequest(constrainedPrompt);
-    if (!process.env.DEEPSEEK_API_KEY) {
+    // Legacy demo fallback (kept for compatibility but unreachable when provider is required).
+    const explicitFrameworkRequested = hasExplicitFrameworkRequest(finalPrompt);
+    if (!isDeepSeekConfigured()) {
       if (constraints.projectMode === 'FRONTEND_ONLY' && !explicitFrameworkRequested) {
         const siteMap = [
           '[[START_FILE: site-map.json]]',
@@ -1624,7 +1700,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       temperature: 0.0,
       messages: [
         { role: 'system', content: CODE_STREAM_SYSTEM_PROMPT },
-        { role: 'user', content: constrainedPrompt }
+        { role: 'user', content: finalPrompt }
       ],
       stream: true,
       signal: abortController.signal
@@ -1636,6 +1712,9 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
     } catch {
       provider = getLLMProvider('deepseek');
     }
+    const fileOpParser = createFileOpParser((event) => {
+      writeSse('file_op', JSON.stringify(event));
+    });
     const stream = provider.streamChatCompletion(request, { signal: abortController.signal });
     for await (const chunk of stream) {
       const delta = chunk?.choices?.[0]?.delta || {};
@@ -1649,8 +1728,10 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       }
 
       // Pipe directly (raw stream). Frontend consumes as a text stream.
+      fileOpParser.push(contentChunk);
       writeSse('token', contentChunk);
     }
+    fileOpParser.finalize();
 
     if (keepAliveTimer) clearInterval(keepAliveTimer);
     if (abortTimer) clearTimeout(abortTimer);

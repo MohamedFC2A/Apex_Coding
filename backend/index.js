@@ -1432,7 +1432,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
         modelRouting: modelRouting || {},
         codeSystemPrompt: CODE_STREAM_SYSTEM_PROMPT,
         createChatCompletion: (payload) => provider.createChatCompletion(payload),
-        timeoutMs: thinkingMode ? 220_000 : 140_000,
+        timeoutMs: thinkingMode ? 480_000 : 360_000,
         onStatus: (phase, message) => {
           writeSse('status', `${phase}:${message}`);
         }
@@ -1791,7 +1791,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       } catch {
         // ignore
       }
-    }, 180_000);
+    }, thinkingMode ? 600_000 : 480_000);
 
     const request = {
       model,

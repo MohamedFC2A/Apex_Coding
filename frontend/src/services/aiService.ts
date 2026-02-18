@@ -951,8 +951,9 @@ ${constrainedPrompt}
         const controller = new AbortController();
         let abortedByUser = false;
         let sawAnyToken = false;
-        let sawAnyStreamSignal = false;
+        let sawUsefulOutput = false;
         let sawFileOpEvent = false;
+        let preTokenTimer: any = null;
 
         const externalAbortListener = () => {
           abortedByUser = true;
@@ -973,14 +974,13 @@ ${constrainedPrompt}
 
         try {
         const contextFileCount = Math.max(1, Number(context?.files?.length || 1));
-        const preTokenDefault = Math.round((thinkingMode ? 80_000 : 40_000) * Math.min(2.2, Math.max(1, contextFileCount / 30)));
+        const preTokenDefault = Math.round((thinkingMode ? 360_000 : 240_000) * Math.min(2.4, Math.max(1, contextFileCount / 30)));
         const preTokenTimeoutMs = Number((options as any).preTokenTimeoutMs ?? preTokenDefault);
-        let preTokenTimer: any = null;
         const startPreTokenTimer = () => {
           if (preTokenTimer) return;
           preTokenTimer = globalThis.setTimeout(() => {
             try {
-              if (!sawAnyStreamSignal) controller.abort();
+              if (!sawUsefulOutput) controller.abort();
             } catch {
               // ignore
             }
@@ -1043,10 +1043,10 @@ ${constrainedPrompt}
         let streamErrored = false;
 
         const contextMultiplier = Math.min(2.4, Math.max(1, contextFileCount / 45));
-        const defaultStall = Math.round((thinkingMode ? 120_000 : 60_000) * contextMultiplier);
+        const defaultStall = Math.round((thinkingMode ? 360_000 : 240_000) * contextMultiplier);
         const stallMsRaw = Number((options as any).stallTimeoutMs ?? defaultStall);
         const stallMs = Number.isFinite(stallMsRaw)
-          ? Math.max(thinkingMode ? 30_000 : 15_000, stallMsRaw)
+          ? Math.max(thinkingMode ? 120_000 : 90_000, stallMsRaw)
           : defaultStall;
         let lastUsefulAt = Date.now();
         let stallTimer: any = null;
@@ -1055,7 +1055,7 @@ ${constrainedPrompt}
           lastUsefulAt = Date.now();
           if (!stallTimer) {
             stallTimer = globalThis.setInterval(() => {
-              if (!sawAnyToken && !sawAnyStreamSignal) return;
+              if (!sawAnyToken && !sawFileOpEvent) return;
               const writingPath = String(useAIStore.getState().writingFilePath || '').toLowerCase();
               const fileTypeBoost = writingPath.endsWith('.svg') || writingPath.endsWith('.tsx') ? 1.35 : 1;
               const adaptiveStall = Math.round(stallMs * fileTypeBoost);
@@ -1090,6 +1090,7 @@ ${constrainedPrompt}
             requestCharged = true;
           }
           sawAnyToken = true;
+          sawUsefulOutput = true;
           stopPreTokenTimer();
           kickStallTimer();
           streamTail = (streamTail + cleanedChunk).slice(-streamTailMax);
@@ -1103,9 +1104,6 @@ ${constrainedPrompt}
 
             const decoded = decoder.decode(value, { stream: true });
             if (decoded.length === 0) continue;
-            sawAnyStreamSignal = true;
-            stopPreTokenTimer();
-
             const looksLikeSse = /(^|\n)event:\s/.test(decoded) || /(^|\n)data:\s/.test(decoded);
             if (!looksLikeSse && buffer.length === 0) {
               const cleaned = decoded.replace(/^:[^\n]*\n+/gm, '');
@@ -1124,8 +1122,6 @@ ${constrainedPrompt}
               const { eventName, dataText } = parseSseEvent(rawEvent);
               if (eventName === 'meta') {
                 onMeta({ raw: dataText });
-                sawAnyStreamSignal = true;
-                stopPreTokenTimer();
                 if (dataText.trim().length > 0) kickStallTimer();
                 continue;
               }
@@ -1135,8 +1131,6 @@ ${constrainedPrompt}
                 const phase = idx === -1 ? 'streaming' : dataText.slice(0, idx);
                 const message = idx === -1 ? dataText : dataText.slice(idx + 1);
                 onStatus(phase, message);
-                sawAnyStreamSignal = true;
-                stopPreTokenTimer();
                 if (dataText.trim().length > 0) kickStallTimer();
                 if (phase === 'done') sawDoneStatus = true;
                 if (phase === 'error' && message) onError(message);
@@ -1144,7 +1138,7 @@ ${constrainedPrompt}
               }
 
               if (eventName === 'thought' && includeReasoning) {
-                sawAnyStreamSignal = true;
+                sawUsefulOutput = true;
                 stopPreTokenTimer();
                 if (dataText.trim().length > 0) kickStallTimer();
                 _onReasoning(dataText);
@@ -1152,12 +1146,13 @@ ${constrainedPrompt}
               }
 
               if (eventName === 'file_op') {
-                sawAnyStreamSignal = true;
                 stopPreTokenTimer();
                 if (dataText.trim().length > 0) kickStallTimer();
                 const parsedEvent = parseFileOpEventPayload(dataText);
                 if (parsedEvent) {
                   sawFileOpEvent = true;
+                  sawUsefulOutput = true;
+                  stopPreTokenTimer();
                   if (!requestCharged) {
                     incrementRequests();
                     requestCharged = true;
@@ -1207,6 +1202,14 @@ ${constrainedPrompt}
 
         return { markerParser, sawFileOpEvent };
         } finally {
+          if (preTokenTimer) {
+            try {
+              globalThis.clearTimeout(preTokenTimer);
+            } catch {
+              // ignore
+            }
+            preTokenTimer = null;
+          }
           if (abortSignal) {
             try {
               abortSignal.removeEventListener('abort', externalAbortListener);
@@ -1225,7 +1228,7 @@ ${constrainedPrompt}
           first = await runStreamOnce(streamPrompt);
           break;
         } catch (e: any) {
-          if (e?.abortedByUser || e?.message === 'ABORTED_BY_USER' || e?.name === 'AbortError') throw e;
+          if (e?.abortedByUser || e?.message === 'ABORTED_BY_USER') throw e;
           if (attempt >= 3) throw e;
           onStatus('streaming', 'Retrying…');
           await new Promise((r) => setTimeout(r, 1000));

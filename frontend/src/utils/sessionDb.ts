@@ -13,7 +13,7 @@ export type StoredPlanStep = {
   id: string;
   title: string;
   completed: boolean;
-  category?: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment';
+  category?: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment' | 'tasks';
   status?: 'pending' | 'in_progress' | 'completed' | 'blocked';
   files?: string[];
   description?: string;

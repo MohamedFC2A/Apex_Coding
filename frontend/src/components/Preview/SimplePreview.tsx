@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Code, ExternalLink, FileText, RefreshCw } from 'lucide-react';
 import { useProjectStore } from '@/stores/projectStore';
 import { repairTruncatedContent, validatePreviewContent } from '@/utils/codeRepair';
+import { buildLivePreviewPath, publishLivePreviewSnapshot } from '@/utils/livePreviewLink';
 
 interface SimplePreviewProps {
   className?: string;
@@ -428,6 +429,8 @@ const buildFallbackHtml = (files: ProjectFileLike[], fileCount: number, folderCo
 
 export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
   const files = useProjectStore((state) => state.files) as ProjectFileLike[];
+  const projectId = useProjectStore((state) => state.projectId);
+  const setProjectId = useProjectStore((state) => state.setProjectId);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const debounceTimerRef = useRef<number | null>(null);
   const lastFilesHashRef = useRef<string>('');
@@ -436,6 +439,22 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
   const [previewMeta, setPreviewMeta] = useState<PreviewMeta>(DEFAULT_META);
   const [runtimeState, setRuntimeState] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  const ensureProjectId = useCallback(() => {
+    const currentId = String(useProjectStore.getState().projectId || projectId || '').trim();
+    if (currentId) return currentId;
+    const createdId = `project-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    setProjectId(createdId);
+    return createdId;
+  }, [projectId, setProjectId]);
+
+  const publishSnapshot = useCallback(
+    (html: string, meta: PreviewMeta) => {
+      const stableProjectId = ensureProjectId();
+      publishLivePreviewSnapshot(stableProjectId, html, meta as unknown as Record<string, unknown>);
+    },
+    [ensureProjectId]
+  );
 
   const { htmlFiles, folderCount } = useMemo(() => {
     const html = files.filter((file) => /\.(html|htm)$/i.test(String(file.path || file.name || '')));
@@ -643,8 +662,7 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
 
       if (!entryHtmlPath) {
         const fallback = buildFallbackHtml(files, files.length, folderCount);
-        setPreviewContent(fallback);
-        setPreviewMeta({
+        const fallbackMeta: PreviewMeta = {
           mode: 'fallback',
           entryFile: null,
           fileCount: files.length,
@@ -656,7 +674,10 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
           sanitizedScripts: 0,
           unresolvedRefs: [],
           note: 'No HTML entry file detected'
-        });
+        };
+        setPreviewContent(fallback);
+        setPreviewMeta(fallbackMeta);
+        publishSnapshot(fallback, fallbackMeta);
         return;
       }
 
@@ -800,8 +821,7 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         noteParts.push(`skipped ${sanitizedScriptCount} malformed scripts`);
       }
 
-      setPreviewContent(htmlOutput);
-      setPreviewMeta({
+      const nextMeta: PreviewMeta = {
         mode: 'html',
         entryFile: entryHtmlPath,
         fileCount: files.length,
@@ -813,12 +833,15 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         sanitizedScripts: sanitizedScriptCount,
         unresolvedRefs: Array.from(unresolved).slice(0, 8),
         note: noteParts.join(' • ')
-      });
+      };
+      setPreviewContent(htmlOutput);
+      setPreviewMeta(nextMeta);
+      publishSnapshot(htmlOutput, nextMeta);
     } catch (err) {
       setError(`Failed to generate preview: ${(err as Error).message}`);
       setRuntimeState('error');
     }
-  }, [files, folderCount, htmlFiles]);
+  }, [files, folderCount, htmlFiles, publishSnapshot]);
 
   useEffect(() => {
     if (filesHash === lastFilesHashRef.current) return;
@@ -834,10 +857,10 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
 
   const handleOpenNewTab = useCallback(() => {
     if (!previewContent) return;
-    const blob = new Blob([previewContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-  }, [previewContent]);
+    const stableProjectId = ensureProjectId();
+    publishLivePreviewSnapshot(stableProjectId, previewContent, previewMeta as unknown as Record<string, unknown>);
+    window.open(buildLivePreviewPath(stableProjectId), '_blank', 'noopener,noreferrer');
+  }, [previewContent, previewMeta, ensureProjectId]);
 
   const viewState: 'empty' | 'error' | 'ready' = files.length === 0 ? 'empty' : error ? 'error' : 'ready';
 

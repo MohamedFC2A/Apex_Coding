@@ -1262,14 +1262,21 @@ ${constrainedPrompt}
       });
 
       onComplete();
-    } catch (err: any) {
-      if (err?.abortedByUser || err?.message === 'ABORTED_BY_USER' || err?.name === 'AbortError') {
+      } catch (err: any) {
+      const userAborted = Boolean(err?.abortedByUser || err?.message === 'ABORTED_BY_USER');
+      if (userAborted) {
         onStatus('done', 'Stopped');
         onComplete();
         return;
       }
 
-      onError(err?.message || 'Streaming failed');
+      let errorMessage = String(err?.message || 'Streaming failed');
+      if (err?.name === 'AbortError') {
+        errorMessage =
+          'STREAM_TIMEOUT: generation stream stalled or timed out. Please retry (or reduce prompt/context size).';
+      }
+
+      onError(errorMessage);
       onComplete();
     }
   }

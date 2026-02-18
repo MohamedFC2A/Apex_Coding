@@ -4,6 +4,7 @@ import { FileStructure, FileSystem, GenerationStatus, ProjectFile } from '@/type
 import { useProjectStore } from '@/stores/projectStore';
 import { aiService } from '@/services/aiService';
 import { repairTruncatedContent } from '@/utils/codeRepair';
+import { normalizePlanCategory } from '@/utils/planCategory';
 import { loadSessionsFromDisk, saveSessionToDisk, type StoredHistorySession } from '@/utils/sessionDb';
 import type { ActiveModelProfile, CompressionSnapshot, ContextBudgetState } from '@/types/context';
 
@@ -50,7 +51,7 @@ export interface PlanStep {
   title: string;
   description: string;
   completed: boolean;
-  category: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment';
+  category: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment' | 'tasks';
   status: 'pending' | 'in_progress' | 'completed' | 'blocked';
   files: string[];
   estimatedSize: 'small' | 'medium' | 'large';
@@ -995,7 +996,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               description: String(s?.description ?? ''),
               completed: false,
               status: 'pending' as const,
-              category: (s?.category || 'frontend') as PlanStep['category'],
+              category: normalizePlanCategory(s?.category, s?.title ?? s?.text ?? s?.step ?? '', Array.isArray(s?.files) ? s.files : []),
               files: Array.isArray(s?.files) ? s.files : [],
               estimatedSize: (s?.estimatedSize || 'medium') as PlanStep['estimatedSize'],
               depends_on: Array.isArray(s?.depends_on) ? s.depends_on : []
@@ -1517,7 +1518,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
                   title: p.title,
                   description: p.description || '',
                   completed: Boolean(p.completed),
-                  category: (p.category || 'frontend') as PlanStep['category'],
+                  category: normalizePlanCategory(p.category, p.title, Array.isArray(p.files) ? p.files : []),
                   status: (p.status || 'pending') as PlanStep['status'],
                   files: Array.isArray(p.files) ? p.files : [],
                   estimatedSize: (p.estimatedSize || 'medium') as PlanStep['estimatedSize'],

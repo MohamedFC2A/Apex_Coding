@@ -42,6 +42,11 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
   const prevMapRef = useRef<FileMap>({});
   const patchTimerRef = useRef<number | null>(null);
   const idleHandleRef = useRef<number | null>(null);
+  const filesRef = useRef(files);
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
 
   const logStatus = useCallback((line: string) => {
     appendSystemConsoleContent(`${new Date().toLocaleTimeString([], { hour12: false })} [PREVIEW] ${line}\n`);
@@ -80,7 +85,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
     }
   }, [setRuntimeStatus, previewApi, logStatus]);
 
-  const createSession = useCallback(async (initialFiles = files) => {
+  const createSession = useCallback(async (initialFiles = filesRef.current) => {
     if (creatingSessionRef.current) return;
     creatingSessionRef.current = true;
 
@@ -190,7 +195,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       setIsLongLoading(false);
       creatingSessionRef.current = false;
     }
-  }, [files, setRuntimeStatus, setPreviewUrl, logStatus, checkPreviewConfig]);
+  }, [setRuntimeStatus, setPreviewUrl, logStatus, checkPreviewConfig, previewApi]);
 
   const resetSessionInternal = useCallback(async () => {
     const currentId = sessionIdRef.current;
@@ -199,12 +204,12 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
         await fetch(previewApi(`/sessions/${encodeURIComponent(currentId)}`), { method: 'DELETE' });
       } catch {}
     }
-    await createSession(files);
-  }, [createSession, files]);
+    await createSession(filesRef.current);
+  }, [createSession, previewApi]);
 
   const retryConnection = useCallback(() => {
-    createSession(files);
-  }, [createSession, files]);
+    createSession(filesRef.current);
+  }, [createSession]);
 
   // Initialize preview when enabled
   useEffect(() => {
@@ -223,7 +228,7 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
       setRuntimeStatus('configuring');
       const configOk = await checkPreviewConfig();
       if (configOk) {
-        createSession(files);
+        createSession(filesRef.current);
       }
     };
 
@@ -235,17 +240,17 @@ export const PreviewRunnerPreview = forwardRef<PreviewRunnerPreviewHandle, Previ
         fetch(previewApi(`/sessions/${encodeURIComponent(currentId)}`), { method: 'DELETE' }).catch(() => {});
       }
     };
-  }, [enabled, createSession, files, setRuntimeStatus, setPreviewUrl, checkPreviewConfig]);
+  }, [enabled, createSession, setRuntimeStatus, setPreviewUrl, checkPreviewConfig, previewApi]);
 
   // Update preview when files change
   useEffect(() => {
     if (!enabled) return;
     if (sessionIdRef.current) return;
-    if (!Array.isArray(files) || files.length === 0) return;
+    if (filesRef.current.length === 0) return;
     if (isGenerating || isPlanning) return;
 
     const delay = setTimeout(() => {
-      createSession(files);
+      createSession(filesRef.current);
     }, 500); // Debounce file changes
 
     return () => clearTimeout(delay);

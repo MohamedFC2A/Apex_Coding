@@ -1,17 +1,17 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import styled from 'styled-components';
-import { CheckCircle2, Circle, Loader2, ListChecks, ChevronDown } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, ListChecks } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import type { ProjectType } from '@/stores/aiStore';
+import { normalizePlanCategory, type NormalizedPlanCategory } from '@/utils/planCategory';
 
 export interface PlanChecklistItem {
   id: string;
   title: string;
   description?: string;
   completed: boolean;
-  category?: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment';
+  category?: 'config' | 'frontend' | 'backend' | 'integration' | 'testing' | 'deployment' | 'tasks';
   status?: 'pending' | 'in_progress' | 'completed' | 'blocked';
   files?: string[];
   estimatedSize?: 'small' | 'medium' | 'large';
@@ -223,29 +223,43 @@ interface PlanChecklistProps {
   className?: string;
 }
 
-const detectCategory = (item: PlanChecklistItem) => {
-  if (item.category) return item.category;
-  const title = String(item.title || '').toLowerCase();
-  if (/(config|setup|package|deps|dependency|tsconfig|tailwind)/.test(title)) return 'config';
-  if (/(backend|api|server|database|db|auth|route)/.test(title)) return 'backend';
-  if (/(integrat|connect|sync|hook)/.test(title)) return 'integration';
-  if (/(test|spec|qa)/.test(title)) return 'testing';
-  if (/(deploy|release|build|vercel|netlify)/.test(title)) return 'deployment';
-  return 'frontend';
+const ORDERED_CATEGORIES: NormalizedPlanCategory[] = [
+  'config',
+  'frontend',
+  'backend',
+  'integration',
+  'testing',
+  'deployment',
+  'tasks'
+];
+
+const CATEGORY_LABELS: Record<NormalizedPlanCategory, string> = {
+  config: 'app.plan.category.config',
+  frontend: 'app.plan.category.frontend',
+  backend: 'app.plan.category.backend',
+  integration: 'app.plan.category.integration',
+  testing: 'app.plan.category.testing',
+  deployment: 'app.plan.category.deployment',
+  tasks: 'app.plan.category.tasks'
+};
+
+const detectCategory = (item: PlanChecklistItem): NormalizedPlanCategory => {
+  return normalizePlanCategory(item.category, item.title, Array.isArray(item.files) ? item.files : []);
 };
 
 const splitByCategory = (items: PlanChecklistItem[]) => {
-  const out: Record<string, PlanChecklistItem[]> = {
+  const out: Record<NormalizedPlanCategory, PlanChecklistItem[]> = {
     config: [],
     frontend: [],
     backend: [],
     integration: [],
     testing: [],
-    deployment: []
+    deployment: [],
+    tasks: []
   };
   for (const item of items) {
     const cat = detectCategory(item);
-    out[cat] = [...(out[cat] || []), item];
+    out[cat] = [...out[cat], item];
   }
   return out;
 };
@@ -261,6 +275,10 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
   const doneCount = items.filter((item) => item.completed).length;
   const progress = total > 0 ? doneCount / total : 0;
   const grouped = useMemo(() => splitByCategory(items), [items]);
+  const hasRenderableSections = useMemo(
+    () => ORDERED_CATEGORIES.some((category) => grouped[category].length > 0),
+    [grouped]
+  );
 
   const renderItem = (item: PlanChecklistItem) => {
     const state: 'pending' | 'active' | 'done' =
@@ -314,40 +332,22 @@ export const PlanChecklist: React.FC<PlanChecklistProps> = ({
         <Empty>{t('app.plan.empty')}</Empty>
       ) : (
         <>
-          {grouped.config.length > 0 ? (
+          {ORDERED_CATEGORIES.map((category) => (
+            grouped[category].length > 0 ? (
+              <Section key={`section-${category}`}>
+                <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                  {t(CATEGORY_LABELS[category])}
+                </SectionTitle>
+                {grouped[category].map(renderItem)}
+              </Section>
+            ) : null
+          ))}
+          {!hasRenderableSections ? (
             <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.config')}</SectionTitle>
-              {grouped.config.map(renderItem)}
-            </Section>
-          ) : null}
-          {grouped.frontend.length > 0 ? (
-            <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.frontend')}</SectionTitle>
-              {grouped.frontend.map(renderItem)}
-            </Section>
-          ) : null}
-          {grouped.backend.length > 0 ? (
-            <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.backend')}</SectionTitle>
-              {grouped.backend.map(renderItem)}
-            </Section>
-          ) : null}
-          {grouped.integration.length > 0 ? (
-            <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.integration')}</SectionTitle>
-              {grouped.integration.map(renderItem)}
-            </Section>
-          ) : null}
-          {grouped.testing.length > 0 ? (
-            <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.testing')}</SectionTitle>
-              {grouped.testing.map(renderItem)}
-            </Section>
-          ) : null}
-          {grouped.deployment.length > 0 ? (
-            <Section>
-              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>{t('app.plan.category.deployment')}</SectionTitle>
-              {grouped.deployment.map(renderItem)}
+              <SectionTitle style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                {t('app.plan.category.tasks')}
+              </SectionTitle>
+              {items.map(renderItem)}
             </Section>
           ) : null}
         </>

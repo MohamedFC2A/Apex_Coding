@@ -11,6 +11,7 @@ import { usePreviewStore } from './stores/previewStore';
 import { aiService, type StreamFileEvent } from './services/aiService';
 import { getLanguageFromExtension } from './utils/stackDetector';
 import { repairTruncatedContent } from './utils/codeRepair';
+import { normalizePlanCategory } from './utils/planCategory';
 
 import { CodeEditor } from './components/CodeEditor';
 import { Sidebar } from './components/Sidebar';
@@ -1085,8 +1086,13 @@ const normalizePlanStepsForProfile = <T extends { title?: string; category?: str
   steps: T[],
   projectMode: ProjectType
 ) => {
+  const normalizedSteps = steps.map((step) => ({
+    ...step,
+    category: normalizePlanCategory(step.category, step.title, Array.isArray(step.files) ? step.files : [])
+  }));
+
   const backendHints = /(backend|server|api|database|db|auth|middleware|route)/i;
-  const baseFiltered = steps.filter((step) => {
+  const baseFiltered = normalizedSteps.filter((step) => {
     const category = String(step.category || '').toLowerCase();
     if (projectMode === 'FRONTEND_ONLY' && category === 'backend') return false;
     const title = String(step.title || '');
@@ -1142,10 +1148,20 @@ const normalizePlanStepsForProfile = <T extends { title?: string; category?: str
 
   if (ordered.length > 0) return ordered;
 
-  return steps.slice(0, 4).map((step) => ({
+  return normalizedSteps.slice(0, 4).map((step) => ({
     ...step,
     category: projectMode === 'FRONTEND_ONLY' ? 'frontend' : step.category
   }));
+};
+
+const createProjectId = (seed: string) => {
+  const base = String(seed || 'project')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  const prefix = base || 'project';
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 };
 
 const FULLSTACK_TEMP_LOCK = true;
@@ -1424,7 +1440,8 @@ function App() {
     setCustomFeatureTags: setProjectStoreCustomFeatureTags,
     setConstraintsEnforcement: setProjectStoreConstraintsEnforcement,
     setStack,
-    setProjectName
+    setProjectName,
+    setProjectId
   } = useProjectStore();
   const { setPreviewUrl, logs, runtimeStatus, runtimeMessage } = usePreviewStore();
 
@@ -2107,6 +2124,9 @@ function App() {
     if (!preserveProjectMeta) {
       setStack(effectiveProjectType === 'FRONTEND_ONLY' ? 'Frontend (HTML/CSS/JS)' : 'Fullstack (Frontend + Backend)');
     }
+    if (!String(useProjectStore.getState().projectId || '').trim()) {
+      setProjectId(createProjectId(projectName || basePrompt));
+    }
 
     if (fileFlushTimerRef.current) {
       window.clearTimeout(fileFlushTimerRef.current);
@@ -2776,6 +2796,9 @@ function App() {
             else if (phase === 'done') setThinkingStatus('Complete');
             else if (phase === 'recovering') setThinkingStatus('Recovering…');
             else setThinkingStatus(message);
+            if (phase === 'done' && String(message || '').trim().toLowerCase() === 'stopped') {
+              setExecutionPhase('interrupted');
+            }
             const shouldSkipVerboseLog = phase === 'planning' || (phase === 'validating' && /strict gate/i.test(String(message || '')));
             if (message && !shouldSkipVerboseLog) logSystem(`[STATUS] ${message}`);
             if (message) {
@@ -2854,7 +2877,7 @@ function App() {
             id: String(s?.id ?? i + 1),
             title: String(s?.title ?? s?.text ?? s?.step ?? '').trim(),
             completed: false,
-            category: (s?.category || 'frontend') as any,
+            category: normalizePlanCategory(s?.category, s?.title ?? s?.text ?? s?.step ?? '', Array.isArray(s?.files) ? s.files : []),
             status: 'pending' as const,
             files: Array.isArray(s?.files) ? s.files : [],
             description: String(s?.description ?? ''),
@@ -2908,7 +2931,11 @@ Output ONLY the code for these files.
         }
         
         const rawPlannedSteps = useAIStore.getState().planSteps;
-        const steps = normalizePlanStepsForProfile(rawPlannedSteps, effectiveProjectType);
+        const normalizedPlannedSteps = rawPlannedSteps.map((step) => ({
+          ...step,
+          category: normalizePlanCategory(step?.category, step?.title, Array.isArray(step?.files) ? step.files : [])
+        }));
+        const steps = normalizePlanStepsForProfile(normalizedPlannedSteps, effectiveProjectType);
         if (steps.length !== rawPlannedSteps.length) {
           setPlanSteps(steps);
         }
@@ -3114,7 +3141,8 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     projectName,
     stack,
     description,
-    t
+    t,
+    setProjectId
   ]);
 
   const buildFixPrompt = useCallback(

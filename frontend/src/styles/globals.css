@@ -124,9 +124,14 @@
     min-height: 100vh;
   }
   body {
-    background: var(--nexus-deepest);
+    background-color: #020208;
+    background-image:
+      radial-gradient(1100px 680px at 10% -8%, rgba(59, 130, 246, 0.22), transparent 58%),
+      radial-gradient(1000px 700px at 92% 12%, rgba(139, 92, 246, 0.2), transparent 54%),
+      radial-gradient(760px 520px at 48% 110%, rgba(34, 211, 238, 0.12), transparent 62%);
+    background-attachment: fixed;
     color: rgba(255, 255, 255, 0.95);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Sora', 'Inter', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     margin: 0;

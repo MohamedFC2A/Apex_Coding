@@ -148,12 +148,42 @@ const Root = styled.div`
   height: 100dvh;
   overflow: hidden;
   position: relative;
-  /* Use global background with noise from globals.css */
-  background: transparent; 
+  isolation: isolate;
+  background:
+    radial-gradient(1200px 640px at 8% -12%, rgba(59, 130, 246, 0.22), transparent 56%),
+    radial-gradient(1100px 700px at 92% 14%, rgba(139, 92, 246, 0.22), transparent 52%),
+    radial-gradient(820px 560px at 52% 104%, rgba(34, 211, 238, 0.12), transparent 60%),
+    #020208;
   color: var(--nexus-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: 'Sora', 'Inter', 'IBM Plex Sans', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.08;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.9) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.9) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(circle at 50% 35%, black 30%, transparent 84%);
+    z-index: -2;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 16% 20%, rgba(59, 130, 246, 0.12), transparent 45%),
+      radial-gradient(circle at 84% 72%, rgba(168, 85, 247, 0.12), transparent 48%);
+    filter: blur(18px);
+    z-index: -1;
+  }
 `;
 
 const Container = styled.div<{ $reserveConsole: boolean }>`
@@ -162,12 +192,13 @@ const Container = styled.div<{ $reserveConsole: boolean }>`
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-  padding-bottom: calc(16px + 40px);
+  gap: 16px;
+  padding: 18px clamp(12px, 2vw, 24px);
+  padding-bottom: calc(18px + 40px);
   min-height: 0;
-  max-width: 100%;
+  max-width: min(1880px, 100%);
   width: 100%;
+  margin: 0 auto;
 
   @media (max-width: 1024px) {
     padding: 12px;
@@ -193,25 +224,56 @@ const HeaderArea = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  
-  /* Glassmorphism */
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(11, 15, 27, 0.88) 0%, rgba(8, 12, 22, 0.92) 100%);
+  backdrop-filter: blur(26px) saturate(130%);
+  -webkit-backdrop-filter: blur(26px) saturate(130%);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
   box-shadow: 
-    0 4px 30px rgba(0, 0, 0, 0.1),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    0 18px 52px rgba(3, 8, 20, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
     
   padding: 0 16px;
   flex-wrap: nowrap;
-  transition: all 0.3s ease;
+  transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      rgba(59, 130, 246, 0.18) 0%,
+      rgba(34, 211, 238, 0.12) 32%,
+      rgba(139, 92, 246, 0.16) 67%,
+      rgba(59, 130, 246, 0.14) 100%
+    );
+    opacity: 0.55;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    pointer-events: none;
+    background: radial-gradient(460px 120px at 24% -12%, rgba(59, 130, 246, 0.3), transparent 62%),
+      radial-gradient(420px 120px at 82% -12%, rgba(139, 92, 246, 0.26), transparent 64%);
+    opacity: 0.72;
+  }
+
+  > * {
+    position: relative;
+    z-index: 1;
+  }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow:
+      0 24px 62px rgba(3, 8, 20, 0.62),
+      0 0 0 1px rgba(34, 211, 238, 0.12) inset;
   }
 
   @media (max-width: 1024px) {
@@ -280,29 +342,29 @@ const HeaderIconButton = styled.button`
   display: grid;
   place-items: center;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.02));
+  color: rgba(255, 255, 255, 0.86);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   position: relative;
   overflow: hidden;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
 
   &::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.1), transparent 70%);
+    background: radial-gradient(circle at center, rgba(34, 211, 238, 0.22), transparent 70%);
     opacity: 0;
     transition: opacity 0.3s ease;
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: linear-gradient(145deg, rgba(34, 211, 238, 0.2), rgba(59, 130, 246, 0.14));
+    border-color: rgba(34, 211, 238, 0.42);
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 12px 28px rgba(2, 8, 22, 0.34);
     color: white;
 
     &::before {
@@ -567,15 +629,16 @@ const BrandStack = styled.div`
 `;
 
 const BrandTitle = styled.div`
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  font-weight: 900;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  font-size: 14px;
-  background: linear-gradient(135deg, #FFF 0%, rgba(255,255,255,0.7) 100%);
+  font-size: 13px;
+  background: linear-gradient(120deg, #dbeafe 0%, #67e8f9 33%, #a78bfa 68%, #dbeafe 100%);
+  background-size: 180% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+  text-shadow: 0 0 24px rgba(59, 130, 246, 0.32);
 
   @media (max-width: 768px) {
     font-size: 12px;
@@ -585,9 +648,9 @@ const BrandTitle = styled.div`
 
 const BrandSubtitle = styled.div`
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.7);
   max-width: 28ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -604,22 +667,28 @@ const BrandSubtitle = styled.div`
 `;
 
 const StatusPill = styled.div<{ $active?: boolean }>`
-  padding: 6px 14px;
+  padding: 7px 14px;
   border-radius: 99px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.3)' : 'rgba(255, 255, 255, 0.1)')};
-  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.1)' : 'rgba(255, 255, 255, 0.03)')};
-  color: ${(p) => (p.$active ? '#22d3ee' : 'rgba(255, 255, 255, 0.6)')};
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.44)' : 'rgba(255, 255, 255, 0.2)')};
+  background: ${(p) =>
+    p.$active
+      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(59, 130, 246, 0.2))'
+      : 'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03))'};
+  color: ${(p) => (p.$active ? 'rgba(125, 244, 255, 0.98)' : 'rgba(255, 255, 255, 0.78)')};
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.05em;
   white-space: nowrap;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px);
   transition: all 0.3s ease;
-  box-shadow: ${(p) => (p.$active ? '0 0 15px rgba(34, 211, 238, 0.2)' : 'none')};
+  box-shadow: ${(p) => (p.$active ? '0 0 22px rgba(34, 211, 238, 0.24)' : 'none')};
 
   &:hover {
-    background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.15)' : 'rgba(255, 255, 255, 0.08)')};
-    border-color: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.5)' : 'rgba(255, 255, 255, 0.2)')};
+    background: ${(p) =>
+      p.$active
+        ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(59, 130, 246, 0.24))'
+        : 'linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05))'};
+    border-color: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.6)' : 'rgba(255, 255, 255, 0.32)')};
   }
 
   @media (max-width: 768px) {
@@ -632,22 +701,136 @@ const StatusPill = styled.div<{ $active?: boolean }>`
   }
 `;
 
+const WorkspaceSignalRail = styled.div`
+  flex-shrink: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(140deg, rgba(11, 15, 26, 0.85) 0%, rgba(8, 12, 22, 0.9) 100%),
+    radial-gradient(300px 120px at 12% 20%, rgba(59, 130, 246, 0.15), transparent 70%);
+  box-shadow:
+    0 16px 42px rgba(3, 8, 20, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  overflow: hidden;
+
+  @media (max-width: 1024px) {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  @media (max-width: 768px) {
+    display: none;
+  }
+`;
+
+const WorkspaceSignalCopy = styled.div`
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+
+const WorkspaceSignalBadge = styled.span`
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 244, 255, 0.28);
+  background: rgba(34, 211, 238, 0.11);
+  color: rgba(160, 245, 255, 0.96);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+
+  &::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(52, 211, 153, 0.95);
+    box-shadow: 0 0 10px rgba(52, 211, 153, 0.55);
+  }
+`;
+
+const WorkspaceSignalTitle = styled.div`
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.95);
+  text-wrap: balance;
+`;
+
+const WorkspaceSignalSubtext = styled.div`
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.4;
+`;
+
+const WorkspaceSignalStats = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+`;
+
+const WorkspaceSignalStat = styled.div<{ $tone?: 'default' | 'good' | 'warn' }>`
+  padding: 6px 11px;
+  border-radius: 10px;
+  border: 1px solid
+    ${(p) =>
+      p.$tone === 'good'
+        ? 'rgba(52, 211, 153, 0.4)'
+        : p.$tone === 'warn'
+          ? 'rgba(251, 191, 36, 0.38)'
+          : 'rgba(255, 255, 255, 0.14)'};
+  background:
+    ${(p) =>
+      p.$tone === 'good'
+        ? 'rgba(52, 211, 153, 0.14)'
+        : p.$tone === 'warn'
+          ? 'rgba(251, 191, 36, 0.14)'
+          : 'rgba(255, 255, 255, 0.05)'};
+  color:
+    ${(p) =>
+      p.$tone === 'good'
+        ? 'rgba(167, 243, 208, 0.96)'
+        : p.$tone === 'warn'
+          ? 'rgba(253, 230, 138, 0.96)'
+          : 'rgba(255, 255, 255, 0.84)'};
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+`;
+
 const MobileMenuButton = styled.button`
   display: none;
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
   color: rgba(255, 255, 255, 0.85);
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 200ms ease;
+  box-shadow: 0 10px 22px rgba(2, 8, 20, 0.26);
 
   &:hover {
-    border-color: rgba(168, 85, 247, 0.30);
-    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(34, 211, 238, 0.35);
+    background: linear-gradient(150deg, rgba(34, 211, 238, 0.2), rgba(59, 130, 246, 0.14));
     transform: translateY(-1px);
   }
 
@@ -695,25 +878,30 @@ const MobileAIIntro = styled.div`
 
   @media (max-width: 768px) {
     display: block;
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.04);
-    padding: 10px 12px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background:
+      linear-gradient(135deg, rgba(11, 15, 26, 0.9), rgba(8, 12, 22, 0.92)),
+      radial-gradient(320px 140px at 6% 8%, rgba(59, 130, 246, 0.2), transparent 72%);
+    box-shadow:
+      0 16px 36px rgba(3, 8, 20, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    padding: 11px 12px;
   }
 `;
 
 const MobileAITitle = styled.div`
   font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(193, 245, 255, 0.95);
 `;
 
 const MobileAISubtitle = styled.div`
   margin-top: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.72);
   line-height: 1.35;
 `;
 
@@ -725,10 +913,12 @@ const MobilePlanPane = styled.div`
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(16, 18, 24, 0.72);
-    backdrop-filter: blur(20px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background:
+      linear-gradient(180deg, rgba(11, 15, 24, 0.88), rgba(8, 12, 22, 0.92)),
+      radial-gradient(280px 140px at 100% 0, rgba(139, 92, 246, 0.16), transparent 76%);
+    backdrop-filter: blur(22px);
   }
 `;
 
@@ -792,8 +982,8 @@ const DesktopLayout = styled.div`
     flex: 1;
     min-height: 0;
     min-width: 0;
-    grid-template-columns: minmax(320px, 0.27fr) minmax(0, 0.73fr);
-    gap: 12px;
+    grid-template-columns: minmax(350px, 0.31fr) minmax(0, 0.69fr);
+    gap: 14px;
     width: 100%;
   }
 `;
@@ -802,8 +992,8 @@ const ChatColumn = styled.div`
   min-height: 0;
   min-width: 0;
   display: grid;
-  grid-template-rows: minmax(0, 60fr) minmax(0, 40fr);
-  gap: 10px;
+  grid-template-rows: minmax(0, 57fr) minmax(0, 43fr);
+  gap: 12px;
 `;
 
 const ChatPanel = styled.div`
@@ -812,14 +1002,16 @@ const ChatPanel = styled.div`
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 18px;
+  border-radius: 20px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: linear-gradient(180deg, rgba(12, 16, 26, 0.88) 0%, rgba(8, 11, 20, 0.92) 100%);
-  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(11, 16, 28, 0.88) 0%, rgba(8, 12, 22, 0.94) 100%),
+    radial-gradient(300px 200px at 8% 8%, rgba(59, 130, 246, 0.12), transparent 70%);
+  backdrop-filter: blur(24px) saturate(125%);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 20px 60px rgba(0, 0, 0, 0.4);
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 24px 68px rgba(2, 8, 22, 0.52);
 `;
 
 const ChatHeader = styled.div`
@@ -828,9 +1020,9 @@ const ChatHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.025);
+  padding: 13px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
 `;
 
 const ChatHeaderTitle = styled.div`
@@ -857,8 +1049,8 @@ const ChatHeaderTitle = styled.div`
 
 const ChatHeaderMeta = styled.div`
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.42);
-  font-weight: 500;
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 600;
   letter-spacing: 0.01em;
 `;
 
@@ -888,10 +1080,10 @@ const ChatScroll = styled.div`
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 14px 12px;
+  padding: 14px 13px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 11px;
 
   &::-webkit-scrollbar {
     width: 5px;
@@ -915,31 +1107,31 @@ const ChatScroll = styled.div`
 const ChatBubble = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
   align-self: ${(p) => (p.$role === 'user' ? 'flex-end' : 'flex-start')};
   width: fit-content;
-  max-width: 90%;
+  max-width: 88%;
   border-radius: ${(p) => (
-    p.$role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px'
+    p.$role === 'user' ? '16px 16px 6px 16px' : '16px 16px 16px 6px'
   )};
-  padding: 10px 13px;
+  padding: 11px 13px;
   border: 1px solid ${(p) => (
     p.$role === 'user'
-      ? 'rgba(34, 211, 238, 0.26)'
+      ? 'rgba(34, 211, 238, 0.36)'
       : p.$role === 'assistant'
-        ? 'rgba(34, 197, 94, 0.20)'
-        : 'rgba(255, 255, 255, 0.09)'
+        ? 'rgba(52, 211, 153, 0.28)'
+        : 'rgba(255, 255, 255, 0.14)'
   )};
   background: ${(p) => (
     p.$role === 'user'
-      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.14), rgba(59, 130, 246, 0.09))'
+      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.2), rgba(59, 130, 246, 0.14))'
       : p.$role === 'assistant'
-        ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.10), rgba(16, 185, 129, 0.06))'
-        : 'rgba(255, 255, 255, 0.04)'
+        ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.14), rgba(16, 185, 129, 0.08))'
+        : 'linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03))'
   )};
-  backdrop-filter: blur(8px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-  transition: box-shadow 150ms ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(2, 8, 20, 0.28);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 
   &:hover {
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.26);
+    box-shadow: 0 12px 28px rgba(2, 8, 20, 0.36);
   }
 `;
 
@@ -960,7 +1152,7 @@ const ChatBubbleRole = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
 
 const ChatBubbleText = styled.div`
   font-size: 12.5px;
-  line-height: 1.55;
+  line-height: 1.58;
   color: rgba(255, 255, 255, 0.92);
   white-space: pre-wrap;
   word-break: break-word;
@@ -987,12 +1179,13 @@ const ChatTimestamp = styled.span`
 `;
 
 const ChatEmpty = styled.div`
-  border: 1px dashed rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 12px;
+  border: 1px dashed rgba(125, 244, 255, 0.28);
+  border-radius: 12px;
+  padding: 13px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.72);
   line-height: 1.45;
+  background: rgba(34, 211, 238, 0.06);
 `;
 
 const ChatComposerWrap = styled.div`
@@ -1006,33 +1199,43 @@ const WorkbenchColumn = styled.div`
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 `;
 
 const WorkbenchTabs = styled.div`
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   padding: 6px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
   width: fit-content;
+  box-shadow: 0 10px 24px rgba(2, 8, 20, 0.28);
 `;
 
 const WorkbenchTab = styled.button<{ $active: boolean }>`
   height: 32px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.34)' : 'rgba(255, 255, 255, 0.1)')};
-  background: ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.16)' : 'rgba(255, 255, 255, 0.03)')};
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.42)' : 'rgba(255, 255, 255, 0.14)')};
+  background: ${(p) =>
+    p.$active
+      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(59, 130, 246, 0.18))'
+      : 'rgba(255, 255, 255, 0.03)'};
   color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 0.98)' : 'rgba(255, 255, 255, 0.72)')};
-  border-radius: 10px;
+  border-radius: 11px;
   padding: 0 12px;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
+  transition: all 180ms ease;
+
+  &:hover {
+    border-color: rgba(34, 211, 238, 0.32);
+    color: rgba(255, 255, 255, 0.92);
+  }
 `;
 
 const WorkbenchBody = styled.div`
@@ -1041,7 +1244,7 @@ const WorkbenchBody = styled.div`
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(250px, 0.28fr) minmax(0, 0.72fr);
-  gap: 12px;
+  gap: 13px;
 
   @media (max-width: 1220px) {
     grid-template-columns: minmax(220px, 0.28fr) minmax(0, 0.72fr);
@@ -1057,11 +1260,15 @@ const WorkbenchSidebar = styled.div`
 const WorkbenchPanel = styled.div`
   min-height: 0;
   min-width: 0;
-  border-radius: 14px;
+  border-radius: 18px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 14, 20, 0.65);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(10, 14, 24, 0.82), rgba(8, 11, 20, 0.9)),
+    radial-gradient(380px 220px at 100% 0, rgba(59, 130, 246, 0.12), transparent 78%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 22px 62px rgba(2, 8, 22, 0.42);
 `;
 
 const IDEFooter = styled.div`
@@ -1072,13 +1279,13 @@ const IDEFooter = styled.div`
   height: 36px;
   display: grid;
   place-items: center;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 12, 16, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(10, 12, 16, 0.9), rgba(8, 10, 14, 0.96));
   backdrop-filter: blur(20px);
-  color: rgba(255, 255, 255, 0.50);
+  color: rgba(255, 255, 255, 0.62);
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.05em;
+  font-weight: 600;
+  letter-spacing: 0.07em;
   z-index: 40;
   pointer-events: none;
 
@@ -1121,8 +1328,8 @@ const DrawerPanel = styled.div<{ $open: boolean }>`
   left: 0;
   bottom: 0;
   width: min(380px, 92vw);
-  background: rgba(10, 12, 18, 0.98);
-  border-right: 1px solid rgba(255, 255, 255, 0.10);
+  background: linear-gradient(180deg, rgba(9, 12, 20, 0.97), rgba(8, 10, 16, 0.98));
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 24px 0 60px rgba(0, 0, 0, 0.75);
   transform: translateX(${(p) => (p.$open ? '0' : '-100%')});
   transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -1177,11 +1384,15 @@ const PanelSlot = styled.div<{ $mobileActive?: boolean; $desktopHidden?: boolean
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 14, 20, 0.65);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(10, 14, 24, 0.82), rgba(8, 11, 20, 0.9)),
+    radial-gradient(380px 220px at 100% 0, rgba(59, 130, 246, 0.12), transparent 78%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 22px 62px rgba(2, 8, 22, 0.42);
 
   @media (min-width: 769px) {
     display: ${(p) => (p.$desktopHidden ? 'none' : 'flex')};
@@ -1663,6 +1874,26 @@ function App() {
     if (messageCount <= 0) return 'No messages yet';
     return `${messageCount} message${messageCount === 1 ? '' : 's'}`;
   }, [chatHistory.length]);
+
+  const runtimeLabel = useMemo(() => {
+    if (runtimeStatus === 'ready') return 'Runtime ready';
+    if (
+      runtimeStatus === 'configuring' ||
+      runtimeStatus === 'booting' ||
+      runtimeStatus === 'mounting' ||
+      runtimeStatus === 'installing' ||
+      runtimeStatus === 'starting'
+    ) {
+      return 'Runtime booting';
+    }
+    if (runtimeStatus === 'error') return 'Runtime issue';
+    return 'Runtime idle';
+  }, [runtimeStatus]);
+
+  const contextLabelTone: 'good' | 'warn' =
+    contextBudget.status === 'critical' || contextBudget.status === 'warning' ? 'warn' : 'good';
+  const runtimeLabelTone: 'default' | 'good' | 'warn' =
+    runtimeStatus === 'error' ? 'warn' : runtimeStatus === 'ready' ? 'good' : 'default';
 
   const handleChatScroll = useCallback(() => {
     const node = chatScrollRef.current;
@@ -5257,6 +5488,34 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
             </MobileMenuButton>
           </HeaderRight>
         </HeaderArea>
+
+        <WorkspaceSignalRail style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
+          <WorkspaceSignalCopy style={{ alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+            <WorkspaceSignalBadge>Apex Workspace</WorkspaceSignalBadge>
+            <WorkspaceSignalTitle>
+              {isGenerating ? 'Building your project in real time' : 'Your AI-first command center is ready'}
+            </WorkspaceSignalTitle>
+            <WorkspaceSignalSubtext>
+              {runtimeMessage?.trim()
+                ? runtimeMessage
+                : 'Prompt once, then monitor context, runtime, and progress without losing flow.'}
+            </WorkspaceSignalSubtext>
+          </WorkspaceSignalCopy>
+          <WorkspaceSignalStats>
+            <WorkspaceSignalStat $tone={contextLabelTone}>
+              Ctx {Math.round(contextBudget.utilizationPct)}%
+            </WorkspaceSignalStat>
+            <WorkspaceSignalStat $tone={runtimeLabelTone}>
+              {runtimeLabel}
+            </WorkspaceSignalStat>
+            <WorkspaceSignalStat>
+              {modelMode === 'thinking' ? 'Thinking mode' : modelMode === 'fast' ? 'Fast mode' : 'Super mode'}
+            </WorkspaceSignalStat>
+            <WorkspaceSignalStat $tone={isPreviewOpen ? 'good' : 'default'}>
+              {isPreviewOpen ? 'Preview on' : 'Preview off'}
+            </WorkspaceSignalStat>
+          </WorkspaceSignalStats>
+        </WorkspaceSignalRail>
 
         {!isMobileViewport ? (
           <DesktopLayout>

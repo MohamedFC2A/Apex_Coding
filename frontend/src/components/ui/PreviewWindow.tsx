@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { AlertTriangle, MonitorPlay } from 'lucide-react';
-import { SimplePreview } from '../Preview/SimplePreview';
+import { AlertTriangle, MonitorPlay, ExternalLink, Copy, Check } from 'lucide-react';
+import { PreviewRunnerPreview } from '../Preview/PreviewRunnerPreview';
+import { usePreviewStore } from '@/stores/previewStore';
 import { ErrorBoundary } from './ErrorBoundary';
 
 const Window = styled.div`
@@ -77,6 +78,7 @@ const Title = styled.div`
 const Right = styled.div`
   display: inline-flex;
   align-items: center;
+  gap: 8px;
 `;
 
 const StatusPill = styled.div<{ $tone: 'idle' | 'busy' | 'ready' | 'error' }>`
@@ -138,12 +140,45 @@ interface PreviewWindowProps {
 }
 
 export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled = true }) => {
-  const statusTone = enabled ? 'ready' : 'idle';
-  const statusLabel = enabled ? 'Live · Simple' : 'Closed';
+  const previewUrl = usePreviewStore((state) => state.previewUrl);
+  const runtimeStatus = usePreviewStore((state) => state.runtimeStatus);
+  const [copied, setCopied] = useState(false);
+
+  const statusTone: 'idle' | 'busy' | 'ready' | 'error' = useMemo(() => {
+    if (!enabled) return 'idle';
+    if (runtimeStatus === 'error') return 'error';
+    if (runtimeStatus === 'ready') return 'ready';
+    if (runtimeStatus === 'idle') return 'idle';
+    return 'busy';
+  }, [enabled, runtimeStatus]);
+
+  const statusLabel = useMemo(() => {
+    if (!enabled) return 'Closed';
+    if (statusTone === 'error') return 'Error';
+    if (statusTone === 'busy') return 'Starting';
+    if (statusTone === 'ready') return previewUrl ? 'Live · External' : 'Live · Pending';
+    return 'Idle';
+  }, [enabled, previewUrl, statusTone]);
 
   const handleReset = () => {
     if (typeof window === 'undefined') return;
     window.location.reload();
+  };
+
+  const handleOpenExternal = () => {
+    if (!previewUrl || typeof window === 'undefined') return;
+    window.open(previewUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleCopyExternal = async () => {
+    if (!previewUrl || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(previewUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // ignore clipboard failures
+    }
   };
 
   const fallback = (
@@ -171,6 +206,28 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
         </Dots>
         <Title>Live Preview</Title>
         <Right>
+          {enabled && previewUrl ? (
+            <>
+              <button
+                type="button"
+                onClick={handleCopyExternal}
+                title="Copy external link"
+                className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/10 px-2 py-1 text-[11px] font-semibold text-white/90 hover:bg-white/20"
+              >
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenExternal}
+                title="Open external link"
+                className="inline-flex items-center gap-1 rounded-md border border-cyan-300/35 bg-cyan-300/15 px-2 py-1 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-300/25"
+              >
+                <ExternalLink size={12} />
+                Open
+              </button>
+            </>
+          ) : null}
           <StatusPill $tone={statusTone} title={statusLabel}>
             <StatusDot $tone={statusTone} />
             {statusLabel}
@@ -180,7 +237,7 @@ export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled
       <Content>
         <ErrorBoundary onReset={handleReset} fallback={fallback}>
           {enabled ? (
-            <SimplePreview />
+            <PreviewRunnerPreview />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-white/60 bg-black/30">
               <MonitorPlay size={48} className="mx-auto mb-4 opacity-60" />

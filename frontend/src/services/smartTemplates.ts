@@ -576,9 +576,10 @@ describe('{{utilityName}}', () => {
         mode,
         existingPaths
       });
+      const finalPath = decision.path || rawPath;
 
       return {
-        path: decision.action === 'create' ? rawPath : decision.path,
+        path: finalPath,
         content: this.replaceVariables(file.content, variables),
       };
     });

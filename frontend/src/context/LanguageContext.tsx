@@ -218,6 +218,7 @@ const translations: Record<Language, Translations> = {
     'app.mobile.tab.editor': 'Editor',
     'app.mobile.tab.preview': 'Preview',
     'app.mobile.tab.ai': 'AI',
+    'app.mobile.tab.history': 'History',
     'app.mobile.workspace.title': 'AI Workspace',
     'app.mobile.workspace.subtitle': 'Plan, generate, and monitor from one mobile screen.',
 
@@ -462,6 +463,7 @@ const translations: Record<Language, Translations> = {
     'app.mobile.tab.editor': 'المحرر',
     'app.mobile.tab.preview': 'المعاينة',
     'app.mobile.tab.ai': 'الذكاء',
+    'app.mobile.tab.history': 'السجل',
     'app.mobile.workspace.title': 'مساحة الذكاء',
     'app.mobile.workspace.subtitle': 'خطط ونفّذ وراقب من شاشة جوال واحدة.',
 

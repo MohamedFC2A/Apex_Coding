@@ -43,14 +43,14 @@ export class FileSystemAI {
 
     if (mode === 'framework') {
       if (input.fileType === 'page') {
-        canonicalPath = routeToken ? `src/pages/${routeToken}.tsx` : 'src/pages/home.tsx';
-        reason = 'Framework mode page path under src/pages/.';
+        canonicalPath = !routeToken || routeToken === 'home' ? 'src/app/page.tsx' : `src/app/${routeToken}/page.tsx`;
+        reason = 'Framework mode page path follows Next.js app router conventions.';
       } else if (input.fileType === 'style') {
-        canonicalPath = 'src/styles/style.css';
-        reason = 'Framework mode shared style path.';
+        canonicalPath = 'src/app/globals.css';
+        reason = 'Framework mode shared style path under src/app/.';
       } else if (input.fileType === 'script') {
-        canonicalPath = 'src/scripts/app.ts';
-        reason = 'Framework mode shared script entry.';
+        canonicalPath = 'src/lib/app.ts';
+        reason = 'Framework mode script utilities under src/lib/.';
       } else if (input.fileType === 'component') {
         canonicalPath = `src/components/${this.toPascal(goal)}.tsx`;
         reason = 'Framework component naming convention.';
@@ -168,7 +168,7 @@ export class FileSystemAI {
           { path: 'src/app/layout.tsx', content: this.getNextLayout() },
           { path: 'src/app/page.tsx', content: this.getNextPage() },
           { path: 'src/app/globals.css', content: this.getGlobalsCSS() },
-          { path: 'next.config.js', content: this.getNextConfig() },
+          { path: 'next.config.mjs', content: this.getNextConfig() },
           { path: 'package.json', content: this.getNextPackageJSON(features) },
           { path: '.env.local.example', content: this.getEnvExample() }
         ],

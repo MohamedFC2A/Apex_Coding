@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import { Code2, MonitorPlay, Sparkles } from 'lucide-react';
+import { Code2, History, MonitorPlay, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 
 const NavContainer = styled.div`
@@ -75,10 +75,18 @@ const NavItem = styled.button<{ $active?: boolean }>`
 interface MobileNavProps {
   activeTab: 'editor' | 'preview' | 'ai';
   onTabChange: (tab: 'editor' | 'preview' | 'ai') => void;
+  historyOpen?: boolean;
+  onHistoryToggle?: () => void;
   isGenerating?: boolean;
 }
 
-export const MobileNav: React.FC<MobileNavProps> = ({ activeTab, onTabChange, isGenerating }) => {
+export const MobileNav: React.FC<MobileNavProps> = ({
+  activeTab,
+  onTabChange,
+  historyOpen = false,
+  onHistoryToggle,
+  isGenerating
+}) => {
   const { t } = useLanguage();
 
   return (
@@ -102,6 +110,17 @@ export const MobileNav: React.FC<MobileNavProps> = ({ activeTab, onTabChange, is
       <NavItem $active={activeTab === 'preview'} onClick={() => onTabChange('preview')}>
         <MonitorPlay />
         <span>{t('app.mobile.tab.preview')}</span>
+      </NavItem>
+
+      <NavItem
+        $active={historyOpen}
+        onClick={() => {
+          onHistoryToggle?.();
+        }}
+        aria-label={historyOpen ? 'Close history' : 'Open history'}
+      >
+        <History />
+        <span>{t('app.mobile.tab.history')}</span>
       </NavItem>
     </NavContainer>
   );

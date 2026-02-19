@@ -1640,6 +1640,24 @@ function App() {
     : true;
   const effectiveProjectType: ProjectType = 'FRONTEND_ONLY';
 
+  const handleMobileTabChange = useCallback((tab: 'editor' | 'preview' | 'ai') => {
+    setHistoryOpen(false);
+    setSettingsOpen(false);
+    setMobileTab(tab);
+  }, []);
+
+  const handleMobileHistoryToggle = useCallback(() => {
+    setSidebarOpen(false);
+    setSettingsOpen(false);
+    setHistoryOpen((open) => !open);
+  }, []);
+
+  const handleOpenMobileSidebar = useCallback(() => {
+    setHistoryOpen(false);
+    setSettingsOpen(false);
+    setSidebarOpen(true);
+  }, []);
+
   const chatMessageCountText = useMemo(() => {
     const messageCount = chatHistory.length;
     if (messageCount <= 0) return 'No messages yet';
@@ -5234,7 +5252,7 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
                 <ListTodo size={18} />
               </HeaderIconButton>
             </DesktopOnly>
-            <MobileMenuButton type="button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
+            <MobileMenuButton type="button" onClick={handleOpenMobileSidebar} aria-label="Open sidebar">
               <Menu size={18} />
             </MobileMenuButton>
           </HeaderRight>
@@ -5412,7 +5430,9 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
 
             <MobileNav
               activeTab={mobileTab}
-              onTabChange={setMobileTab}
+              onTabChange={handleMobileTabChange}
+              historyOpen={historyOpen}
+              onHistoryToggle={handleMobileHistoryToggle}
               isGenerating={isGenerating}
             />
           </>

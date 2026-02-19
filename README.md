@@ -19,30 +19,12 @@ Copy `env.example.txt` to `.env` and set your real values.
 - `DEEPSEEK_API_KEY` (server-side, never commit)
 - Optional: `LLM_PROVIDER`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`
 
-### Live Preview (CodeSandbox)
-This project can generate a CodeSandbox sandbox from the current project files and embed it in the app.
+### Live Preview
+This project uses built-in **Simple Live Preview** only (static HTML/CSS/JS rendering in-app + open route).
 
-- `PREVIEW_PROVIDER=codesandbox`
-- `CSB_API_KEY=csb_v1_...` (Get from [CodeSandbox API Keys](https://codesandbox.io/dashboard/settings/api-keys))
-
-**Important:** Without a valid CodeSandbox API key, live preview will not work. The system includes:
-- Clear error messages with troubleshooting steps
-- Diagnostics page to check configuration
-- Simple Preview fallback for basic HTML/CSS/JS projects
-
-See [PREVIEW_SETUP_GUIDE.md](PREVIEW_SETUP_GUIDE.md) for detailed setup instructions.
-
-Notes:
-- The key is stored server-side only (Vercel env). Do not put it in the frontend.
-- CodeSandbox provides 50 free hours per month
-- Simple Preview works without API key for basic projects
-
-### Live Preview (legacy: self-hosted preview-runner)
-If you prefer running previews on your own server via Docker:
-
-- `PREVIEW_PROVIDER=preview-runner`
-- `PREVIEW_RUNNER_URL=https://preview.example.com`
-- `PREVIEW_RUNNER_TOKEN=...` (must match the runner)
+- No external preview provider
+- No API key required
+- Open links use `/live-preview/{projectId}` or `/app/live-preview/{projectId}`
 
 ## Deployment (Vercel)
 1. Push to GitHub.
@@ -52,8 +34,6 @@ If you prefer running previews on your own server via Docker:
 
 ### Vercel env checklist
 - `DEEPSEEK_API_KEY`
-- `PREVIEW_PROVIDER=codesandbox`
-- `CSB_API_KEY`
 - Optional: `NEXT_PUBLIC_SITE_URL` (used for metadata)
 
 ## Security

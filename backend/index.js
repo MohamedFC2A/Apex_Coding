@@ -11,7 +11,6 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 const { requestIdMiddleware } = require('./middleware/requestId');
 const { createRateLimiter } = require('./middleware/rateLimit');
 const { parseAllowedOrigins } = require('./utils/security');
-const { getCodeSandboxApiKey, createSandboxPreview, patchSandboxFiles, hibernateSandbox } = require('./utils/codesandbox');
 const { createFileOpParser } = require('./utils/fileOpParser');
 const { createFileOpPolicyGate, buildPolicyRepairPrompt } = require('./utils/fileOpPolicyGate');
 const {
@@ -53,8 +52,6 @@ const corsOptions = {
       allowedOriginsList.includes(origin) ||
       allowedOriginsList.includes('*') ||
       origin.endsWith('.vercel.app') ||
-      origin.endsWith('.csb.app') ||
-      origin.includes('codesandbox.io') ||
       origin.endsWith('.replit.dev') ||
       origin.endsWith('.repl.co');
 
@@ -244,308 +241,78 @@ app.post(['/download/zip', '/api/download/zip'], async (req, res) => {
 });
 
 // ================================
-// Live Preview - CodeSandbox only
+// Live Preview - Simple (No External Sandbox)
 // ================================
-const getCodeSandboxConfig = () => {
-  const apiKey = getCodeSandboxApiKey();
-  return { apiKey };
-};
-
-const toPreviewFileMapFromArray = (files) => {
-  const map = {};
-  const list = Array.isArray(files) ? files : [];
-
-  for (const f of list) {
-    const rawPath = String(f?.path || f?.name || '').trim();
-    if (!rawPath) continue;
-    const normalized = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
-    if (!normalized) continue;
-    map[normalized] = String(f?.content ?? '');
-  }
-
-  return map;
+const PREVIEW_EXTERNAL_DISABLED_RESPONSE = {
+  error: 'PREVIEW_EXTERNAL_DISABLED',
+  message: 'External sandbox preview is disabled. Use the built-in Simple Live Preview route instead.',
+  mode: 'simple_live_preview'
 };
 
 app.get(['/preview/config', '/api/preview/config'], (req, res) => {
-  const { apiKey: csbApiKey } = getCodeSandboxConfig();
-  const isPlaceholder = csbApiKey && (
-    csbApiKey.includes('REPLACE_ME') || 
-    csbApiKey.length < 20 || 
-    /placeholder|invalid|example/i.test(csbApiKey)
-  );
-
   return res.json({
-    provider: 'codesandbox',
-    configured: Boolean(csbApiKey) && !isPlaceholder,
-    missing: (!csbApiKey || isPlaceholder) ? ['CSB_API_KEY'] : [],
-    baseUrl: 'https://codesandbox.io',
-    tokenPresent: Boolean(csbApiKey),
-    tokenLast4: csbApiKey ? csbApiKey.slice(-4) : null,
-    tokenValid: !isPlaceholder,
+    provider: 'simple',
+    configured: true,
+    tokenPresent: false,
+    tokenValid: true,
+    baseUrl: null,
+    externalProvider: false,
+    mode: 'simple_live_preview',
     requestId: req.requestId
   });
 });
 
-app.get(['/preview/diagnostics', '/api/preview/diagnostics'], async (req, res) => {
-  try {
-    const { apiKey: csbApiKey } = getCodeSandboxConfig();
-    const isPlaceholder = csbApiKey && (
-      csbApiKey.includes('REPLACE_ME') || 
-      csbApiKey.length < 20 || 
-      /placeholder|invalid|example/i.test(csbApiKey)
-    );
-
-    let sandboxConnection = 'checking';
-    
-    // Try to test CodeSandbox API connection
-    if (csbApiKey && !isPlaceholder) {
-      try {
-        const testRes = await fetch('https://codesandbox.io/api/v1/sandboxes', {
-          headers: {
-            'Authorization': `Bearer ${csbApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (testRes.ok) {
-          sandboxConnection = 'ok';
-        } else if (testRes.status === 401 || testRes.status === 403) {
-          sandboxConnection = 'error';
-        } else {
-          sandboxConnection = 'error';
-        }
-      } catch (err) {
-        sandboxConnection = 'error';
-      }
-    } else {
-      sandboxConnection = 'error';
-    }
-
-    return res.json({
-      environment: process.env.NODE_ENV || 'development',
-      nodeVersion: process.version,
-      platform: process.platform,
-      sandboxConnection,
-      timestamp: new Date().toISOString(),
-      requestId: req.requestId
-    });
-  } catch (error) {
-    return res.status(500).json({
-      error: 'Diagnostics failed',
-      message: String(error?.message || error),
-      requestId: req.requestId
-    });
-  }
+app.get(['/preview/diagnostics', '/api/preview/diagnostics'], (req, res) => {
+  return res.json({
+    environment: process.env.NODE_ENV || 'development',
+    nodeVersion: process.version,
+    platform: process.platform,
+    sandboxConnection: 'disabled',
+    mode: 'simple_live_preview',
+    timestamp: new Date().toISOString(),
+    requestId: req.requestId
+  });
 });
 
-
-app.get(['/preview/mock', '/api/preview/mock'], (req, res) => {
+app.get(['/preview/mock', '/api/preview/mock'], (_req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.send(`
     <!DOCTYPE html>
     <html lang="en">
     <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Preview Config Required</title>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Simple Live Preview</title>
       <style>
-        body { margin: 0; padding: 0; background: #0B0F14; color: #fff; font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
-        .card { background: #1E293B; padding: 2rem; border-radius: 12px; max-width: 480px; text-align: center; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
-        h1 { margin-top: 0; font-size: 1.5rem; color: #60A5FA; }
-        p { color: #94A3B8; line-height: 1.5; margin-bottom: 1.5rem; }
-        code { background: rgba(0,0,0,0.3); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; color: #E2E8F0; }
-        .steps { text-align: left; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
-        .steps ol { margin: 0; padding-left: 1.2rem; }
-        .steps li { margin-bottom: 0.5rem; color: #CBD5E1; }
-        .btn { display: inline-block; background: #3B82F6; color: white; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 500; transition: background 0.2s; }
-        .btn:hover { background: #2563EB; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b1020; color: #e2e8f0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+        .card { width: min(680px, calc(100vw - 32px)); border-radius: 16px; border: 1px solid rgba(255,255,255,0.14); background: rgba(15, 23, 42, 0.78); padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 1.35rem; }
+        p { margin: 0; opacity: 0.8; line-height: 1.55; }
       </style>
     </head>
     <body>
-      <div class="card">
-        <h1>Live Preview Configuration</h1>
-        <p>To see your code running live, you need to configure a preview provider.</p>
-        
-        <div class="steps">
-          <ol>
-            <li>Get a free API Key from <strong>CodeSandbox</strong>.</li>
-            <li>Open the <code>.env</code> file in your project root.</li>
-            <li>Replace <code>csb_v1_REPLACE_ME</code> with your actual key:
-              <div style="margin-top: 0.5rem"><code>CSB_API_KEY=csb_v1_...</code></div>
-            </li>
-            <li>Restart the server.</li>
-          </ol>
-        </div>
-
-        <a href="https://codesandbox.io/dashboard/settings/api-keys" target="_blank" class="btn">Get API Key</a>
-      </div>
+      <section class="card">
+        <h1>Simple Live Preview is enabled</h1>
+        <p>External sandbox sessions are disabled. Open preview directly from the IDE using the built-in Open button.</p>
+      </section>
     </body>
     </html>
   `);
 });
 
-app.post(['/preview/sessions', '/api/preview/sessions'], async (req, res) => {
-  const provider = 'codesandbox';
-  const controller = new AbortController();
-  const timeoutMs = 300000; // 5 minutes for cold starts
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
-  try {
-    const { apiKey: csbApiKey } = getCodeSandboxConfig();
-    
-    // Check for missing or placeholder key
-    const isMissing = !csbApiKey;
-    const isPlaceholder = csbApiKey && (
-      csbApiKey.includes('REPLACE_ME') || 
-      csbApiKey.length < 20 || 
-      /placeholder|invalid|example/i.test(csbApiKey)
-    );
-
-    if (isMissing || isPlaceholder) {
-      clearTimeout(timeoutId);
-      return res.status(400).json({
-        error: isMissing ? 'CodeSandbox API key not configured' : 'Invalid CodeSandbox API key',
-        missing: ['CSB_API_KEY'],
-        hint: 'Set CSB_API_KEY on the server (Vercel env or .env) and redeploy.',
-        requestId: req.requestId
-      });
-    }
-
-    const fileMap = toPreviewFileMapFromArray(req.body?.files);
-    const fileCount = Object.keys(fileMap).length;
-    if (fileCount === 0) {
-      clearTimeout(timeoutId);
-      return res.status(400).json({ error: 'files is required', requestId: req.requestId });
-    }
-
-    const { sandboxId, url } = await createSandboxPreview({ fileMap, timeoutMs });
-    
-    clearTimeout(timeoutId);
-    const now = Date.now();
-    return res.json({ 
-      id: sandboxId, 
-      url, 
-      createdAt: now, 
-      updatedAt: now, 
-      provider
-    });
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      return res.status(408).json({
-        error: 'Request timeout',
-        hint: 'CodeSandbox is taking too long to respond. Please try again.',
-        requestId: req.requestId
-      });
-    }
-    const message = String(err?.message || err || 'CodeSandbox preview error');
-    if (/unauthorized|invalid token|401|403/i.test(message)) {
-      return res.status(401).json({
-        error: 'CodeSandbox unauthorized',
-        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
-        requestId: req.requestId
-      });
-    }
-    // Generic catch-all for any other error to prevent 500 crash without response
-    console.error(`[preview/sessions] [${req.requestId}] Error:`, err);
-    return res.status(500).json({ 
-      error: 'Preview failed', 
-      details: message, 
-      requestId: req.requestId 
-    });
-  }
-});
-
-app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
-  const provider = 'codesandbox';
-  const id = String(req.params.id || '').trim();
-  if (!id) return res.status(400).json({ error: 'id is required', requestId: req.requestId });
-
-  return res.json({
-    id,
-    url: `https://${encodeURIComponent(id)}-3000.csb.app`,
-    requestId: req.requestId,
-    provider
+const respondExternalPreviewDisabled = (req, res) => {
+  return res.status(410).json({
+    ...PREVIEW_EXTERNAL_DISABLED_RESPONSE,
+    hint: 'Use /live-preview/{projectId} or /app/live-preview/{projectId} from the frontend Open action.',
+    previewPaths: ['/live-preview', '/app/live-preview'],
+    requestId: req.requestId
   });
-});
+};
 
-app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
-  const provider = 'codesandbox';
-  try {
-    const { apiKey: csbApiKey } = getCodeSandboxConfig();
-    if (!csbApiKey) {
-      return res.status(400).json({
-        error: 'Missing CodeSandbox API key',
-        missing: ['CSB_API_KEY'],
-        hint: 'Set CSB_API_KEY on the server (Vercel env or .env) and redeploy.',
-        requestId: req.requestId
-      });
-    }
-    const keyLooksInvalid =
-      csbApiKey.length < 20 ||
-      /csb_?api_?key/i.test(csbApiKey) ||
-      /placeholder|invalid|example/i.test(csbApiKey);
-    if (keyLooksInvalid) {
-      return res.status(401).json({
-        error: 'CodeSandbox unauthorized',
-        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
-        requestId: req.requestId
-      });
-    }
-    const sandboxId = String(req.params.id || '').trim();
-    const { url } = await patchSandboxFiles({
-      sandboxId,
-      create: req.body?.create,
-      destroy: req.body?.destroy,
-      files: req.body?.files
-    });
-    const updatedAt = Date.now();
-    return res.json({ ok: true, id: sandboxId, url, updatedAt, requestId: req.requestId, provider });
-  } catch (err) {
-    const message = String(err?.message || err || 'CodeSandbox preview update error');
-    if (/unauthorized|invalid token|401|403/i.test(message)) {
-      return res.status(401).json({
-        error: 'CodeSandbox unauthorized',
-        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
-        requestId: req.requestId
-      });
-    }
-    return res.status(502).json({ error: message, requestId: req.requestId });
-  }
-});
-
-app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], async (req, res) => {
-  const provider = 'codesandbox';
-  try {
-    const { apiKey: csbApiKey } = getCodeSandboxConfig();
-    if (!csbApiKey) {
-      return res.status(400).json({
-        error: 'Missing CodeSandbox API key',
-        missing: ['CSB_API_KEY'],
-        hint: 'Set CSB_API_KEY on the server (Vercel env or .env) and redeploy.',
-        requestId: req.requestId
-      });
-    }
-    const keyLooksInvalid =
-      csbApiKey.length < 20 ||
-      /csb_?api_?key/i.test(csbApiKey) ||
-      /placeholder|invalid|example/i.test(csbApiKey);
-    if (keyLooksInvalid) {
-      return res.status(401).json({
-        error: 'CodeSandbox unauthorized',
-        hint: 'CSB_API_KEY invalid. Set a valid key (no quotes/spaces) and redeploy.',
-        requestId: req.requestId
-      });
-    }
-    const sandboxId = String(req.params.id || '').trim();
-    await hibernateSandbox(sandboxId);
-    return res.json({ ok: true, requestId: req.requestId, provider });
-  } catch (err) {
-    const message = String(err?.message || err || 'CodeSandbox preview delete error');
-    return res.status(502).json({ error: message, requestId: req.requestId });
-  }
-});
-
+app.post(['/preview/sessions', '/api/preview/sessions'], (req, res) => respondExternalPreviewDisabled(req, res));
+app.get(['/preview/sessions/:id', '/api/preview/sessions/:id'], (req, res) => respondExternalPreviewDisabled(req, res));
+app.patch(['/preview/sessions/:id', '/api/preview/sessions/:id'], (req, res) => respondExternalPreviewDisabled(req, res));
+app.delete(['/preview/sessions/:id', '/api/preview/sessions/:id'], (req, res) => respondExternalPreviewDisabled(req, res));
 const normalizeDeepSeekBaseUrl = (raw) => {
   const base = String(raw || 'https://api.deepseek.com').trim().replace(/\/+$/, '');
   return base.endsWith('/v1') ? base : `${base}/v1`;

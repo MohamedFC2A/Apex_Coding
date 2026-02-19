@@ -44,13 +44,7 @@ fi
 echo "📋 Configuration:"
 echo "   - Frontend URL: http://localhost:5173"
 echo "   - Backend URL: http://localhost:3001"
-echo "   - Preview: WebContainer (default, no setup needed)"
-echo ""
-
-echo "🔑 Note: If you want to use CodeSandbox preview:"
-echo "   1. Get API key from https://codesandbox.io/dashboard/settings/api-keys"
-echo "   2. Add to .env: CSB_API_KEY=csb_v1_your_key"
-echo "   3. Change in .env: PREVIEW_PROVIDER=codesandbox"
+echo "   - Preview: Simple Live Preview (built-in, no external provider)"
 echo ""
 
 echo "✨ Starting development servers..."

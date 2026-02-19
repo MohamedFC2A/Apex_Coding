@@ -950,7 +950,15 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
     if (!previewContent) return;
     const stableProjectId = ensureProjectId();
     publishLivePreviewSnapshot(stableProjectId, previewContent, previewMeta as unknown as Record<string, unknown>);
-    window.open(buildLivePreviewPath(stableProjectId), '_blank', 'noopener,noreferrer');
+    const targetPath = buildLivePreviewPath(stableProjectId);
+    const targetUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${targetPath}`
+        : targetPath;
+    const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      window.location.assign(targetUrl);
+    }
   }, [previewContent, previewMeta, ensureProjectId]);
 
   const viewState: 'empty' | 'error' | 'ready' = files.length === 0 ? 'empty' : error ? 'error' : 'ready';

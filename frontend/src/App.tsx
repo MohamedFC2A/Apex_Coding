@@ -4583,8 +4583,12 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
           const hasIntegrityFailureSignal =
             partialPaths.size > 0 ||
             streamFileStatuses.some((status) => status === 'partial' || status === 'compromised');
+          const hasHiddenTypeMismatch = hiddenIssues.some((issue) => /HIDDEN_FILE_TYPE_MISMATCH_/i.test(String(issue || '')));
+          const shouldRunSmartAutoFix =
+            shouldAutoFix &&
+            (hasIntegrityFailureSignal || hasHiddenTypeMismatch || hiddenIssues.length > 0 || missingFeatures.length > 0);
 
-          if (shouldAutoFix && hasIntegrityFailureSignal) {
+          if (shouldRunSmartAutoFix) {
             const qualitySummary = qualityViolations.length > 0 ? ` | Quality issues: ${qualityViolations.join(', ')}` : '';
             const routingSummary = routingViolations.length > 0 ? ` | Routing: ${routingViolations.join(', ')}` : '';
             const namingSummary = namingViolations.length > 0 ? ` | Naming: ${namingViolations.join(', ')}` : '';
@@ -4605,10 +4609,6 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
                 }`
               );
             }
-          } else if (shouldAutoFix) {
-            logSystem(
-              `[constraints] Auto-fix skipped (safety-only mode): no partial/integrity failure signal. Retrieval coverage=${retrievalCoverageScore}%`
-            );
           } else if (!readyForFinalize) {
             logSystem('[constraints] Non-critical issues detected. Finalizing without extra edits to avoid unnecessary token usage.');
           }

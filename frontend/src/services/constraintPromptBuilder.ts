@@ -202,6 +202,9 @@ export const buildConstraintsRepairPrompt = (
     '- Do not rewrite stable files or perform cosmetic refactors.',
     '- If issue is HIDDEN_CSS_BRACE_MISMATCH:* then make that CSS file brace-balanced and syntactically complete.',
     '- If issue is HIDDEN_JS_SYNTAX_ERROR:* then return syntactically valid JavaScript with guarded DOM access.',
+    '- If issue is HIDDEN_FILE_TYPE_MISMATCH_JS_CONTAINS_CSS:* move styling rules into the canonical CSS file and keep the JS file executable JavaScript only.',
+    '- If issue is HIDDEN_FILE_TYPE_MISMATCH_CSS_CONTAINS_JS:* move logic into the canonical JS file and keep the CSS file styles-only.',
+    '- If issue is HIDDEN_FILE_TYPE_MISMATCH_*_CONTAINS_HTML* then put markup in HTML files only and keep JS/CSS files pure.',
     '- Output only valid file markers and full code changes.'
   ].join('\n');
 };

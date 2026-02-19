@@ -283,6 +283,81 @@ const hasCssBraceMismatch = (source: string) => {
   return brace !== 0;
 };
 
+const SCRIPT_FILE_RE = /\.(?:mjs|cjs|js|jsx|ts|tsx)$/i;
+const STYLE_FILE_RE = /\.(?:css|scss|sass)$/i;
+const HTML_FILE_RE = /\.html?$/i;
+
+const hasScriptSyntaxSignal = (source: string) => {
+  const text = String(source || '');
+  if (!text.trim()) return false;
+  return /\b(?:const|let|var|function|class|import|export|return|if|for|while|switch|try|catch|async|await|new)\b|=>|document\.|window\.|addEventListener\(/m.test(
+    text
+  );
+};
+
+const hasCssSelectorSignal = (source: string) => {
+  const text = String(source || '');
+  if (!text.trim()) return false;
+  return /(?:^|\n)\s*(?:@media[^{]+\{|[:.#]?[a-zA-Z][\w-]*(?:\s+[:.#]?[a-zA-Z][\w-]*)*\s*\{)/m.test(text);
+};
+
+const hasCssPropertySignal = (source: string) =>
+  /\b(?:color|background(?:-color)?|display|position|margin|padding|font-size|font-family|border(?:-radius)?|width|height|grid|flex|justify-content|align-items)\s*:/i.test(
+    String(source || '')
+  );
+
+const hasCssSyntaxSignal = (source: string) => hasCssSelectorSignal(source) && hasCssPropertySignal(source);
+
+const hasHtmlMarkupSignal = (source: string) =>
+  /<(?:!doctype|html|head|body|main|section|article|header|footer|nav|div|span|script|style|meta|link)\b/i.test(
+    String(source || '')
+  );
+
+const detectLanguageTypeMismatches = (files: ProjectFile[]) => {
+  const issues: string[] = [];
+
+  for (const file of files) {
+    const path = normalizePath(file.path || file.name || '');
+    if (!path) continue;
+    const content = String(file.content || '');
+    if (!content.trim()) continue;
+
+    const hasScript = hasScriptSyntaxSignal(content);
+    const hasCss = hasCssSyntaxSignal(content);
+    const hasHtml = hasHtmlMarkupSignal(content);
+
+    if (SCRIPT_FILE_RE.test(path)) {
+      if (hasCss && !hasScript && !hasHtml) {
+        issues.push(`HIDDEN_FILE_TYPE_MISMATCH_JS_CONTAINS_CSS:${path}`);
+      } else if (hasHtml && !hasScript && !hasCss) {
+        issues.push(`HIDDEN_FILE_TYPE_MISMATCH_JS_CONTAINS_HTML:${path}`);
+      }
+      continue;
+    }
+
+    if (STYLE_FILE_RE.test(path)) {
+      const hasSoftCss = hasCssSelectorSignal(content) || hasCssPropertySignal(content);
+      if (hasScript && !hasSoftCss && !hasHtml) {
+        issues.push(`HIDDEN_FILE_TYPE_MISMATCH_CSS_CONTAINS_JS:${path}`);
+      } else if (hasHtml && !hasSoftCss && !hasScript) {
+        issues.push(`HIDDEN_FILE_TYPE_MISMATCH_CSS_CONTAINS_HTML:${path}`);
+      }
+      continue;
+    }
+
+    if (HTML_FILE_RE.test(path)) {
+      if (!hasHtml && hasCss) {
+        issues.push(`HIDDEN_FILE_TYPE_MISMATCH_HTML_CONTAINS_CSS_NO_MARKUP:${path}`);
+      } else if (!hasHtml && hasScript) {
+        issues.push(`HIDDEN_FILE_TYPE_MISMATCH_HTML_CONTAINS_JS_NO_MARKUP:${path}`);
+      }
+      continue;
+    }
+  }
+
+  return Array.from(new Set(issues));
+};
+
 const hasCriticalSyntaxFailure = (files: ProjectFile[]) => {
   const issues: string[] = [];
 
@@ -320,6 +395,11 @@ const hasCriticalSyntaxFailure = (files: ProjectFile[]) => {
         }
       }
     }
+  }
+
+  const typeMismatchIssues = detectLanguageTypeMismatches(files);
+  for (const issue of typeMismatchIssues) {
+    issues.push(issue);
   }
 
   return Array.from(new Set(issues));

@@ -1528,6 +1528,7 @@ function App() {
     if (isPlanning) return 'planning';
     if (isGenerating) return 'coding';
     if (executionPhase === 'interrupted') return 'interrupted';
+    if (executionPhase === 'confirming') return 'confirming'; // Plan generated, awaiting execution
     if (files.length > 0) return 'done';
     return 'idle';
   }, [executionPhase, files.length, isGenerating, isPlanning]);
@@ -3543,9 +3544,9 @@ function App() {
           }
 
           // Keep the AI file tree in sync without per-chunk updates.
-          if (event.mode !== 'edit') {
-            commitContent(latest);
-          }
+          // Edit mode now also rebuilds files from scratch (content cleared on start),
+          // so commitContent must be called for both create and edit modes.
+          commitContent(latest);
 
           if (effectivePartial) {
             partialPaths.add(resolvedPath);
@@ -4386,6 +4387,16 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
     if (mainActionState === 'interrupted') {
       handleGenerate(undefined, { resume: true, preserveProjectMeta: true });
+      return;
+    }
+
+    // Plan is ready — skip re-planning and execute directly
+    if (mainActionState === 'confirming') {
+      const request = prompt.trim();
+      if (request) {
+        chatRoundRef.current += 1; addChatMessage({ role: 'user', content: request, round: chatRoundRef.current, createdAt: Date.now() });
+      }
+      handleGenerate(undefined, { skipPlanning: true });
       return;
     }
 

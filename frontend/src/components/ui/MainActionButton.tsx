@@ -2,7 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { Sparkles, Wrench, X, Play } from 'lucide-react';
 
-export type MainActionState = 'idle' | 'planning' | 'coding' | 'interrupted' | 'done';
+export type MainActionState = 'idle' | 'planning' | 'coding' | 'interrupted' | 'done' | 'confirming';
 
 const ButtonRoot = styled.button<{ $state: MainActionState }>`
   position: relative;
@@ -14,6 +14,7 @@ const ButtonRoot = styled.button<{ $state: MainActionState }>`
     if (p.$state === 'planning' || p.$state === 'coding') return 'rgba(239, 68, 68, 0.15)';
     if (p.$state === 'done') return 'rgba(16, 185, 129, 0.14)';
     if (p.$state === 'interrupted') return 'rgba(59, 130, 246, 0.16)';
+    if (p.$state === 'confirming') return 'rgba(245, 158, 11, 0.22)';
     return 'rgba(34, 211, 238, 0.14)';
   }};
   color: rgba(255, 255, 255, 0.95);
@@ -82,6 +83,7 @@ const getLabel = (state: MainActionState) => {
   if (state === 'planning' || state === 'coding') return 'Stop';
   if (state === 'interrupted') return 'Continue';
   if (state === 'done') return 'Fix / Edit';
+  if (state === 'confirming') return 'Start Building';
   return 'Generate';
 };
 
@@ -115,9 +117,11 @@ export const MainActionButton: React.FC<MainActionButtonProps> = ({ state, disab
           ? 'Stop'
           : state === 'interrupted'
             ? 'Continue'
-            : state === 'done'
-              ? 'Fix or edit'
-              : 'Generate'
+            : state === 'confirming'
+              ? 'Start building from plan'
+              : state === 'done'
+                ? 'Fix or edit'
+                : 'Generate'
       }
       $state={state}
     >

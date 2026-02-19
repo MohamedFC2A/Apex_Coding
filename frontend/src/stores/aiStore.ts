@@ -1055,7 +1055,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             throw new Error('PLAN_EMPTY: Planner returned no executable steps.');
           }
 
-          set({ planSteps, lastPlannedPrompt: prompt, plan: data?.title || 'Architecture Plan' });
+          set({ planSteps, lastPlannedPrompt: prompt, plan: data?.title || 'Architecture Plan', executionPhase: 'confirming' });
           scheduleSessionSave();
           
           const project = useProjectStore.getState();
@@ -1290,13 +1290,13 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
           set({ writingFilePath: path });
           get().setFileStatus(path, 'writing');
-          if (mode !== 'edit') {
-             // CREATE mode: clear and start fresh
-             if (!event.append) {
-                get().upsertFileNode(path, '');
-             }
+          // Always clear the file before streaming new content.
+          // The AI always outputs the FULL updated file contents (never a diff),
+          // so both 'create' and 'edit' modes must start from an empty slate.
+          // The only exception is append=true which is used for resume streaming.
+          if (!event.append) {
+             get().upsertFileNode(path, '');
           }
-          // EDIT mode: keep existing content — new content will replace it via chunks
         } else if (type === 'chunk' && chunk) {
           const targetPath = state.writingFilePath || path;
           get().appendToFileNode(targetPath, chunk);

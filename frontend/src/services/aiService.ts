@@ -549,6 +549,13 @@ EXECUTION RULES:
    - If the prompt is underspecified, make the best professional assumptions and proceed.
    - Optimize for a reliable, production-ready baseline in the initial pass.
 
+10. **CANONICAL FILE MAP (MANDATORY)**:
+   - A [REQUIRED FILE MAP] section in the context lists every intended file path from the plan.
+   - You MUST write files using EXACTLY those paths — no renaming, no adding undeclared paths.
+   - Write files in the ORDER they appear in the file map (dependencies before consumers).
+   - If you need an undeclared helper file, use [[PATCH_FILE: path | mode: create | reason: ...]] and justify it.
+   - NEVER create a second file serving the same purpose as an existing one (e.g. do not create styles.css if style.css exists).
+
 ${buildAIOrganizationPolicyBlock(selectedProjectMode)}
 ${frontendStrictModeBanner ? `\n\n${frontendStrictModeBanner}` : ''}
 
@@ -563,6 +570,16 @@ Preview Runtime: ${context.previewRuntimeStatus}${context.previewRuntimeMessage 
 
 [PLAN STATUS]
 ${context.currentPlan.map((s: any, i: number) => `${i + 1}. [${s.completed ? 'x' : ' '}] ${s.title} (${s.category || 'general'})`).join('\n')}
+
+
+[REQUIRED FILE MAP]
+${(() => {
+  const planFileTree = aiState.planSteps.flatMap((s: any) => Array.isArray(s.files) ? s.files : []);
+  const uniqueFiles = [...new Set(planFileTree)].filter(Boolean);
+  return uniqueFiles.length > 0
+    ? uniqueFiles.join('\n')
+    : context.files.slice(0, 80).join('\n') || 'Auto-detect from plan';
+})()}
 
 [FILE STRUCTURE]
 ${context.files.slice(0, 100).join('\n')}${context.files.length > 100 ? '\n...(truncated)' : ''}

@@ -773,38 +773,54 @@ const ChatPanel = styled.div`
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  background: rgba(10, 14, 22, 0.62);
-  backdrop-filter: blur(20px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: linear-gradient(180deg, rgba(12, 16, 26, 0.88) 0%, rgba(8, 11, 20, 0.92) 100%);
+  backdrop-filter: blur(24px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 20px 60px rgba(0, 0, 0, 0.4);
 `;
 
 const ChatHeader = styled.div`
   flex-shrink: 0;
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
 `;
 
 const ChatHeaderTitle = styled.div`
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.86);
+  color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  &::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(34, 211, 238, 0.85);
+    box-shadow: 0 0 7px rgba(34, 211, 238, 0.6);
+    flex-shrink: 0;
+  }
 `;
 
 const ChatHeaderMeta = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.42);
+  font-weight: 500;
+  letter-spacing: 0.01em;
 `;
 
 const ContextBarTrack = styled.div`
@@ -833,71 +849,83 @@ const ChatScroll = styled.div`
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 12px;
+  padding: 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 
   &::-webkit-scrollbar {
-    width: 4px;
+    width: 5px;
   }
   &::-webkit-scrollbar-track {
-    background: transparent;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 5px;
+    margin: 6px 0;
   }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: 4px;
+    background: rgba(34, 211, 238, 0.30);
+    border-radius: 5px;
   }
   &::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.28);
+    background: rgba(34, 211, 238, 0.55);
   }
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  scrollbar-color: rgba(34, 211, 238, 0.30) rgba(255, 255, 255, 0.04);
 `;
 
 const ChatBubble = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
   align-self: ${(p) => (p.$role === 'user' ? 'flex-end' : 'flex-start')};
   width: fit-content;
-  max-width: 92%;
-  border-radius: 12px;
-  padding: 9px 11px;
+  max-width: 90%;
+  border-radius: ${(p) => (
+    p.$role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px'
+  )};
+  padding: 10px 13px;
   border: 1px solid ${(p) => (
     p.$role === 'user'
-      ? 'rgba(34, 211, 238, 0.34)'
+      ? 'rgba(34, 211, 238, 0.26)'
       : p.$role === 'assistant'
-        ? 'rgba(34, 197, 94, 0.28)'
-        : 'rgba(255, 255, 255, 0.12)'
+        ? 'rgba(34, 197, 94, 0.20)'
+        : 'rgba(255, 255, 255, 0.09)'
   )};
   background: ${(p) => (
     p.$role === 'user'
-      ? 'rgba(34, 211, 238, 0.14)'
+      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.14), rgba(59, 130, 246, 0.09))'
       : p.$role === 'assistant'
-        ? 'rgba(34, 197, 94, 0.11)'
-        : 'rgba(255, 255, 255, 0.05)'
+        ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.10), rgba(16, 185, 129, 0.06))'
+        : 'rgba(255, 255, 255, 0.04)'
   )};
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  transition: box-shadow 150ms ease;
+
+  &:hover {
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.26);
+  }
 `;
 
 const ChatBubbleRole = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
   color: ${(p) => (
     p.$role === 'user'
-      ? 'rgba(103, 232, 249, 0.95)'
+      ? 'rgba(103, 232, 249, 1)'
       : p.$role === 'assistant'
-        ? 'rgba(134, 239, 172, 0.95)'
-        : 'rgba(255, 255, 255, 0.74)'
+        ? 'rgba(134, 239, 172, 1)'
+        : 'rgba(255, 255, 255, 0.6)'
   )};
 `;
 
 const ChatBubbleText = styled.div`
-  font-size: 12px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.9);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.92);
   white-space: pre-wrap;
   word-break: break-word;
+  letter-spacing: 0.01em;
 `;
 
 const ChatRoundBadge = styled.span`
@@ -4666,17 +4694,15 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                 <ChatHeader>
                   <ChatHeaderTitle>{t('app.workspace.title')}</ChatHeaderTitle>
                   <ChatHeaderMeta>
-                    <span>{chatMessageCountText}</span>
-                    <span>{Math.round(contextBudget.utilizationPct)}%</span>
+                    {chatMessageCountText} &bull; ctx {Math.round(contextBudget.utilizationPct)}%
                   </ChatHeaderMeta>
-                  <ContextBarTrack>
-                    <ContextBarFill $status={contextBudget.status} $width={contextBudget.utilizationPct} />
-                  </ContextBarTrack>
                 </ChatHeader>
+                <ContextBarTrack style={{ borderRadius: 0, height: 3, margin: 0 }}>
+                  <ContextBarFill $status={contextBudget.status} $width={contextBudget.utilizationPct} />
+                </ContextBarTrack>
                 <ChatScroll
                   ref={chatScrollRef}
                   onScroll={handleChatScroll}
-                  className="scrollbar-thin scrollbar-glass"
                 >
                   {chatHistory.length === 0 ? (
                     <ChatEmpty>

@@ -8,6 +8,7 @@ const { createFileOpPolicyGate } = require('../utils/fileOpPolicyGate');
 test('blocks patch edit outside allowed scope', () => {
   const gate = createFileOpPolicyGate({
     writePolicy: {
+      interactionMode: 'edit',
       allowedEditPaths: ['frontend/src/style.css'],
       allowedCreateRules: [],
       maxTouchedFiles: 1,
@@ -71,6 +72,7 @@ test('blocks duplicate-purpose create when canonical css exists', () => {
 test('enforces minimal touch budget', () => {
   const gate = createFileOpPolicyGate({
     writePolicy: {
+      interactionMode: 'edit',
       allowedEditPaths: ['frontend/src/style.css', 'frontend/src/App.tsx'],
       allowedCreateRules: [],
       maxTouchedFiles: 1,
@@ -99,6 +101,7 @@ test('enforces minimal touch budget', () => {
 test('allows explicit create rule in edit mode then edit on created file', () => {
   const gate = createFileOpPolicyGate({
     writePolicy: {
+      interactionMode: 'edit',
       allowedEditPaths: ['frontend/src/style.css'],
       allowedCreateRules: [{ pattern: 'frontend/src/new-widget.css' }],
       maxTouchedFiles: 2,
@@ -122,4 +125,3 @@ test('allows explicit create rule in edit mode then edit on created file', () =>
   assert.equal(createResult.allowed, true);
   assert.equal(editCreatedResult.allowed, true);
 });
-

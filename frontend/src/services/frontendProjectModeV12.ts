@@ -1,6 +1,6 @@
 import type { ProjectFile } from '@/types';
 
-export const FRONTEND_PROJECT_MODE_VERSION = '1.2';
+export const FRONTEND_PROJECT_MODE_VERSION = '1.3';
 
 type PlanStepLike = {
   files?: string[];
@@ -13,7 +13,7 @@ export interface FrontendProjectModeScaffold {
   queuedFiles: string[];
 }
 
-const BASE_DIRECTORIES = ['pages', 'components', 'styles', 'scripts', 'assets', 'assets/images', 'assets/icons', 'data'];
+const BASE_DIRECTORIES: string[] = [];
 
 const BASE_REQUIRED_FILES = ['index.html', 'style.css', 'script.js'];
 

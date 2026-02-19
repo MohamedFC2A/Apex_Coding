@@ -20,6 +20,7 @@ interface AnalyzeWorkspaceIntelligenceOptions {
 
 export interface StrictWritePolicy {
   mode: 'minimal';
+  interactionMode: InteractionMode;
   allowedEditPaths: string[];
   allowedCreateRules: WorkspaceAllowedCreateRule[];
   maxTouchedFiles: number;
@@ -191,8 +192,6 @@ const buildAllowedCreateRules = (
     { pattern: 'scripts/**', reason: 'script output' },
     { pattern: 'assets/**', reason: 'asset output' },
     { pattern: 'data/**', reason: 'data output' },
-    { pattern: 'src/**', reason: 'framework src output' },
-    { pattern: 'public/**', reason: 'public asset output' },
     { pattern: '*.html', reason: 'html entry output' },
     { pattern: '*.css', reason: 'css output' },
     { pattern: '*.js', reason: 'javascript output' },
@@ -355,8 +354,36 @@ export const analyzeWorkspaceIntelligence = (
       .map((path) => normalizePath(path))
       .filter((path) => fileByPath.has(path))
   );
+
+  if (interactionMode === 'edit') {
+    const normalizedActive = normalizePath(activePath);
+    if (normalizedActive && fileByPath.has(normalizedActive)) {
+      minimalEditSet.add(normalizedActive);
+    }
+
+    for (const path of requiredReadSetList.slice(0, 8)) {
+      const normalized = normalizePath(path);
+      if (normalized && fileByPath.has(normalized)) {
+        minimalEditSet.add(normalized);
+      }
+    }
+
+    const baselineNames = new Set(['index.html', 'style.css', 'script.js']);
+    for (const path of allPaths) {
+      const name = basename(path).toLowerCase();
+      if (baselineNames.has(name)) {
+        minimalEditSet.add(path);
+      }
+    }
+  }
+
   if (minimalEditSet.size === 0 && requiredReadSetList.length > 0) {
-    minimalEditSet.add(requiredReadSetList[0]);
+    for (const path of requiredReadSetList.slice(0, 3)) {
+      const normalized = normalizePath(path);
+      if (normalized && fileByPath.has(normalized)) {
+        minimalEditSet.add(normalized);
+      }
+    }
   }
   const allowedEditPaths =
     interactionMode === 'edit'
@@ -416,6 +443,7 @@ export const buildStrictWritePolicy = (args: {
 
   return {
     mode: 'minimal',
+    interactionMode,
     allowedEditPaths,
     allowedCreateRules: args.report.allowedCreateRules,
     maxTouchedFiles,

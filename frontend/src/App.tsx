@@ -2391,29 +2391,87 @@ function App() {
       minContextConfidence,
       interactionMode
     });
+    const normalizePolicyPath = (value: string) =>
+      String(value || '')
+        .replace(/\\/g, '/')
+        .replace(/^\.\//, '')
+        .replace(/^\/+/, '')
+        .trim();
+
+    const createRuleMatchers = () =>
+      (writePolicy.allowedCreateRules || [])
+        .map((rule) => {
+          const pattern = String(rule?.pattern || '').trim();
+          if (!pattern) return null;
+          try {
+            const escaped = pattern
+              .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+              .replace(/\*\*/g, '::DOUBLE_STAR::')
+              .replace(/\*/g, '[^/]*')
+              .replace(/::DOUBLE_STAR::/g, '.*');
+            return new RegExp(`^${escaped}$`, 'i');
+          } catch {
+            return null;
+          }
+        })
+        .filter((re): re is RegExp => Boolean(re));
+
+    const augmentWritePolicyFromPaths = (rawPaths: string[], reason: string) => {
+      const paths = Array.from(new Set(rawPaths.map((path) => normalizePolicyPath(path)).filter(Boolean)));
+      if (paths.length === 0) return;
+
+      const existingFiles = new Set(
+        useProjectStore
+          .getState()
+          .files.map((file) => normalizePolicyPath(file.path || file.name || ''))
+          .filter(Boolean)
+      );
+      const allowedEditSet = new Set((writePolicy.allowedEditPaths || []).map((path) => normalizePolicyPath(path)));
+      const matchers = createRuleMatchers();
+      const createRules = [...(writePolicy.allowedCreateRules || [])];
+
+      let addedEdit = 0;
+      let addedCreate = 0;
+      for (const path of paths) {
+        if (!allowedEditSet.has(path)) {
+          allowedEditSet.add(path);
+          addedEdit += 1;
+        }
+
+        if (existingFiles.has(path)) continue;
+        if (matchers.some((re) => re.test(path))) continue;
+        createRules.push({ pattern: path, reason });
+        addedCreate += 1;
+      }
+
+      if (addedEdit === 0 && addedCreate === 0) return;
+      writePolicy = {
+        ...writePolicy,
+        allowedEditPaths: Array.from(allowedEditSet),
+        allowedCreateRules: createRules
+      };
+      logSystem(
+        `[policy] scope expanded (${reason}): +${addedEdit} edit paths, +${addedCreate} create paths (totals edit=${writePolicy.allowedEditPaths.length}, create=${writePolicy.allowedCreateRules.length})`
+      );
+    };
+
     if (interactionMode === 'edit' && Array.isArray(projectSnapshotForAnalysis.files) && projectSnapshotForAnalysis.files.length > 0) {
-      const normalizePath = (value: string) =>
-        String(value || '')
-          .replace(/\\/g, '/')
-          .replace(/^\.\//, '')
-          .replace(/^\/+/, '')
-          .trim();
-      const seededPaths = new Set<string>((writePolicy.allowedEditPaths || []).map((path) => normalizePath(path)));
+      const seededPaths = new Set<string>((writePolicy.allowedEditPaths || []).map((path) => normalizePolicyPath(path)));
       if (seededPaths.size === 0) {
-        const active = normalizePath(projectSnapshotForAnalysis.activeFile || '');
+        const active = normalizePolicyPath(projectSnapshotForAnalysis.activeFile || '');
         if (active) seededPaths.add(active);
         const baseline = ['index.html', 'style.css', 'script.js'];
         for (const base of baseline) {
           const match = projectSnapshotForAnalysis.files.find((file) => {
-            const current = normalizePath(file.path || file.name || '');
+            const current = normalizePolicyPath(file.path || file.name || '');
             if (!current) return false;
             return current === base || current.endsWith(`/${base}`);
           });
-          if (match) seededPaths.add(normalizePath(match.path || match.name || ''));
+          if (match) seededPaths.add(normalizePolicyPath(match.path || match.name || ''));
         }
         const planned = (useAIStore.getState().planSteps || [])
           .flatMap((step) => (Array.isArray(step.files) ? step.files : []))
-          .map((path) => normalizePath(path))
+          .map((path) => normalizePolicyPath(path))
           .filter(Boolean);
         for (const path of planned) seededPaths.add(path);
         if (seededPaths.size > 0) {
@@ -3181,7 +3239,7 @@ function App() {
           .replace(/\\/g, '/')
           .replace(/^\.\//, '')
           .trim();
-      const normalizePolicyPath = (value: string) => normalizeRefPath(value).toLowerCase();
+      const normalizePolicyPathLower = (value: string) => normalizeRefPath(value).toLowerCase();
       const duplicatePurposeKey = (baseName: string) => {
         const lower = String(baseName || '').toLowerCase();
         if (DUPLICATE_CSS_BASENAMES.has(lower)) return 'css:primary';
@@ -3203,18 +3261,18 @@ function App() {
         const base = (normalized.split('/').pop() || normalized).toLowerCase();
         const purpose = duplicatePurposeKey(base);
         const current = filesByDuplicatePurpose.get(purpose);
-        if (current && normalizePolicyPath(current) === normalizePolicyPath(normalized)) {
+        if (current && normalizePolicyPathLower(current) === normalizePolicyPathLower(normalized)) {
           filesByDuplicatePurpose.delete(purpose);
         }
       };
       for (const existingPath of filesByBaseName.values()) {
         registerDuplicatePurposePath(existingPath);
       }
-      const localAllowedEditSet = new Set((writePolicy?.allowedEditPaths || []).map((path) => normalizePolicyPath(path)));
+      const localAllowedEditSet = new Set((writePolicy?.allowedEditPaths || []).map((path) => normalizePolicyPathLower(path)));
       if (interactionMode === 'edit' && localAllowedEditSet.size === 0) {
         const currentFiles = useProjectStore.getState().files;
         for (const file of currentFiles) {
-          const normalized = normalizePolicyPath(file.path || file.name || '');
+          const normalized = normalizePolicyPathLower(file.path || file.name || '');
           if (normalized) localAllowedEditSet.add(normalized);
           if (localAllowedEditSet.size >= 32) break;
         }
@@ -3239,6 +3297,11 @@ function App() {
           }
         })
         .filter((item): item is RegExp => Boolean(item));
+      const localCreateRulePatterns = new Set(
+        (writePolicy?.allowedCreateRules || [])
+          .map((rule) => normalizeRefPath(rule?.pattern || ''))
+          .filter(Boolean)
+      );
       const localTouchedPaths = new Set<string>();
       const localCreatedPaths = new Set<string>();
       const localMaxTouched = Math.max(1, Number(writePolicy?.maxTouchedFiles || 1));
@@ -3249,12 +3312,70 @@ function App() {
         return localCreateRuleRegexes.some((re) => re.test(normalized));
       };
       const trackTouchedPath = (path: string) => {
-        const normalized = normalizePolicyPath(path);
+        const normalized = normalizePolicyPathLower(path);
         if (!normalized) return true;
         if (localTouchedPaths.has(normalized)) return true;
         if (localTouchedPaths.size + 1 > localMaxTouched) return false;
         localTouchedPaths.add(normalized);
         return true;
+      };
+      const augmentPolicyScopeForExecution = (rawPaths: string[], reason: string) => {
+        const normalizedPaths = Array.from(new Set(rawPaths.map((path) => normalizeRefPath(path)).filter(Boolean)));
+        if (normalizedPaths.length === 0) return;
+        augmentWritePolicyFromPaths(normalizedPaths, reason);
+
+        let addedLocalEdit = 0;
+        let addedLocalCreate = 0;
+        for (const path of normalizedPaths) {
+          const lower = normalizePolicyPathLower(path);
+          if (lower && !localAllowedEditSet.has(lower)) {
+            localAllowedEditSet.add(lower);
+            addedLocalEdit += 1;
+          }
+
+          if (!localCreateRulePatterns.has(path)) {
+            localCreateRulePatterns.add(path);
+            try {
+              localCreateRuleRegexes.push(globToRegExp(path));
+              addedLocalCreate += 1;
+            } catch {
+              // ignore malformed pattern
+            }
+          }
+        }
+
+        if (addedLocalEdit > 0 || addedLocalCreate > 0) {
+          logSystem(`[policy] local scope expanded (${reason}): +${addedLocalEdit} edit, +${addedLocalCreate} create`);
+        }
+      };
+      const collectPolicyFallbackPaths = () => {
+        const snapshot = useProjectStore.getState();
+        const seeded = new Set<string>();
+        const active = normalizeRefPath(snapshot.activeFile || '');
+        if (active) seeded.add(active);
+
+        const baseline = ['index.html', 'style.css', 'script.js'];
+        for (const base of baseline) {
+          const match = snapshot.files.find((file) => {
+            const current = normalizeRefPath(file.path || file.name || '');
+            if (!current) return false;
+            return current === base || current.endsWith(`/${base}`);
+          });
+          if (match) {
+            const resolved = normalizeRefPath(match.path || match.name || '');
+            if (resolved) seeded.add(resolved);
+          }
+        }
+
+        return Array.from(seeded);
+      };
+      const extractPathsFromPolicyMessage = (detail: string) => {
+        const matches =
+          String(detail || '')
+            .match(/[a-zA-Z0-9_./-]+\.(?:html?|css|js|jsx|ts|tsx|json|md|svg)/gi)
+            ?.map((path) => normalizeRefPath(path))
+            .filter(Boolean) || [];
+        return Array.from(new Set(matches));
       };
       const enforceLocalPolicyViolation = (code: string, message: string, path?: string) => {
         const detail = `${code}: ${message}${path ? ` (${path})` : ''}`;
@@ -3316,7 +3437,7 @@ function App() {
           if (!resolvedPath) return;
 
           const reason = String(event.reason || '').trim();
-          const normalizedDelete = normalizePolicyPath(resolvedPath);
+          const normalizedDelete = normalizePolicyPathLower(resolvedPath);
           if (interactionMode === 'edit' && !localAllowedEditSet.has(normalizedDelete)) {
             enforceLocalPolicyViolation('LOCAL_POLICY_DELETE_OUT_OF_SCOPE', 'delete is outside allowed edit set', resolvedPath);
             return;
@@ -3365,8 +3486,8 @@ function App() {
           if (!fromPath || !toPath) return;
 
           const reason = String(event.reason || '').trim();
-          const normalizedFrom = normalizePolicyPath(fromPath);
-          const normalizedTo = normalizePolicyPath(toPath);
+          const normalizedFrom = normalizePolicyPathLower(fromPath);
+          const normalizedTo = normalizePolicyPathLower(toPath);
           if (interactionMode === 'edit' && !localAllowedEditSet.has(normalizedFrom)) {
             enforceLocalPolicyViolation('LOCAL_POLICY_MOVE_OUT_OF_SCOPE', 'move source is outside allowed edit set', fromPath);
             return;
@@ -3437,16 +3558,19 @@ function App() {
         const baseName = resolvedPath.split('/').pop() || resolvedPath;
 
         if (event.type === 'start') {
-          const normalizedResolved = normalizePolicyPath(resolvedPath);
+          const normalizedResolved = normalizePolicyPathLower(resolvedPath);
           const mode = event.mode === 'edit' ? 'edit' : 'create';
           if (mode === 'edit') {
             const allowedByEditSet = localAllowedEditSet.has(normalizedResolved);
             const allowedByCreateSession = localCreatedPaths.has(normalizedResolved);
+            const existsInWorkspace = useProjectStore
+              .getState()
+              .files.some((file) => normalizePolicyPathLower(file.path || file.name || '') === normalizedResolved);
             if (interactionMode === 'edit' && !allowedByEditSet) {
               enforceLocalPolicyViolation('LOCAL_POLICY_EDIT_OUT_OF_SCOPE', 'edit path is outside allowed edit set', resolvedPath);
               return;
             }
-            if (interactionMode !== 'edit' && !allowedByEditSet && !allowedByCreateSession) {
+            if (interactionMode !== 'edit' && !allowedByEditSet && !allowedByCreateSession && !existsInWorkspace) {
               enforceLocalPolicyViolation('LOCAL_POLICY_EDIT_OUT_OF_SCOPE', 'edit path is outside generated/allowed scope', resolvedPath);
               return;
             }
@@ -3460,7 +3584,7 @@ function App() {
             const existingPath = filesByDuplicatePurpose.get(duplicatePurposeKey(lowerBase));
             if (
               existingPath &&
-              normalizePolicyPath(existingPath) !== normalizedResolved &&
+              normalizePolicyPathLower(existingPath) !== normalizedResolved &&
               (DUPLICATE_CSS_BASENAMES.has(lowerBase) || DUPLICATE_JS_BASENAMES.has(lowerBase))
             ) {
               enforceLocalPolicyViolation(
@@ -3734,13 +3858,36 @@ function App() {
           .filter((msg) => msg.content.trim().length > 0)
           .slice(-14);
       };
+      let multiAgentRuntimeEnabled = Boolean(multiAgentEnabled);
+      const isMultiAgentFailureSignal = (value: string) => {
+        const text = String(value || '').toLowerCase();
+        if (!text) return false;
+        const hasAgentRef = /\bmulti[- ]?agent\b|\borchestrator\b|\barchitect\b/.test(text);
+        if (!hasAgentRef) return false;
+        return /\bfallback\b|\bsingle[- ]agent\b|\bdisabled\b|\bfailed\b|\bfailure\b|\berror\b|\btimeout\b|\bunavailable\b/.test(
+          text
+        );
+      };
+      const disableMultiAgentRuntime = (reason: string) => {
+        if (!multiAgentRuntimeEnabled) return;
+        multiAgentRuntimeEnabled = false;
+        const detail = String(reason || 'runtime issue').trim().slice(0, 220);
+        logSystem(`[STATUS] Multi-AI disabled for this generation (${detail}).`);
+        addBrainEvent({
+          source: 'system',
+          level: 'warn',
+          message: `Multi-AI disabled for this generation (${detail})`,
+          phase: 'recovering'
+        });
+      };
 
       const runStream = async (
         streamPrompt: string,
         options?: { useMultiAgent?: boolean }
       ) => {
-        const shouldUseMultiAgent = multiAgentEnabled && options?.useMultiAgent !== false;
-        await aiService.generateCodeStream(
+        const shouldUseMultiAgent = multiAgentRuntimeEnabled && options?.useMultiAgent !== false;
+        const runStreamAttempt = async (attemptUseMultiAgent: boolean) =>
+          aiService.generateCodeStream(
           streamPrompt,
           (token) => {
             appendStreamText(token);
@@ -3754,6 +3901,10 @@ function App() {
             scheduleTokenBeat();
           },
           (phase, message) => {
+            const messageText = String(message || '').trim();
+            if (attemptUseMultiAgent && isMultiAgentFailureSignal(messageText)) {
+              disableMultiAgentRuntime(messageText);
+            }
             if (phase === 'heartbeat') {
               addBrainEvent({
                 source: 'stream',
@@ -3764,7 +3915,7 @@ function App() {
               return;
             }
             if (phase === 'analysis') {
-              const detail = String(message || '').trim();
+              const detail = messageText;
               if (detail) {
                 logSystem(`[analysis] ${detail}`);
                 addBrainEvent({
@@ -3777,7 +3928,7 @@ function App() {
               return;
             }
             if (phase === 'policy_violation') {
-              const detail = String(message || '').trim() || 'Policy violation detected';
+              const detail = messageText || 'Policy violation detected';
               addPolicyViolation(detail);
               setBlockedReason(detail);
               logSystem(`[policy] ${detail}`);
@@ -3790,7 +3941,7 @@ function App() {
               return;
             }
             if (phase === 'blocked') {
-              const detail = String(message || '').trim() || 'Execution blocked by policy gate';
+              const detail = messageText || 'Execution blocked by policy gate';
               addPolicyViolation(detail);
               setBlockedReason(detail);
               setExecutionPhase('interrupted');
@@ -3803,7 +3954,7 @@ function App() {
               });
               return;
             }
-            const compactStageKey = String(message || '').trim().toLowerCase();
+            const compactStageKey = messageText.toLowerCase();
             const compactStageLabel =
               compactStageKey === 'planner'
                 ? t('app.plan.stage.planner')
@@ -3817,7 +3968,7 @@ function App() {
                         ? t('app.plan.stage.resolver')
                         : /strict gate/i.test(compactStageKey)
                           ? t('app.plan.stage.strictGate')
-                          : message;
+                          : messageText;
             const writing = useAIStore.getState().writingFilePath;
             if (writing && phase === 'streaming') {
               setThinkingStatus(`Writing ${writing.split('/').pop() || writing}…`);
@@ -3826,7 +3977,7 @@ function App() {
             } else if (phase === 'thinking') setThinkingStatus('Thinking…');
             else if (phase === 'streaming') setThinkingStatus('Generating…');
             else if (phase === 'validating') {
-              if (/strict gate/i.test(String(message || ''))) {
+              if (/strict gate/i.test(messageText)) {
                 setThinkingStatus(`${t('app.plan.status.validating')}: ${t('app.plan.stage.strictGate')}`);
               } else {
                 setThinkingStatus('Validating…');
@@ -3834,17 +3985,17 @@ function App() {
             }
             else if (phase === 'done') setThinkingStatus('Complete');
             else if (phase === 'recovering') setThinkingStatus('Recovering…');
-            else setThinkingStatus(message);
-            if (phase === 'done' && String(message || '').trim().toLowerCase() === 'stopped') {
+            else setThinkingStatus(messageText);
+            if (phase === 'done' && messageText.toLowerCase() === 'stopped') {
               setExecutionPhase('interrupted');
             }
-            const shouldSkipVerboseLog = phase === 'planning' || (phase === 'validating' && /strict gate/i.test(String(message || '')));
-            if (message && !shouldSkipVerboseLog) logSystem(`[STATUS] ${message}`);
-            if (message) {
+            const shouldSkipVerboseLog = phase === 'planning' || (phase === 'validating' && /strict gate/i.test(messageText));
+            if (messageText && !shouldSkipVerboseLog) logSystem(`[STATUS] ${messageText}`);
+            if (messageText) {
               addBrainEvent({
                 source: 'stream',
                 level: phase === 'error' ? 'error' : phase === 'recovering' ? 'warn' : 'info',
-                message,
+                message: messageText,
                 phase: (phase as any) || 'executing'
               });
             }
@@ -3889,7 +4040,7 @@ function App() {
           {
             thinkingMode: isThinkingMode,
             architectMode,
-            multiAgentEnabled: shouldUseMultiAgent,
+            multiAgentEnabled: attemptUseMultiAgent,
             includeReasoning: isThinkingMode,
             typingMs: 26,
             onFileEvent: handleFileEvent,
@@ -3901,6 +4052,38 @@ function App() {
             writePolicy
           }
         );
+
+        try {
+          await runStreamAttempt(shouldUseMultiAgent);
+        } catch (error: any) {
+          const detail = String(error?.message || error || '').trim();
+          if (shouldUseMultiAgent && isMultiAgentFailureSignal(detail)) {
+            disableMultiAgentRuntime(detail || 'multi-agent failure');
+            logSystem('[STATUS] Retrying current task with single-agent mode...');
+            await runStreamAttempt(false);
+            return;
+          }
+          if (
+            /PATCH_OUT_OF_SCOPE|LOCAL_POLICY_[A-Z_]*OUT_OF_SCOPE|CREATE_OUT_OF_SCOPE|MOVE_TARGET_OUT_OF_SCOPE|DELETE_OUT_OF_SCOPE|blocked by policy gate/i.test(
+              detail
+            )
+          ) {
+            const hintedPaths = extractPathsFromPolicyMessage(detail);
+            const recoveryPaths = hintedPaths.length > 0 ? hintedPaths : collectPolicyFallbackPaths();
+            if (recoveryPaths.length > 0) {
+              augmentPolicyScopeForExecution(recoveryPaths, 'policy-recovery');
+              clearPolicyViolations();
+              setBlockedReason(null);
+              if (useAIStore.getState().executionPhase === 'interrupted') {
+                setExecutionPhase('executing');
+              }
+              logSystem(`[policy] Retrying after scope recovery (${recoveryPaths.length} paths).`);
+              await runStreamAttempt(multiAgentRuntimeEnabled && options?.useMultiAgent !== false);
+              return;
+            }
+          }
+          throw error;
+        }
       };
 
       type ConstraintValidationSnapshot = ReturnType<typeof validateConstraints>;
@@ -4093,6 +4276,12 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
         step: { id: string; title: string; description: string; files?: string[]; completed?: boolean },
         allSteps: Array<{ title: string; completed?: boolean }>
       ) => {
+        const stepTargetPaths = Array.isArray(step.files) ? step.files.filter((path) => String(path || '').trim().length > 0) : [];
+        const scopeSeedPaths = stepTargetPaths.length > 0 ? stepTargetPaths : collectPolicyFallbackPaths();
+        if (scopeSeedPaths.length > 0) {
+          augmentPolicyScopeForExecution(scopeSeedPaths, `plan-step:${step.id || step.title}`);
+        }
+
         const beforeEvents = fileEventCounter;
         const beforePrint = captureWorkspaceFingerprint(step.files || []);
         await runStream(buildPlanStepPrompt(step, allSteps, false), { useMultiAgent: true });
@@ -4114,6 +4303,13 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
         if (changedOnRetry) return;
 
         const retryEventDelta = fileEventCounter - retryEvents;
+        if (firstEventDelta > 0 || retryEventDelta > 0) {
+          logSystem(
+            `[PLAN] Step "${step.title}" emitted file markers but no net diff after retry; accepting as complete to avoid false no-op failure.`
+          );
+          return;
+        }
+
         throw new Error(
           `PLAN_STEP_NO_OP: step "${step.title}" made no file changes after retry${retryEventDelta <= 0 ? ' and produced no valid markers/events' : ''}.`
         );
@@ -4146,6 +4342,10 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
           }))
           .filter((s) => s.title.length > 0);
         const planStepsLocal = normalizePlanStepsForProfile(generatedSteps, effectiveProjectType);
+        const planTargetPaths = planStepsLocal.flatMap((step) => (Array.isArray(step.files) ? step.files : []));
+        if (planTargetPaths.length > 0) {
+          augmentPolicyScopeForExecution(planTargetPaths, 'plan-targets');
+        }
         setPlanSteps(planStepsLocal);
         setLastPlannedPrompt(scopedPrompt);
         applyFrontendProjectModeV12(planStepsLocal.map((step) => ({ files: step.files })));
@@ -4155,6 +4355,7 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
 
         if (isResuming && partialFile) {
           logSystem('[STATUS] Resuming partial file before continuing plan…');
+          augmentPolicyScopeForExecution([partialFile, ...collectPolicyFallbackPaths()], 'resume-partial');
           await runStream(baseStreamPrompt, { useMultiAgent: true });
         }
 
@@ -4182,6 +4383,10 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
           category: normalizePlanCategory(step?.category, step?.title, Array.isArray(step?.files) ? step.files : [])
         }));
         const steps = normalizePlanStepsForProfile(normalizedPlannedSteps, effectiveProjectType);
+        const plannedTargetPaths = steps.flatMap((step) => (Array.isArray(step.files) ? step.files : []));
+        if (plannedTargetPaths.length > 0) {
+          augmentPolicyScopeForExecution(plannedTargetPaths, 'plan-targets');
+        }
 
         if (!isResuming && steps.length === 0) {
           throw new Error(planAfterRun.error || 'PLAN_EMPTY: planner returned no steps.');
@@ -4192,6 +4397,7 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
 
         if (steps.length === 0) {
           setExecutionPhase('executing');
+          augmentPolicyScopeForExecution(collectPolicyFallbackPaths(), 'plan-empty-fallback');
           await runStream(baseStreamPrompt, { useMultiAgent: true });
         } else {
           const plannedExecutionSteps =
@@ -4204,6 +4410,7 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
 
           if (isResuming && partialFile) {
             logSystem('[STATUS] Resuming partial file before continuing plan…');
+            augmentPolicyScopeForExecution([partialFile, ...collectPolicyFallbackPaths()], 'resume-partial');
             await runStream(baseStreamPrompt, { useMultiAgent: true });
           }
           
@@ -4220,6 +4427,7 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
         }
       } else {
         setExecutionPhase('executing');
+        augmentPolicyScopeForExecution(collectPolicyFallbackPaths(), 'direct-run-fallback');
         await runStream(baseStreamPrompt, { useMultiAgent: true });
       }
 

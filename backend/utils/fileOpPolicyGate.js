@@ -110,7 +110,7 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
   const touchedPaths = new Set();
   const createdPaths = new Set();
   const maxTouchedFiles = Math.max(1, Number(writePolicy?.maxTouchedFiles || 1));
-  const strictEditScope = allowedEditSet.size > 0;
+  const strictEditScope = allowedEditSet.size > 0 && String(writePolicy?.interactionMode || '').toLowerCase() === 'edit';
 
   const isCreateAllowed = (path) => {
     const normalized = normalizePath(path);

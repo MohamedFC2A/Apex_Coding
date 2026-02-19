@@ -44,7 +44,7 @@ export type StreamFileEvent =
       safetyCheckPassed?: boolean;
     };
 
-const buildModelRoutingPayload = (thinkingMode: boolean, architectMode: boolean = false) => {
+const buildModelRoutingPayload = (thinkingMode: boolean, multiAgentEnabled: boolean = false) => {
   return {
     plannerProvider: 'deepseek',
     plannerModel: 'deepseek-chat',
@@ -52,12 +52,11 @@ const buildModelRoutingPayload = (thinkingMode: boolean, architectMode: boolean 
     executorModel: thinkingMode ? 'deepseek-reasoner' : 'deepseek-chat',
     fallbackPolicy: 'planner->executor->default',
     multiAgent: {
-      enabled: true,
-      activation: 'architect_only',
+      enabled: Boolean(multiAgentEnabled),
+      activation: 'manual_toggle',
       strictGate: 'strict',
       visibility: 'compact',
-      specialistSet: 'planner_html_css_js_v1',
-      architectMode: Boolean(architectMode)
+      specialistSet: 'planner_html_css_js_v1'
     }
   };
 };
@@ -157,9 +156,10 @@ export const aiService = {
     prompt: string,
     thinkingMode: boolean = false,
     abortSignal?: AbortSignal,
-    projectType?: 'FULL_STACK' | 'FRONTEND_ONLY' | null,
+    projectType?: 'FRONTEND_ONLY' | null,
     constraints?: GenerationConstraints,
-    architectMode: boolean = false
+    architectMode: boolean = false,
+    multiAgentEnabled: boolean = false
   ): Promise<{ title?: string; description?: string; stack?: string; fileTree?: string[]; steps: Array<{ id: string; title: string; category?: string; files?: string[]; description?: string }> }> {
     try {
       const PLAN_URL = apiUrl('/ai/plan');
@@ -201,9 +201,9 @@ STRICT PLANNING RULES:
 4. Each task must be a single logical step.
 5. Ensure the plan covers the entire user request.`.trim();
 
-          const selectedProjectType = constraints?.projectMode || projectType;
-          const normalizedProjectType = (selectedProjectType === 'FULL_STACK' ? 'FULL_STACK' : 'FRONTEND_ONLY') as GenerationConstraints['projectMode'];
-          const organizationPolicyBlock = buildAIOrganizationPolicyBlock(normalizedProjectType);
+          const selectedProjectType: GenerationConstraints['projectMode'] = 'FRONTEND_ONLY';
+          void projectType;
+          const organizationPolicyBlock = buildAIOrganizationPolicyBlock(selectedProjectType);
           const transportPrompt = trimPromptForBackend(prompt, BACKEND_PLAN_PROMPT_LIMIT);
           const enhancedRequestPrompt = constraints
             ? mergePromptWithConstraints(transportPrompt.prompt, constraints)
@@ -219,13 +219,13 @@ STRUCTURE:
 - Default to adaptive multi-page static output (vanilla HTML/CSS/JS).
 - Use single-page only when the request is simple and clearly scoped.
 - Auto-switch to multi-page when request implies: multiple services/products, legal pages, blog/docs/faq, or dashboard-like flows.
-- Only switch to React/Next/Vite when explicitly requested by the user prompt.
+- Never switch to React/Next/Vite or any framework scaffold.
 - NO backend APIs, databases, server-side code, or authentication.
 - Prefer canonical static folders when multi-page: pages/, components/, styles/, scripts/, assets/, data/.
 - Keep shared style.css + script.js as defaults unless architecture requires scoped files.
 - Use route-oriented kebab-case naming for static pages.
-- Do NOT create package.json or build configs unless explicitly requested.
-- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.
+- Do NOT create package.json or build configs.
+- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES (ignored: static-only mode)' : 'NO'}.
 - Include a route map contract (site-map.json or equivalent structured mapping) when multi-page output is used.
 
 COMPONENT DECOMPOSITION:
@@ -254,16 +254,6 @@ QUALITY:
 - Each step must be atomic, testable, and independently verifiable in live preview.
 - Optimize for instant preview — all files must be valid, linkable HTML/CSS/JS.
 - Enforce complete-first-pass delivery with no placeholder TODOs.`;
-          } else if (selectedProjectType === 'FULL_STACK') {
-            planningRules += `
-
-[PROJECT TYPE: FULL STACK]
-- Create both frontend and backend components
-- Include API endpoints and database integration
-- Plan database schema design
-- Implement proper authentication if needed
-- Separate frontend and backend tasks logically
-- Include API documentation or integration steps`;
           }
 
         const enhancedPlanPrompt = `${planningRules}\n\n${organizationPolicyBlock}\n\n[USER REQUEST]\n${enhancedRequestPrompt}`;
@@ -278,9 +268,10 @@ QUALITY:
                 thinkingMode,
                 architectMode,
                 projectType: selectedProjectType,
+                multiAgentEnabled,
                 constraints,
                 contextMeta: buildContextMetaPayload(),
-                modelRouting: buildModelRoutingPayload(thinkingMode, architectMode)
+                modelRouting: buildModelRoutingPayload(thinkingMode, multiAgentEnabled)
               })
             });
           } catch (e: any) {
@@ -374,6 +365,7 @@ QUALITY:
         | {
           thinkingMode?: boolean;
           architectMode?: boolean;
+          multiAgentEnabled?: boolean;
           includeReasoning?: boolean;
           history?: any[];
           typingMs?: number;
@@ -400,6 +392,7 @@ QUALITY:
       const options = typeof thinkingModeOrOptions === 'boolean' ? { thinkingMode: thinkingModeOrOptions } : thinkingModeOrOptions;
       const thinkingMode = Boolean(options.thinkingMode);
       const architectMode = Boolean(options.architectMode);
+      const multiAgentEnabled = Boolean(options.multiAgentEnabled);
       const includeReasoning = Boolean(options.includeReasoning);
       const abortSignal = (options as any).abortSignal as AbortSignal | undefined;
       const constraints = options.constraints;
@@ -428,9 +421,7 @@ QUALITY:
       const retrievalTrace = contextBundle.retrievalTrace;
       const normalizedFiles = contextBundle.files.map((item) => item.path);
 
-      const selectedProjectMode: GenerationConstraints['projectMode'] =
-        constraints?.projectMode ||
-        (projectState.projectType === 'FULL_STACK' ? 'FULL_STACK' : 'FRONTEND_ONLY');
+      const selectedProjectMode: GenerationConstraints['projectMode'] = 'FRONTEND_ONLY';
       const foldersDigest = summarizeTopFolders(normalizedFiles);
       const recentPreviewErrors = previewState.logs
         .slice(-20)
@@ -470,8 +461,8 @@ QUALITY:
               '- Decide the full target file map first, then implement files in deterministic order.',
               '- Keep folder-first organization: pages/, components/, styles/, scripts/, assets/, data/.',
               '- Keep shared styling/behavior centralized unless architecture requires scoped files.',
-              '- Do not produce React/Next/Vite scaffolding unless explicitly requested.',
-              `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.`,
+              '- Never produce React/Next/Vite scaffolding.',
+              `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES (ignored: static-only mode)' : 'NO'}.`,
               '- Follow strict quality gate: structure + naming + routing + a11y + responsive + syntax-safe JS.'
             ].join('\n')
           : '';
@@ -500,15 +491,8 @@ EXECUTION RULES:
      - For FRONTEND_ONLY: lock a full file plan before writing code and execute file patches in a stable sequence.
      - Use single-page only for simple requests; otherwise create linked pages with coherent navigation.
      - Keep shared style.css and script.js defaults for static mode unless scoped files are clearly justified.
-     - Only generate React/Next/Vite structure when explicitly requested by the user.
-     - If project mode is FULL_STACK, use fullstack structure:
-       - \`backend/\` (Node.js API)
-       - \`frontend/\` (Vite + React + TS)
-       - Root config files (\`package.json\`, \`vite.config.ts\`, etc.)
-   - **DEPENDENCIES**: All imports must resolve. Include ALL dependencies in \`package.json\`.
-   - **LIVE PREVIEW**: The project is executed in a Docker-based preview runner (not StackBlitz). Do NOT add StackBlitz/WebContainer scripts.
-   - **DEV SERVER**: \`npm run dev\` must start the frontend on \`0.0.0.0:3000\` (use \`--host 0.0.0.0 --port 3000 --strictPort\` for Vite, or \`next dev -H 0.0.0.0 -p 3000\` for Next).
-   - **FULLSTACK** (if backend exists): backend listens on \`0.0.0.0:3001\` and frontend dev server proxies \`/api\` to the backend during dev.
+     - Never generate React/Next/Vite structure.
+     - **LIVE PREVIEW**: The project is executed in a Docker-based preview runner (not StackBlitz). Do NOT add StackBlitz/WebContainer scripts.
 
 3. **SURGICAL EDIT POLICY**:
    - When modifying an EXISTING project, ONLY emit files that ACTUALLY CHANGE.
@@ -598,7 +582,7 @@ Selected: ${retrievalTrace.selected.slice(0, 40).map((item) => `${item.path} (${
 ${constrainedPrompt}
 `.trim();
 
-      onMeta({ provider: 'vercel-backend', baseURL: getApiBaseUrl(), thinkingMode, architectMode });
+      onMeta({ provider: 'vercel-backend', baseURL: getApiBaseUrl(), thinkingMode, architectMode, multiAgentEnabled });
       if (transportPrompt.truncated) {
         onStatus(
           'streaming',
@@ -1075,6 +1059,7 @@ ${constrainedPrompt}
               prompt: streamPrompt,
               thinkingMode,
               architectMode,
+              multiAgentEnabled,
               includeReasoning,
               context,
               contextBundle,
@@ -1083,7 +1068,7 @@ ${constrainedPrompt}
               history: options.history || [],
               constraints,
               contextMeta: buildContextMetaPayload({ retrievalTrace }),
-              modelRouting: buildModelRoutingPayload(thinkingMode, architectMode)
+              modelRouting: buildModelRoutingPayload(thinkingMode, multiAgentEnabled)
             })
           });
         } catch (e: any) {

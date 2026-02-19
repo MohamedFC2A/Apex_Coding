@@ -1,4 +1,4 @@
-export type ProjectMode = 'FRONTEND_ONLY' | 'FULL_STACK';
+export type ProjectMode = 'FRONTEND_ONLY';
 export type ConstraintEnforcement = 'hard';
 export type QualityGateMode = 'strict' | 'medium' | 'light';
 export type SiteArchitectureMode = 'adaptive_multi_page' | 'single_page' | 'force_multi_page';

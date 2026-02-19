@@ -679,11 +679,11 @@ const getExecutorRouting = (thinkingMode, modelRouting = {}) => {
   return { provider, model };
 };
 
-const shouldUseMultiAgentArchitect = ({ architectMode, modelRouting, stage = 'generate' }) => {
+const shouldUseMultiAgentArchitect = ({ multiAgentEnabled, modelRouting, stage = 'generate' }) => {
   // Plan stage stays single-agent for speed and stability.
   if (stage === 'plan') return false;
   return isMultiAgentArchitectEnabled({
-    architectMode: Boolean(architectMode),
+    architectMode: Boolean(multiAgentEnabled),
     modelRouting: modelRouting || {}
   });
 };
@@ -905,7 +905,7 @@ const FRONTEND_PRO_QUALITY_POLICY = [
   '[FRONTEND PRO QUALITY POLICY]',
   '- Default frontend mode is adaptive multi-page vanilla (HTML/CSS/JS).',
   '- Use single-page only for simple requests; otherwise generate linked multi-page architecture.',
-  '- Do not switch to React/Next/Vite unless explicitly requested by the user prompt.',
+  '- Never generate React/Next/Vite or any framework scaffolding.',
   '- For static mode, keep shared style.css + script.js and route-oriented kebab-case page files.',
   '- Use canonical folders when multi-page: pages/, components/, styles/, scripts/, assets/, data/.',
   '- Include a route map contract (site-map.json or equivalent structured mapping) for multi-page outputs.',
@@ -956,7 +956,7 @@ FILE TREE RULES (CRITICAL — DUPLICATES ARE FORBIDDEN):
 - NEVER list the same filename twice (e.g. two style.css in different paths).
 - Keep one shared style.css and one shared script.js by default in static mode (unless architecture explicitly needs scoped files).
 - If SVG icons are needed, place in src/icons/ and list each file.
-- NEVER include package.json, node_modules, or build configs unless explicitly requested.
+- NEVER include package.json, node_modules, or build configs.
 
 UI DECOMPOSITION (MANDATORY):
 - The plan description must name every major UI section (e.g. "Navigation bar, Hero with CTA, Feature cards grid, Testimonial carousel, Contact form, Footer").
@@ -979,7 +979,7 @@ ACCESSIBILITY:
 - At least one step description must mention ARIA labels and contrast ratios.
 
 REPO CONSTRAINTS:
-- Stack: HTML5, Vanilla CSS, Vanilla JavaScript. NO frameworks unless explicitly requested.
+- Stack: HTML5, Vanilla CSS, Vanilla JavaScript only.
 - NO build tools (Vite/Webpack). NO backend API calls. NO server-side code.
 - Use Lucide Icons via CDN or inline SVGs.
 - Structure must be webcontainer compatible.
@@ -987,35 +987,8 @@ REPO CONSTRAINTS:
 
 ${FRONTEND_PRO_QUALITY_POLICY}`.trim();
 
-const PLAN_SYSTEM_PROMPT_FULLSTACK = `You are an Elite Full-Stack Software Architect.
-
-You must produce an execution-grade implementation plan for a FULL-STACK application.
-
-CRITICAL OUTPUT RULES:
-1. Output ONLY raw JSON (no markdown, no code fences).
-2. JSON shape exactly:
-   {"title":"...","description":"...","stack":"react-express-node","fileTree":[...],"steps":[{"id":"1","title":"...","category":"...","files":[...],"description":"..."}]}
-3. Steps MUST be executable, specific, and ordered. Total steps: 4 to 8.
-4. Categories allowed: config, frontend, backend, integration, testing.
-5. Project Structure:
-   - \`frontend/\` (Vite + React)
-   - \`backend/\` (Node + Express)
-   - \`package.json\` (Root)
-6. Steps must explicitly switch between frontend and backend tasks.
-
-REPO CONSTRAINTS:
-- Frontend: Vite + React + TypeScript (Tailwind, Zustand).
-- Backend: Node.js + Express (REST API).
-- API Communication: Frontend calls \`/api/...\` which proxies to Backend.
-- ICONS: Use \`lucide-react\`. If custom SVGs are strictly needed, place in \`frontend/src/assets/icons/\`.
-
-PLAN QUALITY:
-- Define API endpoints clearly in backend steps.
-- Ensure frontend connects to these endpoints.
-- UI/UX: Mobile-First design, responsive layouts, robust error handling.`.trim();
-
 const CODE_JSON_SYSTEM_PROMPT = `
-You are an expert full-stack code generator.
+You are an expert frontend static code generator.
 Return ONLY a single valid JSON object (no markdown), with this shape:
 {
   "project_files": [{ "name": "path/file.ext", "content": "..." }],
@@ -1028,7 +1001,7 @@ Rules:
 - Include complete file contents (no placeholders).
 `.trim();
 
-const CODE_STREAM_SYSTEM_PROMPT = `You are an ELITE Full-Stack Code Generator AI.
+const CODE_STREAM_SYSTEM_PROMPT = `You are an ELITE Frontend Static Code Generator AI.
 
 CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
 
@@ -1053,27 +1026,16 @@ CRITICAL RULES - VIOLATION WILL BREAK THE PROJECT:
    - If you have already output style.css, do NOT output styles.css or main.css. They are the SAME file.
 
 2. PROJECT STRUCTURE - ADAPTIVE MULTI-PAGE STATIC BY DEFAULT:
-   - ALWAYS prefer static HTML/CSS/JS unless the user explicitly asks for React, Vue, Next, or a build step.
+   - ALWAYS use static HTML/CSS/JS only.
    - Use single-page only for simple requests; otherwise generate linked multi-page architecture.
    - Multi-page static conventions: pages/, components/, styles/, scripts/, assets/, data/, plus site-map.json.
-   - Do NOT generate 'package.json', 'vite.config.js', or 'node_modules' usage unless explicitly requested.
+   - Do NOT generate 'package.json', 'vite.config.js', or 'node_modules' usage.
    - For simple tasks, use:
      - index.html (main HTML with all structure)
      - style.css (ALL CSS in ONE file)
      - script.js (ALL JavaScript in ONE file - MANDATORY)
    - For complex tasks, keep navigation/footer links consistent with site-map.json route map.
    
-   If React/Vite is EXPLICITLY requested:
-   - package.json
-   - src/main.tsx (entry point)
-   - src/App.tsx (main component)
-   - src/styles/ (styles folder if present)
-   - src/components/ (components folder)
-
-   ENV RULES (Vite):
-   - Use import.meta.env.VITE_* in frontend code.
-   - NEVER use process.env.NEXT_PUBLIC_* in Vite projects.
-
 3. PATCH-FIRST EDITING:
    - Use [[PATCH_FILE: path | mode: edit]] for edits and [[PATCH_FILE: path | mode: create]] for new files.
    - Always include the complete updated file body between marker and [[END_FILE]].
@@ -1186,12 +1148,9 @@ REMEMBER: Prefer simple static files (HTML/CSS/JS) over complex builds. Keep it 
 ${FRONTEND_PRO_QUALITY_POLICY}`.trim();
 
 const normalizeConstraints = (rawConstraints = {}, fallbackProjectType = null) => {
-  const projectMode =
-    rawConstraints?.projectMode === 'FULL_STACK' || rawConstraints?.projectMode === 'FRONTEND_ONLY'
-      ? rawConstraints.projectMode
-      : (fallbackProjectType === 'FULL_STACK' || fallbackProjectType === 'FRONTEND_ONLY'
-          ? fallbackProjectType
-          : 'FRONTEND_ONLY');
+  void rawConstraints;
+  void fallbackProjectType;
+  const projectMode = 'FRONTEND_ONLY';
 
   const selectedFeatures = Array.isArray(rawConstraints?.selectedFeatures)
     ? rawConstraints.selectedFeatures.filter((item) => typeof item === 'string' && item.trim().length > 0)
@@ -1234,18 +1193,17 @@ const normalizeConstraints = (rawConstraints = {}, fallbackProjectType = null) =
 };
 
 const buildConstraintsBlock = (constraints, prompt = '') => {
+  void prompt;
   const featureLines = [
     ...constraints.selectedFeatures.map((feature) => `- ${feature}`),
     ...constraints.customFeatureTags.map((feature) => `- custom: ${feature}`)
   ];
-  const explicitFrameworkRequested = hasExplicitFrameworkRequest(prompt);
   const frontendModeRules = constraints.projectMode === 'FRONTEND_ONLY'
     ? [
         'Frontend Defaults:',
         '- Default to adaptive multi-page vanilla static output.',
         '- Use single-page only for simple prompts; switch to multi-page when scope is broader.',
-        `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES' : 'NO'}.`,
-        '- Only produce React/Next/Vite structure when explicit framework request is YES.',
+        '- Never produce React/Next/Vite structure.',
         '- If multi-page static is used, include route map contract (site-map.json or equivalent).',
         '',
         FRONTEND_PRO_QUALITY_POLICY
@@ -1402,7 +1360,7 @@ const planLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
 app.post(planRouteRegex, planLimiter, async (req, res) => {
   console.log(`[plan] [${req.requestId}] Received request`);
   try {
-    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, architectMode } = req.body || {};
+    const { prompt, thinkingMode, projectType, constraints: rawConstraints, contextMeta, modelRouting, architectMode, multiAgentEnabled: multiAgentToggle } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       console.log(`[plan] [${req.requestId}] Error: Prompt is required`);
       return res.status(400).json({ error: 'Prompt is required', requestId: req.requestId });
@@ -1415,11 +1373,7 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     const effectiveProjectType = constraints.projectMode;
     const constrainedPrompt = attachConstraintsToPrompt(prompt, constraints);
 
-    // Select constraints based on projectType
-    let selectedSystemPrompt = PLAN_SYSTEM_PROMPT_FULLSTACK; // Default
-    if (effectiveProjectType === 'FRONTEND_ONLY') {
-      selectedSystemPrompt = PLAN_SYSTEM_PROMPT_FRONTEND;
-    }
+    const selectedSystemPrompt = PLAN_SYSTEM_PROMPT_FRONTEND;
 
     if (!isDeepSeekConfigured()) {
       return res.status(503).json({
@@ -1432,12 +1386,12 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
     const TIMEOUT_MS = thinkingMode ? 420_000 : 240_000;
     const plannerRoute = getPlannerRouting(modelRouting);
     const multiAgentEnabled = shouldUseMultiAgentArchitect({
-      architectMode,
+      multiAgentEnabled: Boolean(multiAgentToggle),
       modelRouting,
       stage: 'plan'
     });
     console.log(
-      `[plan] [${req.requestId}] prompt_length=${prompt.length} mode=${thinkingMode ? 'thinking' : 'fast'} type=${effectiveProjectType} planner=${plannerRoute.provider}:${plannerRoute.model} architect=${Boolean(architectMode)} multiAgent=${multiAgentEnabled} session=${contextMeta?.sessionId || 'none'}`
+      `[plan] [${req.requestId}] prompt_length=${prompt.length} mode=${thinkingMode ? 'thinking' : 'fast'} type=${effectiveProjectType} planner=${plannerRoute.provider}:${plannerRoute.model} architect=${Boolean(architectMode)} multiAgentToggle=${Boolean(multiAgentToggle)} multiAgent=${multiAgentEnabled} session=${contextMeta?.sessionId || 'none'}`
     );
 
     let provider;
@@ -1522,9 +1476,9 @@ app.post(planRouteRegex, planLimiter, async (req, res) => {
           `[plan] [${req.requestId}] Non-JSON planner response recovered with text-step fallback (${fallbackSteps.length} steps).`
         );
         return res.json({
-          title: effectiveProjectType === 'FULL_STACK' ? 'Full-stack Implementation Plan' : 'Frontend Implementation Plan',
+          title: 'Frontend Implementation Plan',
           description: 'Recovered plan from non-JSON response.',
-          stack: effectiveProjectType === 'FULL_STACK' ? 'react-express-node' : 'html-css-javascript',
+          stack: 'html-css-javascript',
           fileTree: [],
           steps: fallbackSteps,
           requestId: req.requestId
@@ -1625,7 +1579,8 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       workspaceAnalysis,
       writePolicy,
       history,
-      architectMode
+      architectMode,
+      multiAgentEnabled
     } = req.body || {};
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       res.status(400).send('Prompt is required');
@@ -1673,15 +1628,15 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
 
     const executorRoute = getExecutorRouting(Boolean(thinkingMode), modelRouting);
     const model = executorRoute.model;
-    const multiAgentEnabled = shouldUseMultiAgentArchitect({
-      architectMode,
+    const useMultiAgent = shouldUseMultiAgentArchitect({
+      multiAgentEnabled: Boolean(multiAgentEnabled),
       modelRouting,
       stage: 'generate'
     });
     const resumePrompt = isResumePrompt(finalPrompt);
 
     console.log(
-      `[generate] [${req.requestId}] model=${executorRoute.provider}:${executorRoute.model} architect=${Boolean(architectMode)} multiAgent=${multiAgentEnabled} resume=${resumePrompt} session=${contextMeta?.sessionId || 'none'}`
+      `[generate] [${req.requestId}] model=${executorRoute.provider}:${executorRoute.model} architect=${Boolean(architectMode)} multiAgentToggle=${Boolean(multiAgentEnabled)} multiAgent=${useMultiAgent} resume=${resumePrompt} session=${contextMeta?.sessionId || 'none'}`
     );
 
     let provider;
@@ -1748,7 +1703,7 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
       return repairedText;
     };
 
-    if (multiAgentEnabled && !resumePrompt) {
+    if (useMultiAgent && !resumePrompt) {
       try {
         const multiAgentResult = await runGenerateMultiAgent({
           prompt: finalPrompt,

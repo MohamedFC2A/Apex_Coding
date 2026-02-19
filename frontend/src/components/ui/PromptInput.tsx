@@ -343,10 +343,8 @@ interface PromptInputProps {
   labels?: {
     projectModeLabel?: string;
     frontendLabel?: string;
-    fullstackLabel?: string;
     applyLabel?: string;
   };
-  fullstackLocked?: boolean;
   constraintsPanel?: React.ReactNode;
   constraintsPanelOpen?: boolean;
   onToggleConstraintsPanel?: () => void;
@@ -369,7 +367,6 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
       recommendation,
       onApplyRecommendation,
       labels,
-      fullstackLocked = false,
       constraintsPanel,
       constraintsPanelOpen = false,
       onToggleConstraintsPanel,
@@ -416,7 +413,7 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
             'Project Brief',
             '1) Goal and target audience',
             '2) Main pages/sections',
-            `3) Preferred style (${projectMode === 'FRONTEND_ONLY' ? 'frontend-first visual direction' : 'UI + API architecture'})`,
+            '3) Preferred style (frontend-first visual direction)',
             '4) Required interactions/features',
             '5) Constraints (performance, accessibility, responsive)'
           ].join('\n'));
@@ -456,18 +453,6 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
               disabled={isGenerating}
             >
               {labels?.frontendLabel || 'Frontend'}
-            </ProjectModeButton>
-            <ProjectModeButton
-              type="button"
-              $active={projectMode === 'FULL_STACK'}
-              onClick={() => {
-                if (fullstackLocked) return;
-                onProjectModeChange('FULL_STACK');
-              }}
-              disabled={isGenerating || fullstackLocked}
-              title={fullstackLocked ? 'Fullstack temporarily disabled for maintenance' : undefined}
-            >
-              {labels?.fullstackLabel || 'Fullstack'}
             </ProjectModeButton>
           </ProjectModeSwitch>
         </ProjectModeRow>

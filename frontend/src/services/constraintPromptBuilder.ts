@@ -11,10 +11,9 @@ const formatFeatureLine = (featureId: string) => {
 type ProjectMode = GenerationConstraints['projectMode'];
 
 export const buildAIOrganizationPolicyBlock = (projectMode: ProjectMode): string => {
+  void projectMode;
   const modeStructure =
-    projectMode === 'FULL_STACK'
-      ? '- Keep clear separation: frontend/* for UI, backend/* for APIs/services, shared/* only if required.'
-      : '- Keep everything frontend-only and never create backend/, server/, api/, database/ folders.';
+    '- Keep everything frontend-only and never create backend/, server/, api/, database/ folders.';
 
   return [
     '[AI ORGANIZATION POLICY]',
@@ -107,10 +106,7 @@ export const buildAntiDuplicationPolicyBlock = (): string =>
   ].join('\n');
 
 export const buildGenerationConstraintsBlock = (constraints: GenerationConstraints): string => {
-  const modeLine =
-    constraints.projectMode === 'FULL_STACK'
-      ? 'Project Mode: FULL_STACK (frontend + backend allowed).'
-      : 'Project Mode: FRONTEND_ONLY (backend/server files are forbidden).';
+  const modeLine = 'Project Mode: FRONTEND_ONLY (backend/server files are forbidden).';
 
   const selectedFeatureRules = constraints.selectedFeatures.map(formatFeatureLine);
   const customFeatureRules = constraints.customFeatureTags
@@ -129,7 +125,7 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
 
   const extraRules = wantsSvgPolicy ? [buildSvgPolicyPromptLine()] : [];
   const organizationBlock = buildAIOrganizationPolicyBlock(constraints.projectMode);
-  const isFrontendOnly = constraints.projectMode === 'FRONTEND_ONLY';
+  const isFrontendOnly = true;
   const frontendPolicyBlock = isFrontendOnly ? buildFrontendDeliveryPolicyBlock() : null;
   const frontendPlanningBlock = isFrontendOnly ? buildFrontendPlanningPolicyBlock() : null;
   const frontendProfessionalBaselineBlock = isFrontendOnly ? buildFrontendProfessionalBaselineBlock() : null;

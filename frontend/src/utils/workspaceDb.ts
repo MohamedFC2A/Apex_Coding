@@ -6,7 +6,7 @@ type WorkspaceMetaRecord = {
   updatedAt: number;
   projectId: string;
   projectName: string;
-  projectType: 'FULL_STACK' | 'FRONTEND_ONLY' | null;
+  projectType: 'FRONTEND_ONLY' | null;
   selectedFeatures: string[];
   customFeatureTags: string[];
   constraintsEnforcement: 'hard';
@@ -31,6 +31,8 @@ const FILE_STORE = 'files';
 const SESSIONS_STORE = 'sessions';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+
+const coerceProjectType = (_value: unknown): 'FRONTEND_ONLY' => 'FRONTEND_ONLY';
 
 const asPromise = <T>(req: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {
@@ -79,7 +81,13 @@ export const loadWorkspace = async (): Promise<{ meta: WorkspaceMetaRecord | nul
 
     const meta = await asPromise(metaStore.get('current') as IDBRequest<WorkspaceMetaRecord | undefined>);
     const files = await asPromise(fileStore.getAll() as IDBRequest<WorkspaceFileRecord[]>);
-    return { meta: meta ?? null, files: Array.isArray(files) ? files : [] };
+    const normalizedMeta = meta
+      ? {
+          ...meta,
+          projectType: coerceProjectType(meta.projectType)
+        }
+      : null;
+    return { meta: normalizedMeta, files: Array.isArray(files) ? files : [] };
   });
 };
 
@@ -101,7 +109,7 @@ export const applyWorkspaceDelta = async (delta: {
         updatedAt,
         projectId: delta.meta.projectId ?? '',
         projectName: delta.meta.projectName ?? '',
-        projectType: delta.meta.projectType ?? 'FRONTEND_ONLY',
+        projectType: 'FRONTEND_ONLY',
         selectedFeatures: Array.isArray(delta.meta.selectedFeatures) ? delta.meta.selectedFeatures : [],
         customFeatureTags: Array.isArray(delta.meta.customFeatureTags) ? delta.meta.customFeatureTags : [],
         constraintsEnforcement: delta.meta.constraintsEnforcement ?? 'hard',

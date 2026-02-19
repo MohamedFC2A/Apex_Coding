@@ -27,7 +27,7 @@ export type StoredHistorySession = {
   updatedAt: number;
   title: string;
   projectName: string;
-  projectType: 'FULL_STACK' | 'FRONTEND_ONLY' | null;
+  projectType: 'FRONTEND_ONLY' | null;
   selectedFeatures: string[];
   customFeatureTags: string[];
   constraintsEnforcement: 'hard';
@@ -43,7 +43,8 @@ export type StoredHistorySession = {
   contextBudget: ContextBudgetState;
   compressionSnapshot: CompressionSnapshot;
   activeModelProfile: ActiveModelProfile;
-  executionPhase?: 'idle' | 'planning' | 'executing' | 'confirming' | 'interrupted' | 'completed';
+  multiAgentEnabled?: boolean;
+  executionPhase?: 'idle' | 'planning' | 'executing' | 'interrupted' | 'completed';
   writingFilePath?: string | null;
   fileStatuses?: Record<string, 'ready' | 'queued' | 'writing' | 'partial' | 'compromised'>;
   completedFiles?: string[];
@@ -56,6 +57,16 @@ const DB_VERSION = 2;
 const SESSIONS_STORE = 'sessions';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+
+const coerceProjectType = (_value: unknown): 'FRONTEND_ONLY' => 'FRONTEND_ONLY';
+
+const coerceExecutionPhase = (value: unknown): StoredHistorySession['executionPhase'] => {
+  const phase = String(value || '').trim();
+  if (phase === 'planning' || phase === 'executing' || phase === 'interrupted' || phase === 'completed') {
+    return phase;
+  }
+  return 'idle';
+};
 
 const openDb = (): Promise<IDBDatabase> => {
   if (dbPromise) return dbPromise;
@@ -119,7 +130,12 @@ export const loadSessionsFromDisk = async (limit = 40): Promise<StoredHistorySes
           req.onsuccess = () => {
             const cursor = req.result as IDBCursorWithValue | null;
             if (!cursor) return resolve(out);
-            out.push(cursor.value as StoredHistorySession);
+            const raw = cursor.value as StoredHistorySession;
+            out.push({
+              ...raw,
+              projectType: coerceProjectType(raw?.projectType),
+              executionPhase: coerceExecutionPhase(raw?.executionPhase)
+            });
             if (out.length >= limit) return resolve(out);
             cursor.continue();
           };
@@ -134,8 +150,13 @@ export const loadSessionsFromDisk = async (limit = 40): Promise<StoredHistorySes
       const req = store.getAll();
       req.onsuccess = () => {
         const records = (Array.isArray(req.result) ? req.result : []) as StoredHistorySession[];
-        records.sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
-        resolve(records.slice(0, limit));
+        const normalized = records.map((record) => ({
+          ...record,
+          projectType: coerceProjectType(record?.projectType),
+          executionPhase: coerceExecutionPhase(record?.executionPhase)
+        }));
+        normalized.sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
+        resolve(normalized.slice(0, limit));
       };
       req.onerror = () => reject(req.error);
     });
@@ -183,7 +204,7 @@ export const archiveCurrentWorkspaceAsSession = async (
   const record: StoredHistorySession = {
     ...session,
     projectName: String(meta?.projectName || ''),
-    projectType: (meta?.projectType ?? 'FRONTEND_ONLY') as 'FULL_STACK' | 'FRONTEND_ONLY' | null,
+    projectType: coerceProjectType(meta?.projectType),
     selectedFeatures: Array.isArray(meta?.selectedFeatures) ? meta.selectedFeatures : [],
     customFeatureTags: Array.isArray(meta?.customFeatureTags) ? meta.customFeatureTags : [],
     constraintsEnforcement: (meta?.constraintsEnforcement || 'hard') as 'hard',
@@ -210,7 +231,8 @@ export const archiveCurrentWorkspaceAsSession = async (
       plannerModel: 'planner:auto',
       executorModel: 'executor:auto',
       specialistModels: {}
-    }
+    },
+    executionPhase: coerceExecutionPhase(session.executionPhase)
   };
 
   await saveSessionToDisk(record);

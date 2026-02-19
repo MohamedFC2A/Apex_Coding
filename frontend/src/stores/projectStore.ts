@@ -4,7 +4,7 @@ import { ProjectFile, FileStructure, FileSystem } from '@/types';
 import { applyWorkspaceDelta, clearWorkspace, loadWorkspace } from '@/utils/workspaceDb';
 import type { ConstraintEnforcement } from '@/types/constraints';
 
-export type ProjectType = 'FULL_STACK' | 'FRONTEND_ONLY';
+export type ProjectType = 'FRONTEND_ONLY';
 
 interface ProjectState {
   projectId: string;
@@ -170,7 +170,7 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
             set({
               projectId: loaded.meta?.projectId ?? current.projectId,
               projectName: loaded.meta?.projectName ?? current.projectName,
-              projectType: loaded.meta?.projectType ?? current.projectType,
+              projectType: 'FRONTEND_ONLY',
               selectedFeatures: Array.isArray(loaded.meta?.selectedFeatures)
                 ? loaded.meta.selectedFeatures
                 : current.selectedFeatures,

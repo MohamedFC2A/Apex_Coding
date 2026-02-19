@@ -3,17 +3,14 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import {
-  Zap,
   Code2,
-  Server,
   CheckCircle2,
-  X,
-  ArrowRight
+  X
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export type ProjectType = 'FULL_STACK' | 'FRONTEND_ONLY';
+export type ProjectType = 'FRONTEND_ONLY';
 
 interface ProjectTypeDialogProps {
   isOpen: boolean;
@@ -242,7 +239,7 @@ export const ProjectTypeDialog: React.FC<ProjectTypeDialogProps> = ({
   onCancel
 }) => {
   const { t, isRTL } = useLanguage();
-  const [selected, setSelected] = useState<ProjectType | null>(null);
+  const [selected, setSelected] = useState<ProjectType | null>('FRONTEND_ONLY');
 
   const handleSelect = (type: ProjectType) => {
     setSelected(type);
@@ -284,38 +281,6 @@ export const ProjectTypeDialog: React.FC<ProjectTypeDialogProps> = ({
             </Header>
 
             <OptionsGrid>
-              {/* FULL STACK Card */}
-              <OptionCard
-                $selected={selected === 'FULL_STACK'}
-                onClick={() => handleSelect('FULL_STACK')}
-                whileHover={{ y: -2 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <IconWrapper>
-                    <Zap size={20} />
-                  </IconWrapper>
-                  <div>
-                    <OptionLabel>{t('app.project.fullStack')}</OptionLabel>
-                    <OptionDescription>{t('app.project.fullStackDesc')}</OptionDescription>
-                  </div>
-                </div>
-                {selected === 'FULL_STACK' && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
-                    <Features>
-                      <li>{t('app.project.feat.frontend')}</li>
-                      <li>{t('app.project.feat.backend')}</li>
-                      <li>{t('app.project.feat.database')}</li>
-                      <li>{t('app.project.feat.apis')}</li>
-                    </Features>
-                  </motion.div>
-                )}
-              </OptionCard>
-
-              {/* FRONTEND ONLY Card */}
               <OptionCard
                 $selected={selected === 'FRONTEND_ONLY'}
                 onClick={() => handleSelect('FRONTEND_ONLY')}

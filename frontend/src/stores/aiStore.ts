@@ -16,7 +16,7 @@ import type {
 type ModelMode = 'fast' | 'thinking' | 'super';
 export type FileStreamStatus = 'ready' | 'queued' | 'writing' | 'partial' | 'compromised';
 export type InteractionMode = 'create' | 'edit';
-export type ProjectType = 'FULL_STACK' | 'FRONTEND_ONLY';
+export type ProjectType = 'FRONTEND_ONLY';
 export type BrainEventSource = 'system' | 'stream' | 'file' | 'preview' | 'user';
 export type BrainEventLevel = 'info' | 'warn' | 'error' | 'success';
 export type AIFileEvent =
@@ -90,6 +90,7 @@ export interface HistorySession {
   contextBudget: ContextBudgetState;
   compressionSnapshot: CompressionSnapshot;
   activeModelProfile: ActiveModelProfile;
+  multiAgentEnabled?: boolean;
   executionPhase?: ExecutionPhase;
   writingFilePath?: string | null;
   fileStatuses?: Record<string, FileStreamStatus>;
@@ -107,7 +108,7 @@ interface AISections {
   download?: string;
 }
 
-export type ExecutionPhase = 'idle' | 'planning' | 'executing' | 'confirming' | 'interrupted' | 'completed';
+export type ExecutionPhase = 'idle' | 'planning' | 'executing' | 'interrupted' | 'completed';
 
 export interface BrainEvent {
   id: string;
@@ -128,6 +129,7 @@ interface AIStoreState {
   customFeatureTags: string[];
   constraintsEnforcement: 'hard';
   architectMode: boolean;
+  multiAgentEnabled: boolean;
   lastPlannedPrompt: string;
   chatHistory: ChatMessage[];
   decisionTrace: string;
@@ -176,6 +178,7 @@ interface AIStoreActions {
   setCustomFeatureTags: (tags: string[]) => void;
   setConstraintsEnforcement: (mode: 'hard') => void;
   setArchitectMode: (enabled: boolean) => void;
+  setMultiAgentEnabled: (enabled: boolean) => void;
   setLastPlannedPrompt: (prompt: string) => void;
   setChatHistory: (history: ChatMessage[]) => void;
   addChatMessage: (message: ChatMessage) => void;
@@ -329,6 +332,16 @@ const DEFAULT_COMPRESSION_SNAPSHOT: CompressionSnapshot = {
   lastCompressedAt: 0
 };
 
+const coerceProjectType = (_value: unknown): ProjectType => 'FRONTEND_ONLY';
+
+const coerceExecutionPhase = (value: unknown): ExecutionPhase => {
+  const phase = String(value || '').trim();
+  if (phase === 'planning' || phase === 'executing' || phase === 'interrupted' || phase === 'completed') {
+    return phase;
+  }
+  return 'idle';
+};
+
 const readEmergencySession = (): Partial<HistorySession> | null => {
   if (typeof window === 'undefined') return null;
   try {
@@ -343,7 +356,7 @@ const readEmergencySession = (): Partial<HistorySession> | null => {
       updatedAt: Number(parsed?.updatedAt || Date.now()),
       title: String(parsed?.title || 'Recovered Session'),
       projectName: String(parsed?.projectName || ''),
-      projectType: (parsed?.projectType === 'FULL_STACK' ? 'FULL_STACK' : 'FRONTEND_ONLY') as ProjectType,
+      projectType: coerceProjectType(parsed?.projectType),
       selectedFeatures: Array.isArray(parsed?.selectedFeatures) ? parsed.selectedFeatures : [],
       customFeatureTags: Array.isArray(parsed?.customFeatureTags) ? parsed.customFeatureTags : [],
       constraintsEnforcement: 'hard',
@@ -361,7 +374,8 @@ const readEmergencySession = (): Partial<HistorySession> | null => {
       contextBudget: parsed?.contextBudget || DEFAULT_CONTEXT_BUDGET,
       compressionSnapshot: parsed?.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
       activeModelProfile: parsed?.activeModelProfile || getActiveModelProfile(),
-      executionPhase: (parsed?.executionPhase || 'idle') as ExecutionPhase,
+      executionPhase: coerceExecutionPhase(parsed?.executionPhase),
+      multiAgentEnabled: Boolean(parsed?.multiAgentEnabled),
       writingFilePath: parsed?.writingFilePath ? String(parsed.writingFilePath) : null,
       fileStatuses:
         parsed?.fileStatuses && typeof parsed.fileStatuses === 'object'
@@ -864,6 +878,7 @@ const buildInitialState = (): AIStoreState => ({
   customFeatureTags: [],
   constraintsEnforcement: 'hard',
   architectMode: true,
+  multiAgentEnabled: false,
   lastPlannedPrompt: '',
   chatHistory: [],
   decisionTrace: '',
@@ -972,6 +987,11 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           scheduleSessionSave();
         },
 
+        setMultiAgentEnabled: (enabled) => {
+          set({ multiAgentEnabled: Boolean(enabled) });
+          scheduleSessionSave();
+        },
+
         setLastPlannedPrompt: (prompt) => {
           set({ lastPlannedPrompt: prompt });
           scheduleSessionSave();
@@ -1021,7 +1041,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           const thinkingMode = get().modelMode === 'thinking';
           const projectType = get().projectType;
           const constraints = {
-            projectMode: (projectType || 'FRONTEND_ONLY') as 'FRONTEND_ONLY' | 'FULL_STACK',
+            projectMode: 'FRONTEND_ONLY' as const,
             selectedFeatures: get().selectedFeatures,
             customFeatureTags: get().customFeatureTags,
             enforcement: 'hard' as const,
@@ -1034,7 +1054,15 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             postProcessMode: 'safety_only' as const,
             minContextConfidence: 80
           };
-          const data = await aiService.generatePlan(prompt, thinkingMode, abortSignal, projectType, constraints, get().architectMode);
+          const data = await aiService.generatePlan(
+            prompt,
+            thinkingMode,
+            abortSignal,
+            projectType,
+            constraints,
+            get().architectMode,
+            get().multiAgentEnabled
+          );
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
 
           const planSteps: PlanStep[] = rawSteps
@@ -1055,7 +1083,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             throw new Error('PLAN_EMPTY: Planner returned no executable steps.');
           }
 
-          set({ planSteps, lastPlannedPrompt: prompt, plan: data?.title || 'Architecture Plan', executionPhase: 'confirming' });
+          set({ planSteps, lastPlannedPrompt: prompt, plan: data?.title || 'Architecture Plan' });
           scheduleSessionSave();
           
           const project = useProjectStore.getState();
@@ -1435,6 +1463,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           contextBudget,
           compressionSnapshot: compressed.snapshot,
           activeModelProfile,
+          multiAgentEnabled: state.multiAgentEnabled,
           executionPhase: state.executionPhase,
           writingFilePath: state.writingFilePath,
           fileStatuses: { ...state.fileStatuses },
@@ -1523,6 +1552,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               contextBudget: snapshot.contextBudget,
               compressionSnapshot: snapshot.compressionSnapshot,
               activeModelProfile: snapshot.activeModelProfile,
+              multiAgentEnabled: state.multiAgentEnabled,
               executionPhase: snapshot.executionPhase,
               writingFilePath: snapshot.writingFilePath,
               fileStatuses: snapshot.fileStatuses || {},
@@ -1557,7 +1587,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               updatedAt: Number(emergency.updatedAt || Date.now()),
               title: String(emergency.title || 'Recovered Session'),
               projectName: String(emergency.projectName || ''),
-              projectType: (emergency.projectType || 'FRONTEND_ONLY') as ProjectType,
+              projectType: coerceProjectType(emergency.projectType),
               selectedFeatures: Array.isArray(emergency.selectedFeatures) ? emergency.selectedFeatures : [],
               customFeatureTags: Array.isArray(emergency.customFeatureTags) ? emergency.customFeatureTags : [],
               constraintsEnforcement: 'hard',
@@ -1574,7 +1604,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               contextBudget: emergency.contextBudget || DEFAULT_CONTEXT_BUDGET,
               compressionSnapshot: emergency.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
               activeModelProfile: emergency.activeModelProfile || getActiveModelProfile(),
-              executionPhase: (emergency.executionPhase || 'idle') as ExecutionPhase,
+              multiAgentEnabled: Boolean((emergency as any)?.multiAgentEnabled),
+              executionPhase: coerceExecutionPhase(emergency.executionPhase),
               writingFilePath: emergency.writingFilePath || null,
               fileStatuses:
                 emergency.fileStatuses && typeof emergency.fileStatuses === 'object'
@@ -1597,7 +1628,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             updatedAt: s.updatedAt,
             title: s.title,
             projectName: s.projectName,
-            projectType: s.projectType ?? 'FRONTEND_ONLY',
+            projectType: coerceProjectType(s.projectType),
             selectedFeatures: Array.isArray(s.selectedFeatures) ? s.selectedFeatures : [],
             customFeatureTags: Array.isArray(s.customFeatureTags) ? s.customFeatureTags : [],
             constraintsEnforcement: s.constraintsEnforcement || 'hard',
@@ -1626,7 +1657,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             contextBudget: s.contextBudget || DEFAULT_CONTEXT_BUDGET,
             compressionSnapshot: s.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
             activeModelProfile: s.activeModelProfile || getActiveModelProfile(),
-            executionPhase: (s.executionPhase || 'idle') as ExecutionPhase,
+            multiAgentEnabled: Boolean((s as any)?.multiAgentEnabled),
+            executionPhase: coerceExecutionPhase(s.executionPhase),
             writingFilePath: s.writingFilePath || null,
             fileStatuses:
               s.fileStatuses && typeof s.fileStatuses === 'object'
@@ -1677,10 +1709,11 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         if (nextActive) projectStore.setActiveFile(nextActive);
 
         set({
-          projectType: session.projectType || 'FRONTEND_ONLY',
+          projectType: coerceProjectType(session.projectType),
           selectedFeatures: Array.isArray(session.selectedFeatures) ? session.selectedFeatures : [],
           customFeatureTags: Array.isArray(session.customFeatureTags) ? session.customFeatureTags : [],
           constraintsEnforcement: session.constraintsEnforcement || 'hard',
+          multiAgentEnabled: Boolean(session.multiAgentEnabled),
           files: cloneFileSystem(session.files),
           chatHistory: (() => {
             const hist = session.chatHistory.map((msg) => ({ ...msg }));
@@ -1711,7 +1744,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           sections: {},
           isGenerating: false,
           isPlanning: false,
-          executionPhase: (session.executionPhase || 'idle') as ExecutionPhase,
+          executionPhase: coerceExecutionPhase(session.executionPhase),
           completedFiles: Array.isArray(session.completedFiles) ? session.completedFiles : [],
           lastSuccessfulFile: session.lastSuccessfulFile || null,
           lastSuccessfulLine: Number(session.lastSuccessfulLine || 0),
@@ -1842,6 +1875,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         customFeatureTags: state.customFeatureTags,
         constraintsEnforcement: state.constraintsEnforcement,
         architectMode: state.architectMode,
+        multiAgentEnabled: state.multiAgentEnabled,
         modelMode: normalizeModelMode(state.modelMode),
         interactionMode: state.interactionMode,
         executionBudget: state.executionBudget,
@@ -1860,6 +1894,13 @@ export const useAIStore = createWithEqualityFn<AIState>()(
       onRehydrateStorage: () => (state) => {
         if (state?.modelMode === 'super') {
           state.setModelMode('thinking');
+        }
+        if (state) {
+          state.setProjectType(coerceProjectType(state.projectType));
+          state.setExecutionPhase(coerceExecutionPhase(state.executionPhase));
+          if (typeof state.multiAgentEnabled !== 'boolean') {
+            state.setMultiAgentEnabled(false);
+          }
         }
         state?.recoverSession();
       }

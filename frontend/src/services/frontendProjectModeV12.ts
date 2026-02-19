@@ -13,21 +13,9 @@ export interface FrontendProjectModeScaffold {
   queuedFiles: string[];
 }
 
-const BASE_DIRECTORIES = [
-  'frontend',
-  'frontend/pages',
-  'frontend/components',
-  'frontend/styles',
-  'frontend/scripts',
-  'frontend/assets',
-  'frontend/assets/images',
-  'frontend/src',
-  'frontend/src/assets',
-  'frontend/src/assets/icons',
-  'frontend/data'
-];
+const BASE_DIRECTORIES = ['pages', 'components', 'styles', 'scripts', 'assets', 'assets/images', 'assets/icons', 'data'];
 
-const BASE_REQUIRED_FILES = ['frontend/index.html', 'frontend/style.css', 'frontend/script.js'];
+const BASE_REQUIRED_FILES = ['index.html', 'style.css', 'script.js'];
 
 const BLOCKED_SEGMENTS = new Set(['node_modules', 'dist', 'build', '.git', '.next']);
 
@@ -62,17 +50,16 @@ const collectParentDirectories = (path: string) => {
 };
 
 export const toFrontendCanonicalPath = (rawPath: string): string | null => {
-  const normalized = normalizePath(rawPath);
+  const normalizedRaw = normalizePath(rawPath);
+  const normalized = normalizedRaw.toLowerCase().startsWith('frontend/')
+    ? normalizedRaw.slice('frontend/'.length)
+    : normalizedRaw;
   if (!normalized) return null;
   if (isBlockedPath(normalized)) return null;
   if (isForbiddenBackendPath(normalized)) return null;
 
-  if (normalized.toLowerCase().startsWith('frontend/')) {
-    return normalized;
-  }
-
   if (!hasFileExtension(normalized)) return null;
-  return `frontend/${normalized}`;
+  return normalized;
 };
 
 export const extractPlannedFrontendFiles = (planSteps: PlanStepLike[] = []) => {

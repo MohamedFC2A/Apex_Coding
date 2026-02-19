@@ -3739,7 +3739,7 @@ function App() {
         streamPrompt: string,
         options?: { useMultiAgent?: boolean }
       ) => {
-        const shouldUseMultiAgent = Boolean(options?.useMultiAgent) && multiAgentEnabled;
+        const shouldUseMultiAgent = multiAgentEnabled && options?.useMultiAgent !== false;
         await aiService.generateCodeStream(
           streamPrompt,
           (token) => {
@@ -4192,7 +4192,7 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
 
         if (steps.length === 0) {
           setExecutionPhase('executing');
-          await runStream(baseStreamPrompt, { useMultiAgent: false });
+          await runStream(baseStreamPrompt, { useMultiAgent: true });
         } else {
           const plannedExecutionSteps =
             !isResuming && shouldGenerateFreshPlan ? steps.map((s) => ({ ...s, completed: false })) : steps;
@@ -4220,7 +4220,7 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
         }
       } else {
         setExecutionPhase('executing');
-        await runStream(baseStreamPrompt, { useMultiAgent: false });
+        await runStream(baseStreamPrompt, { useMultiAgent: true });
       }
 
       if (useAIStore.getState().executionPhase !== 'interrupted' && partialPaths.size === 0) {
@@ -4315,6 +4315,26 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
     } catch (e: any) {
       flushFileBuffers();
       flushReasoningBuffer();
+      const interruptedPath = useAIStore.getState().writingFilePath;
+      if (interruptedPath) {
+        const previousSnapshot = preStreamContentByPathRef.current.get(interruptedPath);
+        const currentContent = String(
+          useProjectStore.getState().files.find((f) => (f.path || f.name) === interruptedPath)?.content || ''
+        );
+        if (!currentContent.trim() && typeof previousSnapshot === 'string' && previousSnapshot.length > 0) {
+          const restored = String(previousSnapshot).replace(/\r\n/g, '\n');
+          updateFile(interruptedPath, restored);
+          upsertFileNode(interruptedPath, restored);
+          upsertFile({
+            name: interruptedPath.split('/').pop() || interruptedPath,
+            path: interruptedPath,
+            content: restored,
+            language: getLanguageFromExtension(interruptedPath)
+          });
+          setFileStatus(interruptedPath, 'compromised');
+          logSystem(`[RECOVER] Restored last stable snapshot for ${interruptedPath} after interrupted stream.`);
+        }
+      }
       if (e?.abortedByUser || e?.message === 'ABORTED_BY_USER' || e?.name === 'AbortError') {
         clearAutoResumePayload();
         setError(null);
@@ -4324,6 +4344,7 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
       setExecutionPhase('interrupted');
       setThinkingStatus('Interrupted');
     } finally {
+      preStreamContentByPathRef.current.clear();
       setIsGenerating(false);
       setThinkingStatus('');
       if (generationAbortRef.current === abortController) generationAbortRef.current = null;

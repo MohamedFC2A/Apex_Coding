@@ -134,7 +134,7 @@ const Content = styled.div`
 interface PreviewWindowProps {
   className?: string;
   enabled?: boolean;
-  projectProfile?: 'frontend' | 'fullstack' | null;
+  projectProfile?: 'frontend' | null;
 }
 
 export const PreviewWindow: React.FC<PreviewWindowProps> = ({ className, enabled = true }) => {

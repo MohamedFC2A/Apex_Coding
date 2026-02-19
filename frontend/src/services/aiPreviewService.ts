@@ -34,7 +34,7 @@ export interface PreviewContext {
   currentPreviewUrl?: string;
   previewEngineType?: 'simple' | 'webcontainer' | 'previewrunner';
   lastFeedback?: PreviewFeedback;
-  projectType?: 'FRONTEND_ONLY' | 'FULL_STACK';
+  projectType?: 'FRONTEND_ONLY';
 }
 
 export interface EnhancedCodeGenRequest {

@@ -100,7 +100,7 @@ const hashString = (value: string) => {
 const extractPromptPathCandidates = (prompt: string): string[] => {
   const out = new Set<string>();
   const re =
-    /(?:^|[\s("'`])((?:frontend|backend|shared|src|pages|components|styles|scripts|assets|data)\/[^\s"'`]+|[a-zA-Z0-9_-]+\.(?:tsx?|jsx?|css|scss|sass|html?|md|svg|json))/g;
+    /(?:^|[\s("'`])((?:frontend|src|pages|components|styles|scripts|assets|data|public)\/[^\s"'`]+|[a-zA-Z0-9_-]+\.(?:tsx?|jsx?|css|scss|sass|html?|md|svg|json))/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(String(prompt || ''))) !== null) {
     const value = normalizePath(match[1] || '');
@@ -185,9 +185,6 @@ const buildAllowedCreateRules = (
       }));
   }
   return [
-    { pattern: 'frontend/**', reason: 'frontend generation' },
-    { pattern: 'backend/**', reason: 'backend generation' },
-    { pattern: 'shared/**', reason: 'shared module generation' },
     { pattern: 'pages/**', reason: 'static multipage output' },
     { pattern: 'components/**', reason: 'component output' },
     { pattern: 'styles/**', reason: 'stylesheet output' },

@@ -20,6 +20,7 @@ import { SidebarHistory } from './components/SidebarHistory';
 import { PromptInput } from './components/ui/PromptInput';
 import { ModeToggle } from './components/ui/ModeToggle';
 import { ArchitectToggle } from './components/ui/ArchitectToggle';
+import { MultiAIToggle } from './components/ui/MultiAIToggle';
 import { MainActionButton, MainActionState } from './components/ui/MainActionButton';
 import { PreviewWindow } from './components/ui/PreviewWindow';
 import { BrainConsole } from './components/ui/BrainConsole';
@@ -29,7 +30,6 @@ import { ToolsPanel } from './components/ui/ToolsPanel';
 import { GlobalStyles } from './styles/GlobalStyles';
 import { MobileNav } from './components/ui/MobileNav';
 import type { ProjectType } from './stores/projectStore';
-import { recommendProjectMode } from './services/projectModeAdvisor';
 import {
   buildConstraintsRepairPrompt,
   buildGenerationConstraintsBlock,
@@ -349,13 +349,16 @@ const OverlayPanel = styled.div<{ $open: boolean }>`
   width: min(440px, calc(100vw - 40px));
   max-height: calc(100dvh - 160px);
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(20, 20, 24, 0.6);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  box-shadow: 
-    0 20px 60px rgba(0, 0, 0, 0.4),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(14, 18, 30, 0.96) 0%, rgba(9, 12, 22, 0.98) 100%);
+  backdrop-filter: blur(48px);
+  -webkit-backdrop-filter: blur(48px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 40px 80px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   transform: ${(p) => (p.$open ? 'translateY(0) scale(1)' : 'translateY(-12px) scale(0.98)')};
   opacity: ${(p) => (p.$open ? 1 : 0)};
@@ -374,22 +377,57 @@ const OverlayPanel = styled.div<{ $open: boolean }>`
 `;
 
 const OverlayHeader = styled.div`
-  height: 48px;
+  flex-shrink: 0;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  letter-spacing: 0.14em;
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(255, 255, 255, 0.90);
+
+  /* cyan dot before title text */
+  & > span:first-child::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(34, 211, 238, 0.9);
+    box-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
+    margin-right: 9px;
+    vertical-align: middle;
+  }
 `;
 
 const OverlayBody = styled.div`
-  height: calc(100% - 48px);
-  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  &::-webkit-scrollbar {
+    width: 5px;
+  }
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 5px;
+    margin: 6px 0;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(34, 211, 238, 0.28);
+    border-radius: 5px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(34, 211, 238, 0.52);
+  }
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.28) rgba(255, 255, 255, 0.04);
 `;
 
 const FloatingPlanWrap = styled.div<{ $open: boolean }>`
@@ -1255,7 +1293,6 @@ const createProjectId = (seed: string) => {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 };
 
-const FULLSTACK_TEMP_LOCK = true;
 const SUPER_MODE_TEMP_DISABLED = true;
 
 type CompletionSuggestion = {
@@ -1357,6 +1394,7 @@ function App() {
   const {
     prompt,
     architectMode,
+    multiAgentEnabled,
     modelMode,
     interactionMode,
     isGenerating,
@@ -1584,12 +1622,12 @@ function App() {
   const completionSummaryRef = useRef<{ phase: string; key: string }>({ phase: '', key: '' });
   const autoResumeTriggeredRef = useRef(false);
   const prevPlanCountRef = useRef(0);
+  const preStreamContentByPathRef = useRef<Map<string, string>>(new Map());
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
     if (isGenerating) return 'coding';
     if (executionPhase === 'interrupted') return 'interrupted';
-    if (executionPhase === 'confirming') return 'confirming'; // Plan generated, awaiting execution
     if (files.length > 0) return 'done';
     return 'idle';
   }, [executionPhase, files.length, isGenerating, isPlanning]);
@@ -1598,19 +1636,7 @@ function App() {
   const isConsoleVisible = isMobileViewport
     ? mobileTab === 'ai'
     : true;
-  const requestedProjectType: ProjectType = projectType || 'FRONTEND_ONLY';
-  const effectiveProjectType: ProjectType = FULLSTACK_TEMP_LOCK ? 'FRONTEND_ONLY' : requestedProjectType;
-  const modeRecommendation = useMemo(() => {
-    const suggested = recommendProjectMode(prompt, effectiveProjectType);
-    if (!suggested) return null;
-    if (FULLSTACK_TEMP_LOCK && suggested.recommendedMode === 'FULL_STACK') return null;
-    return {
-      mode: suggested.recommendedMode,
-      reason: `${t('app.prompt.projectMode.recommend').replace('{{mode}}', suggested.recommendedMode === 'FULL_STACK'
-        ? t('app.workspace.projectType.fullstack')
-        : t('app.workspace.projectType.frontend'))} - ${suggested.reason}`
-    };
-  }, [effectiveProjectType, prompt, t]);
+  const effectiveProjectType: ProjectType = 'FRONTEND_ONLY';
 
   const chatMessageCountText = useMemo(() => {
     const messageCount = chatHistory.length;
@@ -1661,7 +1687,7 @@ function App() {
   }, [chatAutoFollow, chatHistory.length, isMobileViewport]);
 
   useEffect(() => {
-    if (!projectType || (FULLSTACK_TEMP_LOCK && projectType !== 'FRONTEND_ONLY')) {
+    if (!projectType || projectType !== 'FRONTEND_ONLY') {
       setProjectType('FRONTEND_ONLY');
     }
   }, [projectType, setProjectType]);
@@ -1694,7 +1720,8 @@ function App() {
   }, [isMobileViewport, mobileTab]);
 
   const handleProjectTypeSelect = useCallback((type: ProjectType) => {
-    const normalized = FULLSTACK_TEMP_LOCK ? 'FRONTEND_ONLY' : type;
+    void type;
+    const normalized: ProjectType = 'FRONTEND_ONLY';
     setProjectType(normalized);
     setProjectStoreType(normalized);
     if (error) setError(null);
@@ -1717,9 +1744,7 @@ function App() {
   ]);
 
   useEffect(() => {
-    const normalizedStoredType: ProjectType = FULLSTACK_TEMP_LOCK
-      ? 'FRONTEND_ONLY'
-      : (storedProjectType || 'FRONTEND_ONLY');
+    const normalizedStoredType: ProjectType = storedProjectType || 'FRONTEND_ONLY';
 
     if (storedProjectType && storedProjectType !== normalizedStoredType) {
       setProjectStoreType(normalizedStoredType);
@@ -2361,11 +2386,45 @@ function App() {
       minContextConfidence,
       maxContextChars: 120_000
     });
-    const writePolicy = buildStrictWritePolicy({
+    let writePolicy = buildStrictWritePolicy({
       report: workspaceAnalysis,
       minContextConfidence,
       interactionMode
     });
+    if (interactionMode === 'edit' && Array.isArray(projectSnapshotForAnalysis.files) && projectSnapshotForAnalysis.files.length > 0) {
+      const normalizePath = (value: string) =>
+        String(value || '')
+          .replace(/\\/g, '/')
+          .replace(/^\.\//, '')
+          .replace(/^\/+/, '')
+          .trim();
+      const seededPaths = new Set<string>((writePolicy.allowedEditPaths || []).map((path) => normalizePath(path)));
+      if (seededPaths.size === 0) {
+        const active = normalizePath(projectSnapshotForAnalysis.activeFile || '');
+        if (active) seededPaths.add(active);
+        const baseline = ['index.html', 'style.css', 'script.js'];
+        for (const base of baseline) {
+          const match = projectSnapshotForAnalysis.files.find((file) => {
+            const current = normalizePath(file.path || file.name || '');
+            if (!current) return false;
+            return current === base || current.endsWith(`/${base}`);
+          });
+          if (match) seededPaths.add(normalizePath(match.path || match.name || ''));
+        }
+        const planned = (useAIStore.getState().planSteps || [])
+          .flatMap((step) => (Array.isArray(step.files) ? step.files : []))
+          .map((path) => normalizePath(path))
+          .filter(Boolean);
+        for (const path of planned) seededPaths.add(path);
+        if (seededPaths.size > 0) {
+          writePolicy = {
+            ...writePolicy,
+            allowedEditPaths: Array.from(seededPaths)
+          };
+          logSystem(`[analysis] edit scope fallback activated: ${writePolicy.allowedEditPaths.length} paths seeded.`);
+        }
+      }
+    }
     setAnalysisReport(workspaceAnalysis);
     clearPolicyViolations();
     setBlockedReason(null);
@@ -2442,7 +2501,7 @@ function App() {
     if (!preserveProjectMeta) resetProject();
     if (!preserveProjectMeta) resetFiles();
     if (!preserveProjectMeta) {
-      setStack(effectiveProjectType === 'FRONTEND_ONLY' ? 'Frontend (HTML/CSS/JS)' : 'Fullstack (Frontend + Backend)');
+      setStack('Frontend (HTML/CSS/JS)');
     }
     if (!String(useProjectStore.getState().projectId || '').trim()) {
       setProjectId(createProjectId(projectName || basePrompt));
@@ -2456,6 +2515,7 @@ function App() {
       fileFlushTimerRef.current = null;
     }
     fileChunkBuffersRef.current.clear();
+    preStreamContentByPathRef.current.clear();
 
     if (tokenBeatTimerRef.current) {
       window.clearTimeout(tokenBeatTimerRef.current);
@@ -3151,6 +3211,17 @@ function App() {
         registerDuplicatePurposePath(existingPath);
       }
       const localAllowedEditSet = new Set((writePolicy?.allowedEditPaths || []).map((path) => normalizePolicyPath(path)));
+      if (interactionMode === 'edit' && localAllowedEditSet.size === 0) {
+        const currentFiles = useProjectStore.getState().files;
+        for (const file of currentFiles) {
+          const normalized = normalizePolicyPath(file.path || file.name || '');
+          if (normalized) localAllowedEditSet.add(normalized);
+          if (localAllowedEditSet.size >= 32) break;
+        }
+        if (localAllowedEditSet.size > 0) {
+          logSystem(`[policy] Soft edit fallback activated with ${localAllowedEditSet.size} seeded paths.`);
+        }
+      }
       const globToRegExp = (pattern: string) => {
         const escaped = String(pattern || '')
           .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -3234,10 +3305,12 @@ function App() {
         /\b(security|vuln|vulnerability|cve|exploit|malware|credential|secret|token|compromise|exposure|leak)\b/i.test(
           String(reason || '')
         );
+      let fileEventCounter = 0;
 
       const handleFileEvent = (incomingEvent: StreamFileEvent) => {
         const event = fileMutationEngine.applyFileOperation(incomingEvent);
         if (!event) return;
+        fileEventCounter += 1;
         if (event.type === 'delete') {
           const resolvedPath = resolveGeneratedPath(event.path || '');
           if (!resolvedPath) return;
@@ -3464,20 +3537,14 @@ function App() {
             updateFile(resolvedPath, finalText);
             upsertFileNode(resolvedPath, finalText);
             upsertFile({ name, path: resolvedPath, content: finalText, language: getLanguageFromExtension(resolvedPath) });
-          } else if (event.mode === 'edit') {
-            // EDIT MODE: preserve existing content as backup
-            // The AI will send the full updated version — if stream is interrupted, old content stays
-            const prevWriting = useAIStore.getState().writingFilePath;
-            if (prevWriting) flushFileBuffers({ onlyPath: prevWriting, force: true });
-            fileChunkBuffersRef.current.delete(resolvedPath);
-            // Do NOT clear the file — keep existing content as safety net
           } else {
-            // CREATE MODE: clear and start fresh
             const prevWriting = useAIStore.getState().writingFilePath;
             if (prevWriting) flushFileBuffers({ onlyPath: prevWriting, force: true });
             fileChunkBuffersRef.current.delete(resolvedPath);
+            preStreamContentByPathRef.current.set(resolvedPath, String(existing?.content || ''));
             updateFile(resolvedPath, '');
             upsertFileNode(resolvedPath, '');
+            upsertFile({ name, path: resolvedPath, content: '', language: getLanguageFromExtension(resolvedPath) });
           }
 
           setWritingFilePath(resolvedPath);
@@ -3543,6 +3610,7 @@ function App() {
             return true;
           };
 
+          const previousSnapshot = preStreamContentByPathRef.current.get(resolvedPath);
           const originalNormalized = normalizeGeneratedContent(readCurrentContent());
           let latest = originalNormalized;
           commitContent(latest);
@@ -3610,6 +3678,13 @@ function App() {
           commitContent(latest);
 
           if (effectivePartial) {
+            if (!latest.trim() && typeof previousSnapshot === 'string' && previousSnapshot.length > 0) {
+              const restored = normalizeGeneratedContent(previousSnapshot);
+              commitContent(restored);
+              latest = restored;
+              setFileStatus(resolvedPath, 'compromised');
+              logSystem(`[RECOVER] Restored last stable snapshot for ${resolvedPath} after partial stream.`);
+            }
             partialPaths.add(resolvedPath);
             const msg = `Stream interrupted: ${resolvedPath} cut at line ${event.line || '?'}`;
             logSystem(`[STATUS] ${msg} (healed & auto-resuming)`);
@@ -3633,6 +3708,7 @@ function App() {
             useAIStore.getState().addCompletedFile(resolvedPath);
             scheduleAutosave();
           }
+          preStreamContentByPathRef.current.delete(resolvedPath);
 
           if (useAIStore.getState().architectMode) {
             // Plan step completion handled in main loop now
@@ -3663,6 +3739,7 @@ function App() {
         streamPrompt: string,
         options?: { useMultiAgent?: boolean }
       ) => {
+        const shouldUseMultiAgent = Boolean(options?.useMultiAgent) && multiAgentEnabled;
         await aiService.generateCodeStream(
           streamPrompt,
           (token) => {
@@ -3811,7 +3888,8 @@ function App() {
           },
           {
             thinkingMode: isThinkingMode,
-            architectMode: Boolean(options?.useMultiAgent),
+            architectMode,
+            multiAgentEnabled: shouldUseMultiAgent,
             includeReasoning: isThinkingMode,
             typingMs: 26,
             onFileEvent: handleFileEvent,
@@ -3927,6 +4005,120 @@ function App() {
         return validation;
       };
 
+      const normalizeFingerprintPath = (value: string) =>
+        String(value || '')
+          .replace(/\\/g, '/')
+          .replace(/^\.\//, '')
+          .replace(/^\/+/, '')
+          .replace(/^frontend\//i, '')
+          .trim()
+          .toLowerCase();
+
+      const hashText = (value: string) => {
+        let hash = 2166136261;
+        const text = String(value || '');
+        for (let i = 0; i < text.length; i++) {
+          hash ^= text.charCodeAt(i);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16);
+      };
+
+      const captureWorkspaceFingerprint = (targetFiles: string[] = []) => {
+        const filesSnapshot = useProjectStore.getState().files || [];
+        const normalizedTargets = Array.from(
+          new Set((targetFiles || []).map((path) => normalizeFingerprintPath(path)).filter(Boolean))
+        );
+        const allParts = filesSnapshot
+          .map((file) => {
+            const path = normalizeFingerprintPath(file.path || file.name || '');
+            const content = String(file.content || '');
+            return `${path}:${content.length}:${hashText(content)}`;
+          })
+          .sort()
+          .join('|');
+
+        if (normalizedTargets.length === 0) {
+          return { all: allParts, scoped: allParts };
+        }
+
+        const scopedParts = filesSnapshot
+          .filter((file) => {
+            const path = normalizeFingerprintPath(file.path || file.name || '');
+            if (!path) return false;
+            return normalizedTargets.some((target) => path === target || path.endsWith(`/${target}`));
+          })
+          .map((file) => {
+            const path = normalizeFingerprintPath(file.path || file.name || '');
+            const content = String(file.content || '');
+            return `${path}:${content.length}:${hashText(content)}`;
+          })
+          .sort()
+          .join('|');
+
+        return { all: allParts, scoped: scopedParts };
+      };
+
+      const buildPlanStepPrompt = (
+        step: { title: string; description: string; files?: string[]; completed?: boolean },
+        allSteps: Array<{ title: string; completed?: boolean }>,
+        retry = false
+      ) =>
+        `
+[PROJECT CONTEXT]
+Project: ${projectName}
+Stack: ${stack}
+Description: ${description}
+${constraintsBlock}
+${agentContextBlock}
+
+[CURRENT PLAN]
+${allSteps.map((s) => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
+
+[TASK]
+Implement this step: "${step.title}"
+Description: ${step.description}
+Target Files (deterministic order): ${(step.files || []).join(', ') || 'Auto-detect'}
+
+[OUTPUT PROTOCOL - STRICT]
+Output ONLY file-op markers and file contents. No prose, no explanations, no markdown.
+Use ONLY this format:
+[[PATCH_FILE: path/to/file.ext | mode: create|edit]]
+<full file content>
+[[END_FILE]]
+${retry ? 'This is a retry because the previous attempt produced no effective file change. You MUST emit valid PATCH markers with real edits now.' : ''}
+`.trim();
+
+      const executePlanStepWithGuard = async (
+        step: { id: string; title: string; description: string; files?: string[]; completed?: boolean },
+        allSteps: Array<{ title: string; completed?: boolean }>
+      ) => {
+        const beforeEvents = fileEventCounter;
+        const beforePrint = captureWorkspaceFingerprint(step.files || []);
+        await runStream(buildPlanStepPrompt(step, allSteps, false), { useMultiAgent: true });
+        const afterPrint = captureWorkspaceFingerprint(step.files || []);
+        const changed = beforePrint.all !== afterPrint.all || beforePrint.scoped !== afterPrint.scoped;
+
+        if (changed) return;
+
+        const firstEventDelta = fileEventCounter - beforeEvents;
+        logSystem(
+          `[PLAN] Step "${step.title}" produced no effective change${firstEventDelta <= 0 ? ' (no file markers detected)' : ''}. Retrying once with strict marker enforcement.`
+        );
+
+        const retryEvents = fileEventCounter;
+        const retryBefore = captureWorkspaceFingerprint(step.files || []);
+        await runStream(buildPlanStepPrompt(step, allSteps, true), { useMultiAgent: true });
+        const retryAfter = captureWorkspaceFingerprint(step.files || []);
+        const changedOnRetry = retryBefore.all !== retryAfter.all || retryBefore.scoped !== retryAfter.scoped;
+        if (changedOnRetry) return;
+
+        const retryEventDelta = fileEventCounter - retryEvents;
+        throw new Error(
+          `PLAN_STEP_NO_OP: step "${step.title}" made no file changes after retry${retryEventDelta <= 0 ? ' and produced no valid markers/events' : ''}.`
+        );
+      };
+
       if (!SUPER_MODE_TEMP_DISABLED && modelMode === 'super') {
         setExecutionPhase('planning');
         logSystem('[SUPER-THINKING] Initializing Fast-Mode Blueprint...');
@@ -3936,7 +4128,8 @@ function App() {
           abortController.signal,
           generationConstraints.projectMode,
           generationConstraints,
-          true
+          true,
+          multiAgentEnabled
         );
         const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
         const generatedSteps = rawSteps
@@ -3967,25 +4160,7 @@ function App() {
 
         for (const step of planStepsLocal) {
           logSystem(`[PLAN] Executing step: ${step.title}`);
-          const stepPrompt = `
-[PROJECT CONTEXT]
-Project: ${projectName}
-Stack: ${stack}
-Description: ${description}
-${constraintsBlock}
-${agentContextBlock}
-
-[CURRENT PLAN]
-${planStepsLocal.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
-
-[TASK]
-Implement this step: "${step.title}"
-Description: ${step.description}
-Target Files: ${step.files?.join(', ') || 'Auto-detect'}
-
-Output ONLY the code for these files.
-`.trim();
-          await runStream(stepPrompt, { useMultiAgent: true });
+          await executePlanStepWithGuard(step, planStepsLocal);
           useAIStore.getState().setPlanStepCompleted(step.id, true);
           if (useAIStore.getState().executionPhase === 'interrupted') break;
         }
@@ -4036,26 +4211,7 @@ Output ONLY the code for these files.
               if (step.completed) continue;
               
               logSystem(`[PLAN] Executing step: ${step.title}`);
-              const stepPrompt = `
-[PROJECT CONTEXT]
- Project: ${projectName}
- Stack: ${stack}
- Description: ${description}
- ${constraintsBlock}
- ${agentContextBlock}
-
-[CURRENT PLAN]
-${plannedExecutionSteps.map(s => `- [${s.completed ? 'x' : ' '}] ${s.title}`).join('\n')}
-
-[TASK]
-Implement this step: "${step.title}"
-Description: ${step.description}
-Target Files: ${step.files?.join(', ') || 'Auto-detect'}
-
- Output ONLY the code for these files.
- `.trim();
-              
-              await runStream(stepPrompt, { useMultiAgent: true });
+              await executePlanStepWithGuard(step, plannedExecutionSteps);
               useAIStore.getState().setPlanStepCompleted(step.id, true);
               
               // Safety check for interruptions
@@ -4174,6 +4330,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
     }
   }, [
     architectMode,
+    multiAgentEnabled,
     appendStreamText,
     applyFrontendProjectModeV12,
     addBrainEvent,
@@ -4451,16 +4608,6 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
       return;
     }
 
-    // Plan is ready — skip re-planning and execute directly
-    if (mainActionState === 'confirming') {
-      const request = prompt.trim();
-      if (request) {
-        chatRoundRef.current += 1; addChatMessage({ role: 'user', content: request, round: chatRoundRef.current, createdAt: Date.now() });
-      }
-      handleGenerate(undefined, { skipPlanning: true });
-      return;
-    }
-
     if (mainActionState === 'done') {
       const request = prompt.trim();
       if (!request) {
@@ -4521,6 +4668,15 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         <Content>
           <Heading>Mode</Heading>
           <Description>Switch between Fast generation and DeepSeek Reasoner “Thinking” mode.</Description>
+        </Content>
+      </Popover>
+      <Popover>
+        <Trigger>
+          <MultiAIToggle />
+        </Trigger>
+        <Content>
+          <Heading>Multi AI</Heading>
+          <Description>Enable or disable multi-agent execution independently from Architect mode.</Description>
         </Content>
       </Popover>
       <Popover>
@@ -4588,6 +4744,15 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
         <Content>
           <Heading>Architect Mode</Heading>
           <Description>Build a step-by-step plan before code generation.</Description>
+        </Content>
+      </Popover>
+      <Popover>
+        <Trigger>
+          <MultiAIToggle />
+        </Trigger>
+        <Content>
+          <Heading>Multi AI</Heading>
+          <Description>Toggle multi-agent execution on/off.</Description>
         </Content>
       </Popover>
     </>
@@ -4738,18 +4903,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                   controls={desktopPromptControls}
                   projectMode={effectiveProjectType}
                   onProjectModeChange={handleProjectTypeSelect}
-                  recommendation={modeRecommendation}
-                  onApplyRecommendation={() => {
-                    if (!modeRecommendation) return;
-                    handleProjectTypeSelect(modeRecommendation.mode);
-                  }}
                   labels={{
                     projectModeLabel: t('app.prompt.projectMode.label'),
                     frontendLabel: t('app.prompt.projectMode.frontend'),
-                    fullstackLabel: t('app.prompt.projectMode.fullstack'),
                     applyLabel: t('app.prompt.projectMode.apply')
                   }}
-                  fullstackLocked={FULLSTACK_TEMP_LOCK}
                   constraintsPanel={constraintsPanelNode}
                   constraintsPanelOpen={constraintsPanelOpen}
                   onToggleConstraintsPanel={() => setConstraintsPanelOpen((v) => !v)}
@@ -4794,7 +4952,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                   ) : (
                     <PreviewWindow
                       enabled={isPreviewOpen}
-                      projectProfile={effectiveProjectType === 'FULL_STACK' ? 'fullstack' : 'frontend'}
+                      projectProfile="frontend"
                     />
                   )}
                 </WorkbenchPanel>
@@ -4815,18 +4973,11 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
                   controls={isMobileViewport ? mobilePromptControls : desktopPromptControls}
                   projectMode={effectiveProjectType}
                   onProjectModeChange={handleProjectTypeSelect}
-                  recommendation={modeRecommendation}
-                  onApplyRecommendation={() => {
-                    if (!modeRecommendation) return;
-                    handleProjectTypeSelect(modeRecommendation.mode);
-                  }}
                   labels={{
                     projectModeLabel: t('app.prompt.projectMode.label'),
                     frontendLabel: t('app.prompt.projectMode.frontend'),
-                    fullstackLabel: t('app.prompt.projectMode.fullstack'),
                     applyLabel: t('app.prompt.projectMode.apply')
                   }}
-                  fullstackLocked={FULLSTACK_TEMP_LOCK}
                   constraintsPanel={constraintsPanelNode}
                   constraintsPanelOpen={constraintsPanelOpen}
                   onToggleConstraintsPanel={() => setConstraintsPanelOpen((v) => !v)}
@@ -4866,7 +5017,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
               <PanelSlot $mobileActive={mobileTab === 'preview'} $desktopHidden={!isPreviewOpen}>
                 <PreviewWindow
                   enabled={isPreviewOpen || mobileTab === 'preview'}
-                  projectProfile={effectiveProjectType === 'FULL_STACK' ? 'fullstack' : 'frontend'}
+                  projectProfile="frontend"
                 />
               </PanelSlot>
             </MainWorkspace>
@@ -4901,7 +5052,7 @@ Target Files: ${step.files?.join(', ') || 'Auto-detect'}
 
       <OverlayPanel $open={historyOpen}>
         <OverlayHeader>
-          History
+          <span>History</span>
           <button
             type="button"
             onClick={() => setHistoryOpen(false)}

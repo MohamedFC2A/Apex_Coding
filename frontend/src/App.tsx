@@ -3302,14 +3302,25 @@ function App() {
           .map((rule) => normalizeRefPath(rule?.pattern || ''))
           .filter(Boolean)
       );
+      const buildCreatePathCandidates = (path: string) => {
+        const normalized = normalizeRefPath(path);
+        if (!normalized) return [] as string[];
+        const out = new Set<string>([normalized]);
+        const lowered = normalized.toLowerCase();
+        if (lowered.startsWith('frontend/')) {
+          const trimmed = normalized.slice('frontend/'.length);
+          if (trimmed) out.add(trimmed);
+        }
+        return Array.from(out);
+      };
       const localTouchedPaths = new Set<string>();
       const localCreatedPaths = new Set<string>();
       const localMaxTouched = Math.max(1, Number(writePolicy?.maxTouchedFiles || 1));
       const isCreateAllowedByRule = (path: string) => {
-        const normalized = normalizeRefPath(path);
-        if (!normalized) return false;
+        const candidates = buildCreatePathCandidates(path);
+        if (candidates.length === 0) return false;
         if (localCreateRuleRegexes.length === 0) return false;
-        return localCreateRuleRegexes.some((re) => re.test(normalized));
+        return candidates.some((candidate) => localCreateRuleRegexes.some((re) => re.test(candidate)));
       };
       const trackTouchedPath = (path: string) => {
         const normalized = normalizePolicyPathLower(path);
@@ -3355,6 +3366,11 @@ function App() {
         if (active) seeded.add(active);
 
         const baseline = ['index.html', 'style.css', 'script.js'];
+        for (const fileName of baseline) {
+          seeded.add(fileName);
+          seeded.add(`frontend/${fileName}`);
+        }
+
         for (const base of baseline) {
           const match = snapshot.files.find((file) => {
             const current = normalizeRefPath(file.path || file.name || '');

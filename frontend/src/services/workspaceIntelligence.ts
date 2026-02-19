@@ -185,7 +185,7 @@ const buildAllowedCreateRules = (
         reason: 'explicitly requested create path in edit-mode plan/prompt'
       }));
   }
-  return [
+  const baseRules: WorkspaceAllowedCreateRule[] = [
     { pattern: 'pages/**', reason: 'static multipage output' },
     { pattern: 'components/**', reason: 'component output' },
     { pattern: 'styles/**', reason: 'stylesheet output' },
@@ -198,6 +198,13 @@ const buildAllowedCreateRules = (
     { pattern: '*.json', reason: 'json output' },
     { pattern: '*.md', reason: 'documentation output' }
   ];
+
+  const frontendMirrors: WorkspaceAllowedCreateRule[] = baseRules.map((rule) => ({
+    pattern: `frontend/${rule.pattern}`,
+    reason: `frontend-root mirror: ${rule.reason}`
+  }));
+
+  return [...baseRules, ...frontendMirrors];
 };
 
 const round = (value: number) => Math.max(0, Math.min(100, Math.round(value * 100) / 100));

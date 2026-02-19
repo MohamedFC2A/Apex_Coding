@@ -5,6 +5,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { aiService } from '@/services/aiService';
 import { repairTruncatedContent } from '@/utils/codeRepair';
 import { normalizePlanCategory } from '@/utils/planCategory';
+import { sanitizeOperationPath } from '@/utils/fileOpGuards';
 import { loadSessionsFromDisk, saveSessionToDisk, type StoredHistorySession } from '@/utils/sessionDb';
 import type {
   ActiveModelProfile,
@@ -623,12 +624,7 @@ const cloneFileSystem = (tree: FileSystem): FileSystem => {
   return cloned;
 };
 
-const cleanPath = (rawPath: string) =>
-  rawPath
-    .replace(/\\/g, '/')
-    .replace(/^(\.\/)+/, '')
-    .replace(/^\/+/, '')
-    .trim();
+const cleanPath = (rawPath: string) => sanitizeOperationPath(rawPath);
 
 const isRootFile = (fileName: string) => ROOT_FILES.has(fileName.toLowerCase());
 

@@ -11,6 +11,7 @@ import { usePreviewStore } from './stores/previewStore';
 import { aiService, type StreamFileEvent } from './services/aiService';
 import { getLanguageFromExtension } from './utils/stackDetector';
 import { repairTruncatedContent } from './utils/codeRepair';
+import { sanitizeOperationPath, stripFileOperationMarkers } from './utils/fileOpGuards';
 import { normalizePlanCategory } from './utils/planCategory';
 
 import { CodeEditor } from './components/CodeEditor';
@@ -1623,6 +1624,7 @@ function App() {
   const autoResumeTriggeredRef = useRef(false);
   const prevPlanCountRef = useRef(0);
   const preStreamContentByPathRef = useRef<Map<string, string>>(new Map());
+  const appendResumeModeByPathRef = useRef<Map<string, boolean>>(new Map());
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
@@ -2392,11 +2394,7 @@ function App() {
       interactionMode
     });
     const normalizePolicyPath = (value: string) =>
-      String(value || '')
-        .replace(/\\/g, '/')
-        .replace(/^\.\//, '')
-        .replace(/^\/+/, '')
-        .trim();
+      sanitizeOperationPath(value);
 
     const createRuleMatchers = () =>
       (writePolicy.allowedCreateRules || [])
@@ -2574,6 +2572,7 @@ function App() {
     }
     fileChunkBuffersRef.current.clear();
     preStreamContentByPathRef.current.clear();
+    appendResumeModeByPathRef.current.clear();
 
     if (tokenBeatTimerRef.current) {
       window.clearTimeout(tokenBeatTimerRef.current);
@@ -2621,7 +2620,7 @@ function App() {
       const resolveGeneratedPath = (rawPath: string) => {
         if (filePathMap.has(rawPath)) return filePathMap.get(rawPath) as string;
         const normalized = resolveFilePath(rawPath);
-        const finalPath = normalized || rawPath;
+        const finalPath = normalized || sanitizeOperationPath(rawPath);
         filePathMap.set(rawPath, finalPath);
         return finalPath;
       };
@@ -2658,7 +2657,7 @@ function App() {
       };
 
       const normalizeGeneratedContent = (text: string) => {
-        const normalized = String(text || '')
+        const normalized = stripFileOperationMarkers(String(text || ''))
           .replace(/\r\n/g, '\n')
           .replace(/\uFEFF/g, '');
 
@@ -2670,6 +2669,29 @@ function App() {
         return noTrailingWhitespace
           .replace(/^(?:[ \t]*\n)+/, '')
           .replace(/(?:\n[ \t]*)+$/, '');
+      };
+
+      const stabilizeResumeContent = (baseContent: string, streamedContent: string) => {
+        const base = normalizeGeneratedContent(baseContent);
+        const merged = normalizeGeneratedContent(streamedContent);
+        if (!base || !merged.startsWith(base)) return merged;
+
+        const appended = merged.slice(base.length);
+        if (!appended) return merged;
+
+        const restartProbe = Math.min(160, base.length, appended.length);
+        if (restartProbe >= 80 && appended.slice(0, restartProbe) === base.slice(0, restartProbe)) {
+          return normalizeGeneratedContent(appended);
+        }
+
+        const maxOverlap = Math.min(base.length, appended.length, 2000);
+        for (let overlap = maxOverlap; overlap >= 40; overlap -= 1) {
+          if (base.slice(base.length - overlap) === appended.slice(0, overlap)) {
+            return normalizeGeneratedContent(base + appended.slice(overlap));
+          }
+        }
+
+        return merged;
       };
 
       const healHtmlDocument = (html: string) => {
@@ -3235,10 +3257,7 @@ function App() {
       const DUPLICATE_CSS_BASENAMES = new Set(['style.css', 'styles.css', 'main.css', 'app.css']);
       const DUPLICATE_JS_BASENAMES = new Set(['script.js', 'main.js', 'app.js']);
       const normalizeRefPath = (value: string) =>
-        String(value || '')
-          .replace(/\\/g, '/')
-          .replace(/^\.\//, '')
-          .trim();
+        sanitizeOperationPath(value);
       const normalizePolicyPathLower = (value: string) => normalizeRefPath(value).toLowerCase();
       const duplicatePurposeKey = (baseName: string) => {
         const lower = String(baseName || '').toLowerCase();
@@ -3579,14 +3598,11 @@ function App() {
           if (mode === 'edit') {
             const allowedByEditSet = localAllowedEditSet.has(normalizedResolved);
             const allowedByCreateSession = localCreatedPaths.has(normalizedResolved);
-            const existsInWorkspace = useProjectStore
-              .getState()
-              .files.some((file) => normalizePolicyPathLower(file.path || file.name || '') === normalizedResolved);
             if (interactionMode === 'edit' && !allowedByEditSet) {
               enforceLocalPolicyViolation('LOCAL_POLICY_EDIT_OUT_OF_SCOPE', 'edit path is outside allowed edit set', resolvedPath);
               return;
             }
-            if (interactionMode !== 'edit' && !allowedByEditSet && !allowedByCreateSession && !existsInWorkspace) {
+            if (interactionMode !== 'edit' && !allowedByEditSet && !allowedByCreateSession) {
               enforceLocalPolicyViolation('LOCAL_POLICY_EDIT_OUT_OF_SCOPE', 'edit path is outside generated/allowed scope', resolvedPath);
               return;
             }
@@ -3652,6 +3668,8 @@ function App() {
           upsertFileNode(resolvedPath);
           const name = resolvedPath.split('/').pop() || resolvedPath;
           const existing = useProjectStore.getState().files.find((f) => (f.path || f.name) === resolvedPath);
+          appendResumeModeByPathRef.current.set(resolvedPath, Boolean(event.append));
+          preStreamContentByPathRef.current.set(resolvedPath, String(existing?.content || ''));
 
           if (!existing) {
             upsertFile({ name, path: resolvedPath, content: '', language: getLanguageFromExtension(resolvedPath) });
@@ -3681,7 +3699,6 @@ function App() {
             const prevWriting = useAIStore.getState().writingFilePath;
             if (prevWriting) flushFileBuffers({ onlyPath: prevWriting, force: true });
             fileChunkBuffersRef.current.delete(resolvedPath);
-            preStreamContentByPathRef.current.set(resolvedPath, String(existing?.content || ''));
             updateFile(resolvedPath, '');
             upsertFileNode(resolvedPath, '');
             upsertFile({ name, path: resolvedPath, content: '', language: getLanguageFromExtension(resolvedPath) });
@@ -3751,8 +3768,12 @@ function App() {
           };
 
           const previousSnapshot = preStreamContentByPathRef.current.get(resolvedPath);
+          const resumedAppend = appendResumeModeByPathRef.current.get(resolvedPath) === true;
           const originalNormalized = normalizeGeneratedContent(readCurrentContent());
-          let latest = originalNormalized;
+          let latest =
+            resumedAppend && typeof previousSnapshot === 'string'
+              ? stabilizeResumeContent(previousSnapshot, originalNormalized)
+              : originalNormalized;
           commitContent(latest);
 
           const extension = resolvedPath.includes('.') ? (resolvedPath.split('.').pop() || '').toLowerCase() : '';
@@ -3849,6 +3870,7 @@ function App() {
             scheduleAutosave();
           }
           preStreamContentByPathRef.current.delete(resolvedPath);
+          appendResumeModeByPathRef.current.delete(resolvedPath);
 
           if (useAIStore.getState().architectMode) {
             // Plan step completion handled in main loop now
@@ -4085,18 +4107,10 @@ function App() {
             )
           ) {
             const hintedPaths = extractPathsFromPolicyMessage(detail);
-            const recoveryPaths = hintedPaths.length > 0 ? hintedPaths : collectPolicyFallbackPaths();
-            if (recoveryPaths.length > 0) {
-              augmentPolicyScopeForExecution(recoveryPaths, 'policy-recovery');
-              clearPolicyViolations();
-              setBlockedReason(null);
-              if (useAIStore.getState().executionPhase === 'interrupted') {
-                setExecutionPhase('executing');
-              }
-              logSystem(`[policy] Retrying after scope recovery (${recoveryPaths.length} paths).`);
-              await runStreamAttempt(multiAgentRuntimeEnabled && options?.useMultiAgent !== false);
-              return;
-            }
+            const sample = hintedPaths.slice(0, 6).join(', ');
+            logSystem(
+              `[policy] Strict scope mode: blocked out-of-scope write${sample ? ` (${sample})` : ''}. Retry cancelled to prevent random file edits.`
+            );
           }
           throw error;
         }

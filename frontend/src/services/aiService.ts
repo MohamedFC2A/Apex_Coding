@@ -10,6 +10,7 @@ import { buildContextBundle } from '@/services/contextRetrievalEngine';
 import { parseFileOpEventPayload } from '@/services/fileOpEvents';
 import type { WorkspaceAnalysisReport } from '@/types/context';
 import type { StrictWritePolicy } from '@/services/workspaceIntelligence';
+import { sanitizeOperationPath, stripTrailingFileMarkerFragment } from '@/utils/fileOpGuards';
 
 interface AIResponse {
   plan: string;
@@ -740,7 +741,11 @@ ${constrainedPrompt}
 
               const payload = this.scan.slice(nextIdx + token.length, closeIdx).trim();
               const patchPayload = isPatch ? this.parsePatchPayload(payload) : null;
-              const rawPath = patchPayload?.path || payload;
+              const rawPath = sanitizeOperationPath(patchPayload?.path || payload);
+              if (!rawPath) {
+                this.scan = this.scan.slice(closeIdx + 2);
+                continue;
+              }
               this.currentPath = rawPath;
               this.inFile = true;
               this.currentLine = 1;
@@ -826,7 +831,7 @@ ${constrainedPrompt}
           const text = String(payload || '').trim();
           if (!text) return { path: '' };
           const parts = text.split('|').map((item) => item.trim()).filter(Boolean);
-          const path = parts[0] || '';
+          const path = sanitizeOperationPath(parts[0] || '');
           const reasonPart = parts.slice(1).join(' | ');
           const reason = reasonPart ? reasonPart.replace(/^reason\s*[:=]\s*/i, '').trim() : undefined;
           return { path, reason };
@@ -836,7 +841,7 @@ ${constrainedPrompt}
           const text = String(payload || '').trim();
           if (!text) return { path: '' };
           const parts = text.split('|').map((item) => item.trim()).filter(Boolean);
-          const path = parts[0] || '';
+          const path = sanitizeOperationPath(parts[0] || '');
           let mode: 'create' | 'edit' | undefined;
           let reason: string | undefined;
           for (const part of parts.slice(1)) {
@@ -861,15 +866,15 @@ ${constrainedPrompt}
           const route = String(routePart || '').trim();
           const arrowIndex = route.indexOf('->');
           if (arrowIndex === -1) return { from: '', to: '', reason };
-          const from = route.slice(0, arrowIndex).trim();
-          const to = route.slice(arrowIndex + 2).trim();
+          const from = sanitizeOperationPath(route.slice(0, arrowIndex).trim());
+          const to = sanitizeOperationPath(route.slice(arrowIndex + 2).trim());
           return { from, to, reason };
         }
 
         finalize(): { cutPath: string; cutLine: number } | null {
           if (!this.inFile) return null;
           if (this.scan.length > 0) {
-            this.flushContent(this.scan);
+            this.flushContent(stripTrailingFileMarkerFragment(this.scan));
             this.scan = '';
           }
           const cutPath = this.currentPath;

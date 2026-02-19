@@ -1,4 +1,5 @@
 import type { StreamFileEvent } from '@/services/aiService';
+import { sanitizeOperationPath } from '@/utils/fileOpGuards';
 
 type ResolvePath = (rawPath: string) => string;
 
@@ -8,7 +9,7 @@ interface FileMutationEngineOptions {
   duplicateSensitiveBasenames?: Set<string>;
 }
 
-const normalize = (value: string) => String(value || '').replace(/\\/g, '/').trim();
+const normalize = (value: string) => sanitizeOperationPath(value);
 
 export const createFileMutationEngine = (options: FileMutationEngineOptions) => {
   const resolvePath = options.resolvePath;

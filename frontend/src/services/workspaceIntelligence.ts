@@ -446,7 +446,7 @@ export const buildStrictWritePolicy = (args: {
   const maxTouchedFiles =
     interactionMode === 'edit'
       ? Math.max(1, Math.min(12, editBudget + createBudget))
-      : Math.max(8, Math.min(48, allowedEditPaths.length + 8));
+      : Math.max(6, Math.min(24, allowedEditPaths.length + 4));
 
   return {
     mode: 'minimal',

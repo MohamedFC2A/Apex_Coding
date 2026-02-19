@@ -1,3 +1,5 @@
+import { sanitizeOperationPath } from '@/utils/fileOpGuards';
+
 export type ParsedFileOpEvent =
   | {
       type: 'start' | 'chunk' | 'end';
@@ -33,6 +35,7 @@ type BackendFileOpPayload = {
 };
 
 const toSafeString = (value: unknown) => String(value || '').trim();
+const toSafePath = (value: unknown) => sanitizeOperationPath(String(value || ''));
 
 export const parseFileOpEventPayload = (dataText: string): ParsedFileOpEvent | null => {
   let payload: BackendFileOpPayload;
@@ -44,7 +47,7 @@ export const parseFileOpEventPayload = (dataText: string): ParsedFileOpEvent | n
 
   const op = payload?.op;
   const phase = payload?.phase;
-  const path = toSafeString(payload?.path);
+  const path = toSafePath(payload?.path);
   const reason = toSafeString(payload?.reason);
   const mode = payload?.mode === 'edit' ? 'edit' : 'create';
 
@@ -60,7 +63,7 @@ export const parseFileOpEventPayload = (dataText: string): ParsedFileOpEvent | n
   }
 
   if (op === 'move') {
-    const toPath = toSafeString(payload?.toPath);
+    const toPath = toSafePath(payload?.toPath);
     if (!toPath) return null;
     return {
       type: 'move',

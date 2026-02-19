@@ -62,7 +62,7 @@ export function FloatingPlan() {
             </div>
             
             {/* Steps List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar" style={{ direction: isRTL ? 'rtl' : 'ltr' }}>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1" style={{ direction: isRTL ? 'rtl' : 'ltr', scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.18) transparent' }}>
               {steps.map((step, index) => (
                 <motion.div
                   key={step.id}

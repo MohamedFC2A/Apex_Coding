@@ -468,7 +468,24 @@ const FloatingPlanBody = styled.div`
   z-index: 1;
   height: calc(50vh - 52px);
   max-height: calc(50vh - 52px);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 4px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.32);
+  }
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 `;
 
 const FloatingPlanToggle = styled.button`
@@ -820,6 +837,22 @@ const ChatScroll = styled.div`
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 4px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+  }
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 `;
 
 const ChatBubble = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`

@@ -53,8 +53,12 @@ const getChannel = () => {
 
 export const buildLivePreviewPath = (projectId: string) => {
   const cleanId = normalizeProjectId(projectId);
-  if (!cleanId) return '/live-preview';
-  return `/live-preview/${encodeURIComponent(cleanId)}`;
+  const basePath =
+    typeof window !== 'undefined' && String(window.location.pathname || '').startsWith('/app')
+      ? '/app/live-preview'
+      : '/live-preview';
+  if (!cleanId) return basePath;
+  return `${basePath}/${encodeURIComponent(cleanId)}`;
 };
 
 export const publishLivePreviewSnapshot = (

@@ -4331,6 +4331,116 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
         );
       };
 
+      const isFileLikePath = (path: string) => /\/?[^/]+\.[a-z0-9]+$/i.test(String(path || '').trim());
+      const requiresNonEmptyContent = (path: string) =>
+        /\.(html?|css|js|jsx|ts|tsx|json|md|txt)$/i.test(String(path || '').toLowerCase());
+      const collectLookupCandidates = (rawPath: string) => {
+        const normalized = normalizeRefPath(resolveGeneratedPath(rawPath) || rawPath);
+        if (!normalized) return [] as string[];
+        const out = new Set<string>([normalized]);
+        const lower = normalized.toLowerCase();
+        if (lower.startsWith('frontend/')) {
+          const trimmed = normalized.slice('frontend/'.length);
+          if (trimmed) out.add(trimmed);
+        } else {
+          out.add(`frontend/${normalized}`);
+        }
+        return Array.from(out);
+      };
+      const findWorkspaceFileByPath = (rawPath: string) => {
+        const candidates = new Set(collectLookupCandidates(rawPath).map((path) => normalizePolicyPathLower(path)));
+        if (candidates.size === 0) return null;
+        return (
+          useProjectStore
+            .getState()
+            .files.find((file) => candidates.has(normalizePolicyPathLower(file.path || file.name || ''))) || null
+        );
+      };
+      const computeMissingRequiredOutputPaths = () => {
+        const aiSnapshot = useAIStore.getState();
+        const expected = new Set<string>();
+
+        for (const step of aiSnapshot.planSteps || []) {
+          const files = Array.isArray(step?.files) ? step.files : [];
+          for (const rawPath of files) {
+            const normalized = normalizeRefPath(rawPath);
+            if (!normalized || !isFileLikePath(normalized)) continue;
+            expected.add(normalized);
+          }
+        }
+
+        for (const [path, status] of Object.entries(aiSnapshot.fileStatuses || {})) {
+          if (status !== 'queued') continue;
+          const normalized = normalizeRefPath(path);
+          if (!normalized || !isFileLikePath(normalized)) continue;
+          expected.add(normalized);
+        }
+
+        if (expected.size === 0) return [] as string[];
+
+        const missing: string[] = [];
+        for (const path of expected) {
+          const file = findWorkspaceFileByPath(path);
+          if (!file) {
+            missing.push(path);
+            continue;
+          }
+
+          if (requiresNonEmptyContent(path) && !String(file.content || '').trim()) {
+            missing.push(path);
+          }
+        }
+
+        return Array.from(new Set(missing)).slice(0, 48);
+      };
+      const buildMissingOutputsRecoveryPrompt = (missingPaths: string[], attempt: number, maxAttempts: number) =>
+        `
+[RECOVERY MODE]
+You skipped required files during generation.
+
+[ORIGINAL REQUEST]
+${basePrompt}
+
+[MISSING REQUIRED FILES]
+${missingPaths.map((path) => `- ${path}`).join('\n')}
+
+[RULES]
+- Generate ONLY the missing files above.
+- Every file must be full and preview-ready.
+- Do not skip any file.
+- Output ONLY markers and file content. No explanations.
+- This is recovery attempt ${attempt}/${maxAttempts}.
+
+[OUTPUT FORMAT]
+[[PATCH_FILE: path/to/file.ext | mode: create|edit]]
+<full file content>
+[[END_FILE]]
+`.trim();
+      const ensureRequiredOutputsMaterialized = async () => {
+        let missing = computeMissingRequiredOutputPaths();
+        if (missing.length === 0) return;
+
+        const MAX_RECOVERY_ATTEMPTS = 2;
+        for (let attempt = 1; attempt <= MAX_RECOVERY_ATTEMPTS; attempt++) {
+          logSystem(`[PLAN] Missing outputs detected (${missing.length}). Recovery ${attempt}/${MAX_RECOVERY_ATTEMPTS}.`);
+          augmentPolicyScopeForExecution(missing, 'required-output-recovery');
+          await runStream(buildMissingOutputsRecoveryPrompt(missing, attempt, MAX_RECOVERY_ATTEMPTS), {
+            useMultiAgent: false
+          });
+          missing = computeMissingRequiredOutputPaths();
+          if (missing.length === 0) {
+            logSystem('[PLAN] Missing outputs recovered successfully.');
+            return;
+          }
+        }
+
+        throw new Error(
+          `PLAN_INCOMPLETE_OUTPUT: missing required files after recovery -> ${missing.slice(0, 14).join(', ')}${
+            missing.length > 14 ? ' ...' : ''
+          }`
+        );
+      };
+
       if (!SUPER_MODE_TEMP_DISABLED && modelMode === 'super') {
         setExecutionPhase('planning');
         logSystem('[SUPER-THINKING] Initializing Fast-Mode Blueprint...');
@@ -4505,12 +4615,31 @@ ${retry ? 'This is a retry because the previous attempt produced no effective fi
         }
       }
 
+      if (useAIStore.getState().executionPhase !== 'interrupted' && partialPaths.size === 0) {
+        await ensureRequiredOutputsMaterialized();
+      }
+
       if (useAIStore.getState().executionPhase !== 'interrupted') {
         const queuedLeftovers = Object.entries(useAIStore.getState().fileStatuses || {})
           .filter(([, status]) => status === 'queued')
           .map(([path]) => path);
+        const unresolvedQueued: string[] = [];
         for (const path of queuedLeftovers) {
-          setFileStatus(path, 'ready');
+          const file = findWorkspaceFileByPath(path);
+          const hasContent = Boolean(file) && (!requiresNonEmptyContent(path) || String(file?.content || '').trim().length > 0);
+          if (hasContent) {
+            setFileStatus(path, 'ready');
+          } else {
+            unresolvedQueued.push(path);
+          }
+        }
+
+        if (unresolvedQueued.length > 0) {
+          throw new Error(
+            `INCOMPLETE_OUTPUT_QUEUED: unresolved queued files -> ${unresolvedQueued.slice(0, 12).join(', ')}${
+              unresolvedQueued.length > 12 ? ' ...' : ''
+            }`
+          );
         }
         setExecutionPhase('completed');
         const generatedFiles = useProjectStore.getState().files;

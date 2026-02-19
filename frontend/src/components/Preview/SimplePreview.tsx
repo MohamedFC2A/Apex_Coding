@@ -654,10 +654,19 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         const entries = htmlFiles
           .map((file) => normalizePath(file.path || file.name || ''))
           .filter(Boolean);
+        const sortedByDepth = [...entries].sort((a, b) => {
+          const depthA = a.split('/').length;
+          const depthB = b.split('/').length;
+          if (depthA !== depthB) return depthA - depthB;
+          return a.localeCompare(b);
+        });
         return (
+          entries.find((path) => path === 'index.html') ||
           entries.find((path) => path === 'frontend/index.html') ||
+          entries.find((path) => path === 'frontend/src/index.html') ||
+          sortedByDepth.find((path) => path.endsWith('/index.html')) ||
           entries.find((path) => path.endsWith('/index.html')) ||
-          entries[0] ||
+          sortedByDepth[0] ||
           null
         );
       };
@@ -723,6 +732,31 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
       rewriteElementAttr('source[src]', 'src', true);
       rewriteElementAttr('audio[src]', 'src', true);
       rewriteElementAttr('object[data]', 'data', true);
+
+      documentNode.querySelectorAll('a[href]').forEach((anchor) => {
+        const href = String(anchor.getAttribute('href') || '').trim();
+        if (!href || isExternalAssetUrl(href)) return;
+
+        const [pathAndQueryRaw, hashRaw] = href.split('#', 2);
+        const [pathOnlyRaw, queryRaw] = String(pathAndQueryRaw || '').split('?', 2);
+        const hashSuffix = hashRaw ? `#${hashRaw}` : '';
+        const querySuffix = queryRaw ? `?${queryRaw}` : '';
+
+        let targetPath = String(pathOnlyRaw || '').trim();
+        if (!targetPath || targetPath === '.') {
+          targetPath = entryHtmlPath;
+        } else if (targetPath === '/') {
+          targetPath = 'index.html';
+        }
+
+        const targetUrl = resolveToResourceUrl(entryHtmlPath, targetPath);
+        if (targetUrl) {
+          anchor.setAttribute('href', `${targetUrl}${querySuffix}${hashSuffix}`);
+        } else {
+          unresolved.add(`${entryHtmlPath} -> unresolved anchor: ${href}`);
+          anchor.setAttribute('href', '#');
+        }
+      });
 
       documentNode.querySelectorAll('script[src]').forEach((scriptNode) => {
         const value = scriptNode.getAttribute('src');

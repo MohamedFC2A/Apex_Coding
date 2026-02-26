@@ -41,6 +41,7 @@ import type { GenerationConstraints } from './types/constraints';
 import { createFileMutationEngine } from './services/fileMutationEngine';
 import { buildContextBundle } from './services/contextRetrievalEngine';
 import { buildFrontendProjectModeScaffold, FRONTEND_PROJECT_MODE_VERSION } from './services/frontendProjectModeV12';
+import { createWorkspaceBackup, isSensitiveWorkspacePath } from './utils/workspaceBackupsDb';
 import {
   analyzeWorkspaceIntelligence,
   buildStrictWritePolicy,
@@ -149,11 +150,7 @@ const Root = styled.div`
   overflow: hidden;
   position: relative;
   isolation: isolate;
-  background:
-    radial-gradient(1200px 640px at 8% -12%, rgba(59, 130, 246, 0.22), transparent 56%),
-    radial-gradient(1100px 700px at 92% 14%, rgba(139, 92, 246, 0.22), transparent 52%),
-    radial-gradient(820px 560px at 52% 104%, rgba(34, 211, 238, 0.12), transparent 60%),
-    #020208;
+  background-color: #020208;
   color: var(--nexus-text);
   font-family: 'Sora', 'Inter', 'IBM Plex Sans', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -162,15 +159,15 @@ const Root = styled.div`
   &::before {
     content: '';
     position: absolute;
-    inset: 0;
+    inset: -20%;
     pointer-events: none;
-    opacity: 0.08;
-    background-image:
-      linear-gradient(rgba(255, 255, 255, 0.9) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.9) 1px, transparent 1px);
-    background-size: 64px 64px;
-    mask-image: radial-gradient(circle at 50% 35%, black 30%, transparent 84%);
-    z-index: -2;
+    background:
+      radial-gradient(1200px 900px at 10% 0%, rgba(59, 130, 246, 0.18), transparent 50%),
+      radial-gradient(1300px 900px at 90% 10%, rgba(139, 92, 246, 0.15), transparent 50%),
+      radial-gradient(1000px 800px at 50% 100%, rgba(34, 211, 238, 0.1), transparent 60%);
+    filter: blur(40px);
+    z-index: -3;
+    animation: backgroundShift 20s ease-in-out infinite alternate;
   }
 
   &::after {
@@ -178,11 +175,18 @@ const Root = styled.div`
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background:
-      radial-gradient(circle at 16% 20%, rgba(59, 130, 246, 0.12), transparent 45%),
-      radial-gradient(circle at 84% 72%, rgba(168, 85, 247, 0.12), transparent 48%);
-    filter: blur(18px);
-    z-index: -1;
+    opacity: 0.05;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.9) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.9) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(circle at 50% 35%, black 40%, transparent 90%);
+    z-index: -2;
+  }
+
+  @keyframes backgroundShift {
+    0% { transform: scale(1) translate(0, 0); }
+    100% { transform: scale(1.05) translate(-1%, 2%); }
   }
 `;
 
@@ -226,18 +230,18 @@ const HeaderArea = styled.div`
   gap: 16px;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, rgba(11, 15, 27, 0.88) 0%, rgba(8, 12, 22, 0.92) 100%);
-  backdrop-filter: blur(26px) saturate(130%);
-  -webkit-backdrop-filter: blur(26px) saturate(130%);
+  background: rgba(10, 14, 25, 0.65);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
-    0 18px 52px rgba(3, 8, 20, 0.52),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 16px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
     
   padding: 0 16px;
   flex-wrap: nowrap;
-  transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;
+  transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
 
   &::before {
     content: '';
@@ -245,13 +249,12 @@ const HeaderArea = styled.div`
     inset: 0;
     pointer-events: none;
     background: linear-gradient(
-      90deg,
-      rgba(59, 130, 246, 0.18) 0%,
-      rgba(34, 211, 238, 0.12) 32%,
-      rgba(139, 92, 246, 0.16) 67%,
-      rgba(59, 130, 246, 0.14) 100%
+      120deg,
+      rgba(255, 255, 255, 0.03) 0%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.01) 100%
     );
-    opacity: 0.55;
+    opacity: 0.8;
   }
 
   &::after {
@@ -259,9 +262,9 @@ const HeaderArea = styled.div`
     position: absolute;
     inset: -1px;
     pointer-events: none;
-    background: radial-gradient(460px 120px at 24% -12%, rgba(59, 130, 246, 0.3), transparent 62%),
-      radial-gradient(420px 120px at 82% -12%, rgba(139, 92, 246, 0.26), transparent 64%);
-    opacity: 0.72;
+    background: radial-gradient(600px 200px at 20% -20%, rgba(59, 130, 246, 0.25), transparent 70%),
+      radial-gradient(500px 200px at 80% -20%, rgba(139, 92, 246, 0.2), transparent 70%);
+    opacity: 0.9;
   }
 
   > * {
@@ -270,10 +273,12 @@ const HeaderArea = styled.div`
   }
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(12, 16, 28, 0.75);
     box-shadow:
-      0 24px 62px rgba(3, 8, 20, 0.62),
-      0 0 0 1px rgba(34, 211, 238, 0.12) inset;
+      0 20px 50px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    transform: translateY(-1px);
   }
 
   @media (max-width: 1024px) {
@@ -703,24 +708,23 @@ const StatusPill = styled.div<{ $active?: boolean }>`
 
 const WorkspaceSignalRail = styled.div`
   flex-shrink: 0;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background:
-    linear-gradient(140deg, rgba(11, 15, 26, 0.85) 0%, rgba(8, 12, 22, 0.9) 100%),
-    radial-gradient(300px 120px at 12% 20%, rgba(59, 130, 246, 0.15), transparent 70%);
-  box-shadow:
-    0 16px 42px rgba(3, 8, 20, 0.44),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  padding: 12px 14px;
+    linear-gradient(140deg, rgba(11, 15, 26, 0.6) 0%, rgba(8, 12, 22, 0.7) 100%),
+    radial-gradient(300px 120px at 12% 20%, rgba(59, 130, 246, 0.08), transparent 70%);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 8px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   overflow: hidden;
 
   @media (max-width: 1024px) {
-    padding: 10px 12px;
-    gap: 10px;
+    padding: 6px 10px;
+    gap: 8px;
   }
 
   @media (max-width: 768px) {
@@ -731,48 +735,55 @@ const WorkspaceSignalRail = styled.div`
 const WorkspaceSignalCopy = styled.div`
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  column-gap: 10px;
 `;
 
 const WorkspaceSignalBadge = styled.span`
-  width: fit-content;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(125, 244, 255, 0.28);
-  background: rgba(34, 211, 238, 0.11);
-  color: rgba(160, 245, 255, 0.96);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  border: 1px solid rgba(125, 244, 255, 0.15);
+  background: rgba(34, 211, 238, 0.08);
+  color: rgba(160, 245, 255, 0.9);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  flex-shrink: 0;
 
   &::before {
     content: '';
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: rgba(52, 211, 153, 0.95);
-    box-shadow: 0 0 10px rgba(52, 211, 153, 0.55);
+    background: rgba(52, 211, 153, 0.9);
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
   }
 `;
 
 const WorkspaceSignalTitle = styled.div`
-  font-size: 18px;
-  font-weight: 850;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: rgba(255, 255, 255, 0.95);
-  text-wrap: balance;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
 `;
 
 const WorkspaceSignalSubtext = styled.div`
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.62);
-  line-height: 1.4;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  @media (max-width: 1200px) {
+    display: none;
+  }
 `;
 
 const WorkspaceSignalStats = styled.div`
@@ -783,33 +794,114 @@ const WorkspaceSignalStats = styled.div`
   justify-content: flex-end;
 `;
 
+const CircularProgressWrapper = styled.div<{ $tone: 'default' | 'good' | 'warn' }>`
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: help;
+  margin-right: -2px;
+  
+  circle {
+    transition: stroke-dashoffset 0.4s ease;
+  }
+  
+  &:hover .tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) translateX(-50%);
+  }
+`;
+
+const CircularProgressTooltip = styled.div`
+  position: absolute;
+  top: 135%;
+  left: 50%;
+  transform: translateY(4px) translateX(-50%);
+  background: rgba(8, 12, 18, 0.95);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #fff;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+
+  span {
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: 500;
+  }
+`;
+
+const CircularContextProgress = ({ budget, tone }: { budget: any, tone: 'default' | 'good' | 'warn' }) => {
+  const radius = 8;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = Math.max(0, circumference - (budget.utilizationPct / 100) * circumference);
+  
+  const strokeColor = tone === 'warn' ? '#fbbf24' : tone === 'good' ? '#22d3ee' : '#34d399';
+  const trackColor = 'rgba(255, 255, 255, 0.1)';
+
+  return (
+    <CircularProgressWrapper $tone={tone}>
+      <svg width="20" height="20" viewBox="0 0 20 20" style={{ transform: 'rotate(-90deg)' }}>
+        <circle
+          cx="10" cy="10" r={radius}
+          stroke={trackColor} strokeWidth="2.5" fill="none"
+        />
+        <circle
+          cx="10" cy="10" r={radius}
+          stroke={strokeColor} strokeWidth="2.5" fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+        />
+      </svg>
+      <CircularProgressTooltip className="tooltip">
+        CTX: {Math.round(budget.utilizationPct)}% <span>({budget.usedChars.toLocaleString()} / {budget.maxChars.toLocaleString()})</span>
+      </CircularProgressTooltip>
+    </CircularProgressWrapper>
+  );
+};
+
 const WorkspaceSignalStat = styled.div<{ $tone?: 'default' | 'good' | 'warn' }>`
-  padding: 6px 11px;
-  border-radius: 10px;
+  padding: 4px 8px;
+  border-radius: 8px;
   border: 1px solid
     ${(p) =>
       p.$tone === 'good'
-        ? 'rgba(52, 211, 153, 0.4)'
+        ? 'rgba(52, 211, 153, 0.3)'
         : p.$tone === 'warn'
-          ? 'rgba(251, 191, 36, 0.38)'
-          : 'rgba(255, 255, 255, 0.14)'};
+          ? 'rgba(251, 191, 36, 0.25)'
+          : 'rgba(255, 255, 255, 0.1)'};
   background:
     ${(p) =>
       p.$tone === 'good'
-        ? 'rgba(52, 211, 153, 0.14)'
+        ? 'rgba(52, 211, 153, 0.1)'
         : p.$tone === 'warn'
-          ? 'rgba(251, 191, 36, 0.14)'
-          : 'rgba(255, 255, 255, 0.05)'};
+          ? 'rgba(251, 191, 36, 0.1)'
+          : 'rgba(255, 255, 255, 0.03)'};
   color:
     ${(p) =>
       p.$tone === 'good'
-        ? 'rgba(167, 243, 208, 0.96)'
+        ? 'rgba(167, 243, 208, 0.9)'
         : p.$tone === 'warn'
-          ? 'rgba(253, 230, 138, 0.96)'
-          : 'rgba(255, 255, 255, 0.84)'};
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: 0.06em;
+          ? 'rgba(253, 230, 138, 0.9)'
+          : 'rgba(255, 255, 255, 0.7)'};
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
 `;
@@ -991,9 +1083,10 @@ const DesktopLayout = styled.div`
 const ChatColumn = styled.div`
   min-height: 0;
   min-width: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 57fr) minmax(0, 43fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  height: 100%;
 `;
 
 const ChatPanel = styled.div`
@@ -1002,16 +1095,14 @@ const ChatPanel = styled.div`
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
+  border-radius: 16px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background:
-    linear-gradient(180deg, rgba(11, 16, 28, 0.88) 0%, rgba(8, 12, 22, 0.94) 100%),
-    radial-gradient(300px 200px at 8% 8%, rgba(59, 130, 246, 0.12), transparent 70%);
-  backdrop-filter: blur(24px) saturate(125%);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-    0 24px 68px rgba(2, 8, 22, 0.52);
+    linear-gradient(180deg, rgba(11, 16, 28, 0.4) 0%, rgba(8, 12, 22, 0.6) 100%),
+    radial-gradient(300px 200px at 8% 8%, rgba(59, 130, 246, 0.08), transparent 70%);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 `;
 
 const ChatHeader = styled.div`
@@ -1020,9 +1111,9 @@ const ChatHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 13px 15px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
 `;
 
 const ChatHeaderTitle = styled.div`
@@ -1080,28 +1171,27 @@ const ChatScroll = styled.div`
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 14px 13px 16px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 12px;
 
   &::-webkit-scrollbar {
-    width: 5px;
+    width: 4px;
   }
   &::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.04);
-    border-radius: 5px;
-    margin: 6px 0;
+    background: transparent;
+    margin: 4px 0;
   }
   &::-webkit-scrollbar-thumb {
-    background: rgba(34, 211, 238, 0.30);
-    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
   }
   &::-webkit-scrollbar-thumb:hover {
-    background: rgba(34, 211, 238, 0.55);
+    background: rgba(34, 211, 238, 0.45);
   }
   scrollbar-width: thin;
-  scrollbar-color: rgba(34, 211, 238, 0.30) rgba(255, 255, 255, 0.04);
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 `;
 
 const ChatBubble = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
@@ -1189,8 +1279,12 @@ const ChatEmpty = styled.div`
 `;
 
 const ChatComposerWrap = styled.div`
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
+  max-height: 55%;
   overflow-y: auto;
 `;
 
@@ -1722,7 +1816,8 @@ function App() {
             progress: 0
           },
           error: null,
-          currentSessionId: null
+          currentSessionId: null,
+          memorySnapshot: null
         });
       }
 
@@ -1777,6 +1872,9 @@ function App() {
     selectedFeatures: storedSelectedFeatures,
     customFeatureTags: storedCustomFeatureTags,
     constraintsEnforcement: storedConstraintsEnforcement,
+    generationProfile,
+    destructiveSafetyMode,
+    touchBudgetMode,
     stack,
     description,
     isHydrating: isProjectHydrating,
@@ -1793,6 +1891,9 @@ function App() {
     setSelectedFeatures: setProjectStoreSelectedFeatures,
     setCustomFeatureTags: setProjectStoreCustomFeatureTags,
     setConstraintsEnforcement: setProjectStoreConstraintsEnforcement,
+    setGenerationProfile: setProjectStoreGenerationProfile,
+    setDestructiveSafetyMode: setProjectStoreDestructiveSafetyMode,
+    setTouchBudgetMode: setProjectStoreTouchBudgetMode,
     setStack,
     setProjectName,
     setProjectId
@@ -1983,15 +2084,24 @@ function App() {
     setProjectStoreSelectedFeatures(selectedFeatures);
     setProjectStoreCustomFeatureTags(customFeatureTags);
     setProjectStoreConstraintsEnforcement(constraintsEnforcement);
+    setProjectStoreGenerationProfile(generationProfile || 'auto');
+    setProjectStoreDestructiveSafetyMode(destructiveSafetyMode || 'backup_then_apply');
+    setProjectStoreTouchBudgetMode(touchBudgetMode || 'adaptive');
   }, [
     constraintsEnforcement,
     customFeatureTags,
+    destructiveSafetyMode,
     effectiveProjectType,
+    generationProfile,
     selectedFeatures,
     setProjectStoreConstraintsEnforcement,
     setProjectStoreCustomFeatureTags,
+    setProjectStoreDestructiveSafetyMode,
+    setProjectStoreGenerationProfile,
     setProjectStoreSelectedFeatures,
-    setProjectStoreType
+    setProjectStoreTouchBudgetMode,
+    setProjectStoreType,
+    touchBudgetMode
   ]);
 
   useEffect(() => {
@@ -2419,11 +2529,21 @@ function App() {
       fileControlMode: 'safe_full',
       contextIntelligenceMode: 'strict_full',
       analysisMode: 'strict_full',
-      touchBudgetMode: 'minimal',
+      touchBudgetMode: touchBudgetMode || 'adaptive',
+      generationProfile: generationProfile || 'auto',
+      destructiveSafetyMode: destructiveSafetyMode || 'backup_then_apply',
       postProcessMode: 'safety_only',
       minContextConfidence: 80
     };
-  }, [constraintsEnforcement, customFeatureTags, effectiveProjectType, selectedFeatures]);
+  }, [
+    constraintsEnforcement,
+    customFeatureTags,
+    destructiveSafetyMode,
+    effectiveProjectType,
+    generationProfile,
+    selectedFeatures,
+    touchBudgetMode
+  ]);
 
   const applyFrontendProjectModeV12 = useCallback(
     (planStepHints?: Array<{ files?: string[] }>) => {
@@ -2541,6 +2661,7 @@ function App() {
       activeFile: projectState.activeFile,
       recentPreviewErrors,
       prompt: requestPrompt,
+      memoryHints: aiState.memorySnapshot?.ledger?.decisions?.map((item) => item.summary) || [],
       mode: 'balanced_graph',
       maxFiles: 12
     });
@@ -2640,7 +2761,8 @@ function App() {
     let writePolicy = buildStrictWritePolicy({
       report: workspaceAnalysis,
       minContextConfidence,
-      interactionMode
+      interactionMode,
+      touchBudgetMode: generationConstraints.touchBudgetMode
     });
     const normalizePolicyPath = (value: string) =>
       sanitizeOperationPath(value);
@@ -3710,6 +3832,54 @@ function App() {
         /\b(security|vuln|vulnerability|cve|exploit|malware|credential|secret|token|compromise|exposure|leak)\b/i.test(
           String(reason || '')
         );
+      const sensitiveEditBackups = new Set<string>();
+      const applyDestructiveOperationWithBackup = (
+        paths: string[],
+        operationLabel: string,
+        apply: () => void
+      ) => {
+        const mode = generationConstraints.destructiveSafetyMode || 'backup_then_apply';
+        if (mode === 'no_delete_move') {
+          logSystem(`[SAFETY] Blocked ${operationLabel}: destructive operations are disabled by policy.`);
+          return;
+        }
+        if (mode === 'manual_confirm') {
+          logSystem(`[SAFETY] Blocked ${operationLabel}: manual confirmation mode is enabled.`);
+          return;
+        }
+        const normalizedPaths = Array.from(new Set(paths.map((path) => sanitizeOperationPath(path)).filter(Boolean)));
+        if (normalizedPaths.length === 0) {
+          apply();
+          return;
+        }
+        void (async () => {
+          try {
+            const backup = await createWorkspaceBackup({
+              reason: `pre-${operationLabel}`,
+              paths: normalizedPaths
+            });
+            if (!backup) {
+              logSystem(`[SAFETY] Blocked ${operationLabel}: backup creation failed or no snapshot captured.`);
+              addBrainEvent({
+                source: 'file',
+                level: 'warn',
+                message: `Blocked ${operationLabel} because backup was not created`,
+                phase: 'recovering'
+              });
+              return;
+            }
+            apply();
+          } catch {
+            logSystem(`[SAFETY] Blocked ${operationLabel}: backup creation failed.`);
+            addBrainEvent({
+              source: 'file',
+              level: 'warn',
+              message: `Blocked ${operationLabel} because backup failed`,
+              phase: 'recovering'
+            });
+          }
+        })();
+      };
       let fileEventCounter = 0;
 
       const handleFileEvent = (incomingEvent: StreamFileEvent) => {
@@ -3734,7 +3904,7 @@ function App() {
             );
             return;
           }
-          const isSensitive = SENSITIVE_PATH_RE.test(resolvedPath);
+          const isSensitive = SENSITIVE_PATH_RE.test(resolvedPath) || isSensitiveWorkspacePath(resolvedPath);
           if (isSensitive && !hasExplicitSecurityReason(reason)) {
             logSystem(`[SAFETY] Blocked delete for sensitive file: ${resolvedPath} (missing explicit reason)`);
             addBrainEvent({
@@ -3747,20 +3917,27 @@ function App() {
             return;
           }
 
-          deleteFile(resolvedPath);
-          filesByBaseName.delete((resolvedPath.split('/').pop() || resolvedPath).toLowerCase());
-          unregisterDuplicatePurposePath(resolvedPath);
-          setFilesFromProjectFiles(useProjectStore.getState().files);
-          setFileStatus(resolvedPath, 'ready');
-          logSystem(`[STATUS] Deleted ${resolvedPath}${reason ? ` (${reason})` : ''}`);
-          addBrainEvent({
-            source: 'file',
-            level: 'info',
-            message: `Deleted ${resolvedPath}`,
-            path: resolvedPath,
-            phase: 'executing'
-          });
-          scheduleAutosave();
+          const applyDelete = () => {
+            deleteFile(resolvedPath);
+            filesByBaseName.delete((resolvedPath.split('/').pop() || resolvedPath).toLowerCase());
+            unregisterDuplicatePurposePath(resolvedPath);
+            setFilesFromProjectFiles(useProjectStore.getState().files);
+            setFileStatus(resolvedPath, 'ready');
+            logSystem(`[STATUS] Deleted ${resolvedPath}${reason ? ` (${reason})` : ''}`);
+            addBrainEvent({
+              source: 'file',
+              level: 'info',
+              message: `Deleted ${resolvedPath}`,
+              path: resolvedPath,
+              phase: 'executing'
+            });
+            scheduleAutosave();
+          };
+          if (isSensitive) {
+            applyDestructiveOperationWithBackup([resolvedPath], `delete:${resolvedPath}`, applyDelete);
+          } else {
+            applyDelete();
+          }
           return;
         }
 
@@ -3788,7 +3965,7 @@ function App() {
             );
             return;
           }
-          const isSensitive = SENSITIVE_PATH_RE.test(fromPath);
+          const isSensitive = SENSITIVE_PATH_RE.test(fromPath) || isSensitiveWorkspacePath(fromPath);
           if (isSensitive && !hasExplicitSecurityReason(reason)) {
             logSystem(`[SAFETY] Blocked move for sensitive file: ${fromPath} -> ${toPath}`);
             addBrainEvent({
@@ -3816,23 +3993,30 @@ function App() {
             return;
           }
 
-          moveFile(fromPath, toPath);
-          filesByBaseName.delete((fromPath.split('/').pop() || fromPath).toLowerCase());
-          filesByBaseName.set((toPath.split('/').pop() || toPath).toLowerCase(), toPath);
-          unregisterDuplicatePurposePath(fromPath);
-          registerDuplicatePurposePath(toPath);
-          setFilesFromProjectFiles(useProjectStore.getState().files);
-          setFileStatus(fromPath, 'ready');
-          setFileStatus(toPath, 'ready');
-          logSystem(`[STATUS] Moved ${fromPath} -> ${toPath}${reason ? ` (${reason})` : ''}`);
-          addBrainEvent({
-            source: 'file',
-            level: 'info',
-            message: `Moved ${fromPath} -> ${toPath}`,
-            path: toPath,
-            phase: 'executing'
-          });
-          scheduleAutosave();
+          const applyMove = () => {
+            moveFile(fromPath, toPath);
+            filesByBaseName.delete((fromPath.split('/').pop() || fromPath).toLowerCase());
+            filesByBaseName.set((toPath.split('/').pop() || toPath).toLowerCase(), toPath);
+            unregisterDuplicatePurposePath(fromPath);
+            registerDuplicatePurposePath(toPath);
+            setFilesFromProjectFiles(useProjectStore.getState().files);
+            setFileStatus(fromPath, 'ready');
+            setFileStatus(toPath, 'ready');
+            logSystem(`[STATUS] Moved ${fromPath} -> ${toPath}${reason ? ` (${reason})` : ''}`);
+            addBrainEvent({
+              source: 'file',
+              level: 'info',
+              message: `Moved ${fromPath} -> ${toPath}`,
+              path: toPath,
+              phase: 'executing'
+            });
+            scheduleAutosave();
+          };
+          if (isSensitive) {
+            applyDestructiveOperationWithBackup([fromPath], `move:${fromPath}`, applyMove);
+          } else {
+            applyMove();
+          }
           return;
         }
 
@@ -3889,6 +4073,14 @@ function App() {
 
           filesByBaseName.set(baseName.toLowerCase(), resolvedPath);
           registerDuplicatePurposePath(resolvedPath);
+
+          if (mode === 'edit' && isSensitiveWorkspacePath(resolvedPath) && !sensitiveEditBackups.has(resolvedPath)) {
+            sensitiveEditBackups.add(resolvedPath);
+            void createWorkspaceBackup({
+              reason: `pre-edit:${resolvedPath}`,
+              paths: [resolvedPath]
+            }).catch(() => undefined);
+          }
 
           const previousWritingPath = useAIStore.getState().writingFilePath;
           if (previousWritingPath && previousWritingPath !== resolvedPath) {
@@ -5309,11 +5501,13 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
       </Popover>
       <Popover>
         <Trigger>
-          <MultiAIToggle />
+          <div style={{ opacity: 0.35, pointerEvents: 'none' }}>
+            <MultiAIToggle />
+          </div>
         </Trigger>
         <Content>
-          <Heading>Multi AI</Heading>
-          <Description>Enable or disable multi-agent execution independently from Architect mode.</Description>
+          <Heading>Multi AI (Refining)</Heading>
+          <Description>This feature is temporarily disabled for improvements and tuning.</Description>
         </Content>
       </Popover>
       <Popover>
@@ -5385,11 +5579,13 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
       </Popover>
       <Popover>
         <Trigger>
-          <MultiAIToggle />
+          <div style={{ opacity: 0.35, pointerEvents: 'none' }}>
+            <MultiAIToggle />
+          </div>
         </Trigger>
         <Content>
-          <Heading>Multi AI</Heading>
-          <Description>Toggle multi-agent execution on/off.</Description>
+          <Heading>Multi AI (Refining)</Heading>
+          <Description>Feature temporarily disabled for tuning.</Description>
         </Content>
       </Popover>
     </>
@@ -5490,7 +5686,7 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
         </HeaderArea>
 
         <WorkspaceSignalRail style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
-          <WorkspaceSignalCopy style={{ alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+          <WorkspaceSignalCopy>
             <WorkspaceSignalBadge>Apex Workspace</WorkspaceSignalBadge>
             <WorkspaceSignalTitle>
               {isGenerating ? 'Building your project in real time' : 'Your AI-first command center is ready'}
@@ -5498,12 +5694,13 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
             <WorkspaceSignalSubtext>
               {runtimeMessage?.trim()
                 ? runtimeMessage
-                : 'Prompt once, then monitor context, runtime, and progress without losing flow.'}
+                : 'Prompt once, then monitor progress without losing flow.'}
             </WorkspaceSignalSubtext>
           </WorkspaceSignalCopy>
           <WorkspaceSignalStats>
-            <WorkspaceSignalStat $tone={contextLabelTone}>
-              Ctx {Math.round(contextBudget.utilizationPct)}%
+            <WorkspaceSignalStat $tone={contextLabelTone} style={{ padding: '3px 8px 3px 3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <CircularContextProgress budget={contextBudget} tone={contextLabelTone} />
+              CTX
             </WorkspaceSignalStat>
             <WorkspaceSignalStat $tone={runtimeLabelTone}>
               {runtimeLabel}
@@ -5523,8 +5720,8 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
               <ChatPanel>
                 <ChatHeader>
                   <ChatHeaderTitle>{t('app.workspace.title')}</ChatHeaderTitle>
-                  <ChatHeaderMeta>
-                    {chatMessageCountText} &bull; ctx {Math.round(contextBudget.utilizationPct)}%
+                  <ChatHeaderMeta style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {chatMessageCountText} &bull; <CircularContextProgress budget={contextBudget} tone={contextLabelTone} /> CTX
                   </ChatHeaderMeta>
                 </ChatHeader>
                 <ContextBarTrack style={{ borderRadius: 0, height: 3, margin: 0 }}>

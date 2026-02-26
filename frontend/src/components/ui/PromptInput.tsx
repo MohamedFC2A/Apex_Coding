@@ -3,19 +3,35 @@ import styled from 'styled-components';
 import { useAIStore } from '../../stores/aiStore';
 import type { ProjectMode } from '@/types/constraints';
 
+import { motion, AnimatePresence } from 'framer-motion';
+
 const MAX_PROMPT_CHARS = 6000;
 
-const Shell = styled.div<{ $mode: 'create' | 'edit' }>`
+const Shell = styled(motion.div)<{ $mode: 'create' | 'edit' }>`
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
   flex-shrink: 0;
   border-radius: 16px;
-  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.44)' : 'rgba(255, 255, 255, 0.14)')};
-  background: linear-gradient(180deg, rgba(12, 16, 24, 0.92) 0%, rgba(9, 13, 21, 0.92) 100%);
-  backdrop-filter: blur(22px);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.36);
+  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.44)' : 'rgba(34, 211, 238, 0.3)')};
+  background: linear-gradient(180deg, rgba(8, 12, 18, 0.95) 0%, rgba(6, 9, 14, 0.95) 100%);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: 
+    0 24px 64px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(34, 211, 238, 0.15)')};
   overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  
+  &:focus-within {
+    box-shadow: 
+      0 32px 80px rgba(0, 0, 0, 0.6),
+      0 0 0 1px ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(34, 211, 238, 0.3)')},
+      0 0 30px ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(34, 211, 238, 0.15)')},
+      inset 0 1px 0 ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.25)' : 'rgba(34, 211, 238, 0.25)')};
+    border-color: ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.6)' : 'rgba(34, 211, 238, 0.5)')};
+    transform: translateY(-2px);
+  }
 `;
 
 const TopBar = styled.div<{ $mode: 'create' | 'edit' }>`
@@ -139,7 +155,7 @@ const NoticeStack = styled.div`
   }
 `;
 
-const NoticeCard = styled.div<{ $tone: 'warning' | 'info' }>`
+const NoticeCard = styled(motion.div)<{ $tone: 'warning' | 'info' }>`
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -148,6 +164,7 @@ const NoticeCard = styled.div<{ $tone: 'warning' | 'info' }>`
   border: 1px solid ${(p) => (p.$tone === 'warning' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(34, 211, 238, 0.27)')};
   background: ${(p) => (p.$tone === 'warning' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(34, 211, 238, 0.1)')};
   padding: 8px 10px;
+  backdrop-filter: blur(10px);
 `;
 
 const NoticeText = styled.div`
@@ -262,26 +279,28 @@ const Input = styled.textarea`
   min-height: 86px;
   max-height: 260px;
   resize: none;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   outline: none;
   border-radius: 12px;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.26);
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.3);
   color: rgba(255, 255, 255, 0.97);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.6;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.42);
+    color: rgba(255, 255, 255, 0.3);
   }
 
   &:focus {
-    border-color: rgba(34, 211, 238, 0.46);
-    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.17);
+    border-color: rgba(34, 211, 238, 0.3);
+    background: rgba(0, 0, 0, 0.4);
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
   }
 
   &:disabled {
-    opacity: 0.72;
+    opacity: 0.6;
     cursor: not-allowed;
   }
 
@@ -434,7 +453,13 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
     };
 
     return (
-      <Shell className={className} $mode={mode}>
+      <Shell
+        className={className}
+        $mode={mode}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+      >
         <TopBar $mode={mode}>
           <TopLeft>
             <ModeBadge $mode={mode}>{mode === 'edit' ? 'Edit Mode' : 'Create Mode'}</ModeBadge>

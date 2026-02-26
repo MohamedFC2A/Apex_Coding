@@ -55,6 +55,26 @@ export const buildFrontendPlanningPolicyBlock = (): string =>
     '- Each step must be atomic and independently verifiable in the live preview.'
   ].join('\n');
 
+export const buildFrameworkDeliveryPolicyBlock = (): string =>
+  [
+    '[FRAMEWORK DELIVERY POLICY]',
+    '- Deliver complete frontend modules with clean imports and predictable boundaries.',
+    '- Use reusable components and keep component responsibility focused.',
+    '- Keep framework conventions intact (routing/layout/entry files).',
+    '- Ensure runtime-safe event handlers and deterministic state wiring.',
+    '- Avoid placeholder pages/components in final output.'
+  ].join('\n');
+
+export const buildFrameworkPlanningPolicyBlock = (): string =>
+  [
+    '[FRAMEWORK PLANNING POLICY]',
+    '- Decompose into route/page modules + reusable components + shared utilities.',
+    '- Each step must declare target files and expected behavior outcome.',
+    '- Prefer editing existing modules over creating duplicate-purpose files.',
+    '- Keep styling strategy consistent (global styles vs module styles).',
+    '- Keep architecture frontend-only: no backend/server/db code.'
+  ].join('\n');
+
 export const buildFrontendProfessionalBaselineBlock = (): string =>
   [
     '[FRONTEND PROFESSIONAL BASELINE]',
@@ -106,7 +126,11 @@ export const buildAntiDuplicationPolicyBlock = (): string =>
   ].join('\n');
 
 export const buildGenerationConstraintsBlock = (constraints: GenerationConstraints): string => {
+  const requestedProfile = constraints.generationProfile || 'auto';
   const modeLine = 'Project Mode: FRONTEND_ONLY (backend/server files are forbidden).';
+  const profileLine = `Generation Profile: ${requestedProfile.toUpperCase()}`;
+  const destructiveSafetyLine = `Destructive Safety: ${(constraints.destructiveSafetyMode || 'backup_then_apply').toUpperCase()}`;
+  const touchBudgetLine = `Touch Budget Mode: ${(constraints.touchBudgetMode || 'adaptive').toUpperCase()}`;
 
   const selectedFeatureRules = constraints.selectedFeatures.map(formatFeatureLine);
   const customFeatureRules = constraints.customFeatureTags
@@ -126,9 +150,13 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
   const extraRules = wantsSvgPolicy ? [buildSvgPolicyPromptLine()] : [];
   const organizationBlock = buildAIOrganizationPolicyBlock(constraints.projectMode);
   const isFrontendOnly = true;
-  const frontendPolicyBlock = isFrontendOnly ? buildFrontendDeliveryPolicyBlock() : null;
-  const frontendPlanningBlock = isFrontendOnly ? buildFrontendPlanningPolicyBlock() : null;
-  const frontendProfessionalBaselineBlock = isFrontendOnly ? buildFrontendProfessionalBaselineBlock() : null;
+  const staticProfile = requestedProfile === 'static';
+  const frameworkProfile = requestedProfile === 'framework';
+  const frontendPolicyBlock = isFrontendOnly && !frameworkProfile ? buildFrontendDeliveryPolicyBlock() : null;
+  const frontendPlanningBlock = isFrontendOnly && !frameworkProfile ? buildFrontendPlanningPolicyBlock() : null;
+  const frontendProfessionalBaselineBlock = isFrontendOnly && !frameworkProfile ? buildFrontendProfessionalBaselineBlock() : null;
+  const frameworkPolicyBlock = isFrontendOnly && frameworkProfile ? buildFrameworkDeliveryPolicyBlock() : null;
+  const frameworkPlanningBlock = isFrontendOnly && frameworkProfile ? buildFrameworkPlanningPolicyBlock() : null;
   const pageArchitectureBlock = isFrontendOnly
     ? buildPageArchitecturePolicyBlock(constraints.siteArchitectureMode || 'adaptive_multi_page')
     : null;
@@ -137,6 +165,9 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
   return [
     '[GENERATION CONSTRAINTS]',
     modeLine,
+    profileLine,
+    destructiveSafetyLine,
+    touchBudgetLine,
     `Enforcement: ${constraints.enforcement.toUpperCase()}`,
     'Selected Features:',
     featureLines,
@@ -145,6 +176,8 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
     '- Respect project mode strictly.',
     '- Respect all selected feature constraints strictly.',
     '- If an output misses constraints, revise it immediately in the same response.',
+    staticProfile ? '- Static profile: do NOT emit framework scaffolding.' : '',
+    frameworkProfile ? '- Framework profile: prefer framework conventions and modular structure.' : '',
     ...extraRules,
     '',
     organizationBlock,
@@ -153,7 +186,9 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
     ...(pageArchitectureBlock ? ['', pageArchitectureBlock] : []),
     ...(frontendProfessionalBaselineBlock ? ['', frontendProfessionalBaselineBlock] : []),
     ...(frontendPolicyBlock ? ['', frontendPolicyBlock] : []),
-    ...(frontendPlanningBlock ? ['', frontendPlanningBlock] : [])
+    ...(frontendPlanningBlock ? ['', frontendPlanningBlock] : []),
+    ...(frameworkPolicyBlock ? ['', frameworkPolicyBlock] : []),
+    ...(frameworkPlanningBlock ? ['', frameworkPlanningBlock] : [])
   ].join('\n');
 };
 

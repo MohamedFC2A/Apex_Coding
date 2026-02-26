@@ -672,7 +672,7 @@ const FRONTEND_PRO_QUALITY_POLICY = [
   '[FRONTEND PRO QUALITY POLICY]',
   '- Default frontend mode is adaptive multi-page vanilla (HTML/CSS/JS).',
   '- Use single-page only for simple requests; otherwise generate linked multi-page architecture.',
-  '- Never generate React/Next/Vite or any framework scaffolding.',
+  '- In static profile, never generate React/Next/Vite scaffolding. In framework profile, keep modular frontend conventions.',
   '- For static mode, keep shared style.css + script.js and route-oriented kebab-case page files.',
   '- Use canonical folders when multi-page: pages/, components/, styles/, scripts/, assets/, data/.',
   '- Include a route map contract (site-map.json or equivalent structured mapping) for multi-page outputs.',
@@ -717,13 +717,15 @@ CATEGORY RULES:
 
 FILE TREE RULES (CRITICAL — DUPLICATES ARE FORBIDDEN):
 - fileTree must list EVERY file that will be created.
-- For simple sites use flat structure: index.html, style.css, script.js.
-- For complex sites, use adaptive multi-page structure with canonical folders: pages/, components/, styles/, scripts/, assets/, data/.
-- If multi-page is used, include site-map.json in fileTree.
+- If Generation Profile is STATIC: for simple sites use flat structure (index.html, style.css, script.js).
+- If Generation Profile is STATIC and scope is complex: use adaptive multi-page structure with canonical folders (pages/, components/, styles/, scripts/, assets/, data/).
+- If Generation Profile is STATIC and multi-page is used, include site-map.json in fileTree.
+- If Generation Profile is FRAMEWORK: use framework-oriented frontend structure (src/app|pages, src/components, src/styles, src/lib, public) and typed modules.
 - NEVER list the same filename twice (e.g. two style.css in different paths).
 - Keep one shared style.css and one shared script.js by default in static mode (unless architecture explicitly needs scoped files).
 - If SVG icons are needed, place in src/icons/ and list each file.
-- NEVER include package.json, node_modules, or build configs.
+- For static mode: NEVER include package.json or build configs.
+- For framework mode: package.json and framework configs are allowed if needed.
 
 UI DECOMPOSITION (MANDATORY):
 - The plan description must name every major UI section (e.g. "Navigation bar, Hero with CTA, Feature cards grid, Testimonial carousel, Contact form, Footer").
@@ -910,14 +912,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 BRANDING: Include footer: © 2026 Nexus Apex | Built by Matany Labs.
 
-REMEMBER: Prefer simple static files (HTML/CSS/JS) over complex builds. Keep it natural and direct.
+REMEMBER: Respect Generation Profile from constraints. Use static output for static profile, and framework architecture for framework profile.
 
 ${FRONTEND_PRO_QUALITY_POLICY}`.trim();
 
 const normalizeConstraints = (rawConstraints = {}, fallbackProjectType = null) => {
-  void rawConstraints;
-  void fallbackProjectType;
-  const projectMode = 'FRONTEND_ONLY';
+  const requestedMode = String(rawConstraints?.projectMode || fallbackProjectType || '').trim().toUpperCase();
+  const projectMode = requestedMode === 'FRONTEND_ONLY' ? 'FRONTEND_ONLY' : 'FRONTEND_ONLY';
 
   const selectedFeatures = Array.isArray(rawConstraints?.selectedFeatures)
     ? rawConstraints.selectedFeatures.filter((item) => typeof item === 'string' && item.trim().length > 0)
@@ -955,7 +956,21 @@ const normalizeConstraints = (rawConstraints = {}, fallbackProjectType = null) =
       rawConstraints?.contextIntelligenceMode === 'max' ||
       rawConstraints?.contextIntelligenceMode === 'strict_full'
         ? rawConstraints.contextIntelligenceMode
-        : 'balanced_graph'
+        : 'balanced_graph',
+    touchBudgetMode:
+      rawConstraints?.touchBudgetMode === 'minimal' || rawConstraints?.touchBudgetMode === 'adaptive'
+        ? rawConstraints.touchBudgetMode
+        : 'adaptive',
+    generationProfile:
+      rawConstraints?.generationProfile === 'static' || rawConstraints?.generationProfile === 'framework'
+        ? rawConstraints.generationProfile
+        : 'auto',
+    destructiveSafetyMode:
+      rawConstraints?.destructiveSafetyMode === 'manual_confirm' ||
+      rawConstraints?.destructiveSafetyMode === 'no_delete_move' ||
+      rawConstraints?.destructiveSafetyMode === 'backup_then_apply'
+        ? rawConstraints.destructiveSafetyMode
+        : 'backup_then_apply'
   };
 };
 
@@ -968,10 +983,15 @@ const buildConstraintsBlock = (constraints, prompt = '') => {
   const frontendModeRules = constraints.projectMode === 'FRONTEND_ONLY'
     ? [
         'Frontend Defaults:',
-        '- Default to adaptive multi-page vanilla static output.',
-        '- Use single-page only for simple prompts; switch to multi-page when scope is broader.',
-        '- Never produce React/Next/Vite structure.',
-        '- If multi-page static is used, include route map contract (site-map.json or equivalent).',
+        constraints.generationProfile === 'framework'
+          ? '- Framework profile enabled: allow React/Next/Vite structure when it matches request/workspace.'
+          : '- Static profile enabled: default to adaptive multi-page vanilla static output.',
+        constraints.generationProfile === 'framework'
+          ? '- Keep output frontend-only and modular (components/pages/styles/utils).'
+          : '- Use single-page only for simple prompts; switch to multi-page when scope is broader.',
+        constraints.generationProfile === 'framework'
+          ? '- Do not create backend/server/database files in framework profile.'
+          : '- If multi-page static is used, include route map contract (site-map.json or equivalent).',
         '',
         FRONTEND_PRO_QUALITY_POLICY
       ].join('\n')
@@ -984,6 +1004,9 @@ const buildConstraintsBlock = (constraints, prompt = '') => {
     `Site Architecture Mode: ${constraints.siteArchitectureMode || 'adaptive_multi_page'}`,
     `File Control Mode: ${constraints.fileControlMode || 'safe_full'}`,
     `Context Intelligence Mode: ${constraints.contextIntelligenceMode || 'balanced_graph'}`,
+    `Generation Profile: ${constraints.generationProfile || 'auto'}`,
+    `Destructive Safety: ${constraints.destructiveSafetyMode || 'backup_then_apply'}`,
+    `Touch Budget Mode: ${constraints.touchBudgetMode || 'adaptive'}`,
     'Required Features:',
     featureLines.length > 0 ? featureLines.join('\n') : '- none',
     '',
@@ -1523,7 +1546,11 @@ app.post(generateRouteRegex, generateLimiter, async (req, res) => {
     // Legacy demo fallback (kept for compatibility but unreachable when provider is required).
     const explicitFrameworkRequested = hasExplicitFrameworkRequest(finalPrompt);
     if (!isDeepSeekConfigured()) {
-      if (constraints.projectMode === 'FRONTEND_ONLY' && !explicitFrameworkRequested) {
+      if (
+        constraints.projectMode === 'FRONTEND_ONLY' &&
+        constraints.generationProfile !== 'framework' &&
+        !explicitFrameworkRequested
+      ) {
         const siteMap = [
           '[[START_FILE: site-map.json]]',
           '{',

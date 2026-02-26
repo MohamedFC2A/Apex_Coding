@@ -2,8 +2,13 @@ import { createWithEqualityFn } from 'zustand/traditional';
 import { persist } from 'zustand/middleware';
 import { ProjectFile, FileStructure, FileSystem } from '@/types';
 import { normalizeStoredPath } from '@/utils/workspacePaths';
-import { applyWorkspaceDelta, clearWorkspace, loadWorkspace } from '@/utils/workspaceDb';
-import type { ConstraintEnforcement } from '@/types/constraints';
+import { applyWorkspaceDelta, clearWorkspace, createWorkspaceCheckpoint, loadWorkspace } from '@/utils/workspaceDb';
+import type {
+  ConstraintEnforcement,
+  DestructiveSafetyMode,
+  GenerationProfile,
+  TouchBudgetMode
+} from '@/types/constraints';
 
 export type ProjectType = 'FRONTEND_ONLY';
 
@@ -14,6 +19,9 @@ interface ProjectState {
   selectedFeatures: string[];
   customFeatureTags: string[];
   constraintsEnforcement: ConstraintEnforcement;
+  generationProfile: GenerationProfile;
+  destructiveSafetyMode: DestructiveSafetyMode;
+  touchBudgetMode: TouchBudgetMode;
   files: ProjectFile[];
   fileStructure: FileStructure[];
   fileSystem?: FileSystem;
@@ -31,6 +39,9 @@ interface ProjectState {
   setSelectedFeatures: (features: string[]) => void;
   setCustomFeatureTags: (tags: string[]) => void;
   setConstraintsEnforcement: (mode: ConstraintEnforcement) => void;
+  setGenerationProfile: (mode: GenerationProfile) => void;
+  setDestructiveSafetyMode: (mode: DestructiveSafetyMode) => void;
+  setTouchBudgetMode: (mode: TouchBudgetMode) => void;
   setFiles: (files: ProjectFile[]) => void;
   setFileStructure: (structure: FileStructure[]) => void;
   setActiveFile: (path: string) => void;
@@ -53,6 +64,9 @@ const initialState = {
   selectedFeatures: [] as string[],
   customFeatureTags: [] as string[],
   constraintsEnforcement: 'hard' as ConstraintEnforcement,
+  generationProfile: 'auto' as GenerationProfile,
+  destructiveSafetyMode: 'backup_then_apply' as DestructiveSafetyMode,
+  touchBudgetMode: 'adaptive' as TouchBudgetMode,
   files: [],
   fileStructure: [],
   fileSystem: {},
@@ -191,6 +205,9 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
                 ? loaded.meta.customFeatureTags
                 : current.customFeatureTags,
               constraintsEnforcement: loaded.meta?.constraintsEnforcement ?? current.constraintsEnforcement,
+              generationProfile: loaded.meta?.generationProfile ?? current.generationProfile,
+              destructiveSafetyMode: loaded.meta?.destructiveSafetyMode ?? current.destructiveSafetyMode,
+              touchBudgetMode: loaded.meta?.touchBudgetMode ?? current.touchBudgetMode,
               stack: loaded.meta?.stack ?? current.stack,
               description: loaded.meta?.description ?? current.description,
               activeFile: toNormalizedPath(loaded.meta?.activeFile || '') || current.activeFile || (restoredFiles[0]?.path || null),
@@ -225,6 +242,9 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
                   selectedFeatures: current.selectedFeatures || [],
                   customFeatureTags: current.customFeatureTags || [],
                   constraintsEnforcement: current.constraintsEnforcement || 'hard',
+                  generationProfile: current.generationProfile || 'auto',
+                  destructiveSafetyMode: current.destructiveSafetyMode || 'backup_then_apply',
+                  touchBudgetMode: current.touchBudgetMode || 'adaptive',
                   stack: String(parsed?.stack || current.stack || ''),
                   description: String(parsed?.description || current.description || ''),
                   activeFile: toNormalizedPath(String(parsed?.activeFile || current.activeFile || '')) || null,
@@ -239,6 +259,9 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
                   selectedFeatures: legacyMeta.selectedFeatures,
                   customFeatureTags: legacyMeta.customFeatureTags,
                   constraintsEnforcement: legacyMeta.constraintsEnforcement,
+                  generationProfile: legacyMeta.generationProfile,
+                  destructiveSafetyMode: legacyMeta.destructiveSafetyMode,
+                  touchBudgetMode: legacyMeta.touchBudgetMode,
                   stack: legacyMeta.stack,
                   description: legacyMeta.description,
                   activeFile: legacyMeta.activeFile ?? normalizedLegacyFiles[0]?.path ?? null,
@@ -279,6 +302,12 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
       setCustomFeatureTags: (tags) => set({ customFeatureTags: tags }),
 
       setConstraintsEnforcement: (mode) => set({ constraintsEnforcement: mode }),
+
+      setGenerationProfile: (mode) => set({ generationProfile: mode }),
+
+      setDestructiveSafetyMode: (mode) => set({ destructiveSafetyMode: mode }),
+
+      setTouchBudgetMode: (mode) => set({ touchBudgetMode: mode }),
 
       setFiles: (files) => {
         const normalizedFiles = normalizeProjectFiles(files);
@@ -463,6 +492,9 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
         selectedFeatures: state.selectedFeatures,
         customFeatureTags: state.customFeatureTags,
         constraintsEnforcement: state.constraintsEnforcement,
+        generationProfile: state.generationProfile,
+        destructiveSafetyMode: state.destructiveSafetyMode,
+        touchBudgetMode: state.touchBudgetMode,
         fileStructure: state.fileStructure,
         activeFile: state.activeFile,
         stack: state.stack,
@@ -498,6 +530,7 @@ if (typeof window !== 'undefined') {
 
     let flushTimer: number | null = null;
     let backupTimer: number | null = null;
+    let lastCheckpointAt = 0;
     const pendingUpserts = new Map<string, ProjectFile>();
     const pendingDeletes = new Set<string>();
     let pendingMeta: {
@@ -507,6 +540,9 @@ if (typeof window !== 'undefined') {
       selectedFeatures: string[];
       customFeatureTags: string[];
       constraintsEnforcement: ConstraintEnforcement;
+      generationProfile: GenerationProfile;
+      destructiveSafetyMode: DestructiveSafetyMode;
+      touchBudgetMode: TouchBudgetMode;
       stack: string;
       description: string;
       activeFile: string | null;
@@ -529,6 +565,11 @@ if (typeof window !== 'undefined') {
 
       if (!meta && upsertFiles.length === 0 && deletePaths.length === 0) return;
       await applyWorkspaceDelta({ meta: meta ?? undefined, upsertFiles, deletePaths }).catch(() => undefined);
+      const now = Date.now();
+      if (now - lastCheckpointAt > 45_000) {
+        lastCheckpointAt = now;
+        void createWorkspaceCheckpoint('autosave').catch(() => undefined);
+      }
     };
 
     const writeLegacyAutosaveBackup = () => {
@@ -581,6 +622,9 @@ if (typeof window !== 'undefined') {
         selectedFeatures: state.selectedFeatures,
         customFeatureTags: state.customFeatureTags,
         constraintsEnforcement: state.constraintsEnforcement,
+        generationProfile: state.generationProfile,
+        destructiveSafetyMode: state.destructiveSafetyMode,
+        touchBudgetMode: state.touchBudgetMode,
         stack: state.stack,
         description: state.description,
         activeFile: toNormalizedPath(state.activeFile || '') || null,

@@ -59,19 +59,19 @@
     --text-muted: rgba(255, 255, 255, 0.35);
     
     /* Glass & Border */
-    --glass-blur: 24px;
-    --glass-blur-heavy: 40px;
-    --glass-bg: rgba(255, 255, 255, 0.03);
-    --glass-bg-hover: rgba(255, 255, 255, 0.06);
-    --glass-bg-active: rgba(255, 255, 255, 0.1);
+    --glass-blur: 32px;
+    --glass-blur-heavy: 48px;
+    --glass-bg: rgba(255, 255, 255, 0.015);
+    --glass-bg-hover: rgba(255, 255, 255, 0.04);
+    --glass-bg-active: rgba(255, 255, 255, 0.08);
     
-    --border-subtle: rgba(255, 255, 255, 0.06);
-    --border-white: rgba(255, 255, 255, 0.08);
-    --border-white-hover: rgba(255, 255, 255, 0.15);
-    --border-white-active: rgba(255, 255, 255, 0.22);
+    --border-subtle: rgba(255, 255, 255, 0.03);
+    --border-white: rgba(255, 255, 255, 0.06);
+    --border-white-hover: rgba(255, 255, 255, 0.12);
+    --border-white-active: rgba(255, 255, 255, 0.2);
     
-    --highlight-white: rgba(255, 255, 255, 0.05);
-    --highlight-white-strong: rgba(255, 255, 255, 0.1);
+    --highlight-white: rgba(255, 255, 255, 0.02);
+    --highlight-white-strong: rgba(255, 255, 255, 0.08);
     
     /* Spacing Tokens */
     --space-1: 4px;
@@ -93,14 +93,14 @@
     --radius-full: 9999px;
     
     /* Shadows */
-    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
-    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
-    --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.55);
-    --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    --shadow-glow-blue: 0 0 30px var(--apex-primary-glow);
-    --shadow-glow-purple: 0 0 30px var(--apex-accent-glow);
-    --shadow-glow-cyan: 0 0 30px var(--apex-cyan-glow);
+    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 16px 42px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.6);
+    --shadow-glass: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    --shadow-glow-blue: 0 0 40px var(--apex-primary-glow);
+    --shadow-glow-purple: 0 0 40px var(--apex-accent-glow);
+    --shadow-glow-cyan: 0 0 40px var(--apex-cyan-glow);
     
     /* Animation Timings */
     --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
@@ -258,24 +258,24 @@ html, body {
 /* ==================== DARK LIQUID GLASS CORE ==================== */
 @layer utilities {
   .liquid-glass {
-    background: rgba(10, 10, 10, 0.90);
+    background: rgba(8, 8, 10, 0.85);
     backdrop-filter: blur(var(--glass-blur));
     -webkit-backdrop-filter: blur(var(--glass-blur));
     border: 1px solid var(--border-white);
     box-shadow: 
-      0 8px 32px rgba(0, 0, 0, 0.6),
-      0 2px 8px rgba(0, 0, 0, 0.4),
+      0 12px 40px rgba(0, 0, 0, 0.6),
+      0 4px 12px rgba(0, 0, 0, 0.4),
       inset 0 1px 0 var(--highlight-white);
     border-radius: 16px;
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .liquid-glass:hover {
-    background: rgba(15, 15, 15, 0.95);
+    background: rgba(12, 12, 14, 0.90);
     border-color: var(--border-white-hover);
     box-shadow: 
-      0 12px 48px rgba(0, 0, 0, 0.7),
-      0 4px 12px rgba(0, 0, 0, 0.5),
+      0 16px 60px rgba(0, 0, 0, 0.8),
+      0 6px 16px rgba(0, 0, 0, 0.5),
       inset 0 1px 0 var(--highlight-white-strong);
     transform: translateY(-2px);
   }
@@ -501,12 +501,12 @@ html, body {
 /* Premium Glass Effects */
 .apex-glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur-heavy)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur-heavy)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(200%);
   border: 1px solid var(--border-white);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-glass);
-  transition: all var(--duration-normal) var(--ease-smooth);
+  transition: all var(--duration-normal) var(--ease-spring);
   position: relative;
   overflow: hidden;
 }
@@ -514,25 +514,34 @@ html, body {
 .apex-glass::before {
   content: '';
   position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 60%);
+}
+
+.apex-glass::after {
+  content: '';
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-  opacity: 0.8;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  opacity: 0.9;
 }
 
 .apex-glass:hover {
   background: var(--glass-bg-hover);
   border-color: var(--border-white-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-xl);
 }
 
 .apex-glass-active,
 .apex-glass:active {
   background: var(--glass-bg-active);
   border-color: var(--border-white-active);
+  transform: translateY(0);
 }
 
 /* Apex Card Variants */

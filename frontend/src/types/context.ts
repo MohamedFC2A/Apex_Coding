@@ -24,6 +24,28 @@ export interface CompressionSnapshot {
   lastCompressedAt: number;
 }
 
+export interface MemoryFact {
+  id: string;
+  category: 'working' | 'decision' | 'task';
+  summary: string;
+  relatedFiles: string[];
+  confidence: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MemoryLedger {
+  working: MemoryFact[];
+  decisions: MemoryFact[];
+  tasks: MemoryFact[];
+}
+
+export interface MemorySnapshot {
+  version: 1;
+  generatedAt: number;
+  ledger: MemoryLedger;
+}
+
 export interface ActiveModelProfile {
   plannerModel: string;
   executorModel: string;

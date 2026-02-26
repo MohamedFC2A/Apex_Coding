@@ -5,8 +5,10 @@ export type SiteArchitectureMode = 'adaptive_multi_page' | 'single_page' | 'forc
 export type FileControlMode = 'safe_full' | 'create_edit_only';
 export type ContextIntelligenceMode = 'balanced_graph' | 'light' | 'max' | 'strict_full';
 export type AnalysisMode = 'strict_full';
-export type TouchBudgetMode = 'minimal';
+export type TouchBudgetMode = 'minimal' | 'adaptive';
 export type PostProcessMode = 'safety_only';
+export type GenerationProfile = 'auto' | 'static' | 'framework';
+export type DestructiveSafetyMode = 'backup_then_apply' | 'manual_confirm' | 'no_delete_move';
 
 export interface GenerationConstraints {
   projectMode: ProjectMode;
@@ -21,6 +23,8 @@ export interface GenerationConstraints {
   touchBudgetMode?: TouchBudgetMode;
   postProcessMode?: PostProcessMode;
   minContextConfidence?: number;
+  generationProfile?: GenerationProfile;
+  destructiveSafetyMode?: DestructiveSafetyMode;
 }
 
 export type ToolFeatureCategory = 'ui' | 'ux' | 'quality' | 'integration';

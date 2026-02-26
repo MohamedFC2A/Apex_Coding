@@ -109,7 +109,18 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
 
   const touchedPaths = new Set();
   const createdPaths = new Set();
-  const maxTouchedFiles = Math.max(1, Number(writePolicy?.maxTouchedFiles || 1));
+  const requestedTouchMode = String(writePolicy?.touchBudgetMode || 'minimal').toLowerCase();
+  const providedMaxTouched = Number(writePolicy?.maxTouchedFiles || 0);
+  const inferredAdaptiveBudget = Math.max(
+    2,
+    Math.min(48, allowedEditSet.size + createRules.length + Math.max(2, Math.ceil(allowedEditSet.size / 6)))
+  );
+  const maxTouchedFiles =
+    Number.isFinite(providedMaxTouched) && providedMaxTouched > 0
+      ? Math.max(1, providedMaxTouched)
+      : requestedTouchMode === 'adaptive'
+        ? inferredAdaptiveBudget
+        : 1;
   const strictEditScope = allowedEditSet.size > 0 && String(writePolicy?.interactionMode || '').toLowerCase() === 'edit';
 
   const isCreateAllowed = (path) => {
@@ -302,6 +313,7 @@ const buildPolicyRepairPrompt = ({ originalPrompt, violation, writePolicy, works
       allowedEditPaths: writePolicy?.allowedEditPaths || [],
       allowedCreateRules: writePolicy?.allowedCreateRules || [],
       maxTouchedFiles: writePolicy?.maxTouchedFiles || 1,
+      touchBudgetMode: writePolicy?.touchBudgetMode || 'minimal',
       analysisConfidence: writePolicy?.analysisConfidence ?? workspaceAnalysis?.confidence ?? null
     },
     null,

@@ -29,6 +29,7 @@ interface BuildContextBundleOptions {
   activeFile?: string | null;
   recentPreviewErrors?: string[];
   prompt?: string;
+  memoryHints?: string[];
   mode?: 'balanced_graph' | 'light' | 'max' | 'strict_full';
   maxFiles?: number;
   maxChars?: number;
@@ -145,7 +146,9 @@ export const buildContextBundle = (options: BuildContextBundleOptions): ContextB
   const maxChars = Math.max(20_000, Number(options.maxChars || 120_000));
   const activePath = normalizePath(options.activeFile || '');
   const recentPreviewErrors = (options.recentPreviewErrors || []).map((item) => String(item || ''));
-  const tokens = tokenize(options.prompt || '');
+  const memoryHints = Array.isArray(options.memoryHints) ? options.memoryHints : [];
+  const tokenSeed = [options.prompt || '', ...memoryHints.map((item) => String(item || ''))].join('\n');
+  const tokens = tokenize(tokenSeed);
   const manifest = options.workspaceAnalysis?.manifest || buildManifest(files);
 
   if (options.mode === 'strict_full' && options.workspaceAnalysis) {

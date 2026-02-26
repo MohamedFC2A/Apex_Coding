@@ -4,9 +4,10 @@ import { useSubscriptionStore } from '@/stores/subscriptionStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAIStore } from '@/stores/aiStore';
 import { usePreviewStore } from '@/stores/previewStore';
-import type { GenerationConstraints } from '@/types/constraints';
+import type { GenerationConstraints, GenerationProfile } from '@/types/constraints';
 import { buildAIOrganizationPolicyBlock, mergePromptWithConstraints } from '@/services/constraintPromptBuilder';
 import { buildContextBundle } from '@/services/contextRetrievalEngine';
+import { summarizeMemorySnapshot } from '@/services/memoryEngine';
 import { parseFileOpEventPayload } from '@/services/fileOpEvents';
 import type { WorkspaceAnalysisReport } from '@/types/context';
 import type { StrictWritePolicy } from '@/services/workspaceIntelligence';
@@ -67,11 +68,14 @@ const buildContextMetaPayload = (extra?: Record<string, unknown>) => {
   const decisionMemory = (ai.compressionSnapshot?.summaryBlocks || [])
     .flatMap((block) => block.keyDecisions || [])
     .slice(0, 16);
+  const memorySummary = summarizeMemorySnapshot(ai.memorySnapshot);
   return {
     budget: ai.contextBudget,
     compressionSummary: ai.compressionSnapshot,
     sessionId: ai.currentSessionId,
     decisionMemory,
+    memorySummary,
+    memorySnapshot: ai.memorySnapshot || null,
     ...(extra || {})
   };
 };
@@ -94,6 +98,28 @@ const summarizeTopFolders = (paths: string[]) => {
 const hasExplicitFrameworkRequest = (prompt: string) => {
   const text = String(prompt || '').toLowerCase();
   return /\breact\b|\bnext(?:\.js)?\b|\bvite\b|\btypescript app\b|\bvue\b|\bangular\b|\bsvelte\b/.test(text);
+};
+
+const hasFrameworkProjectShape = (paths: string[]) => {
+  const normalized = paths.map((item) => String(item || '').replace(/\\/g, '/').toLowerCase());
+  return normalized.some((path) =>
+    path.includes('/src/app/') ||
+    path.endsWith('next.config.mjs') ||
+    path.endsWith('next.config.js') ||
+    path.endsWith('vite.config.ts') ||
+    path.endsWith('vite.config.js') ||
+    path.endsWith('package.json')
+  );
+};
+
+const resolveGenerationProfile = (args: {
+  requested?: GenerationProfile;
+  prompt: string;
+  filePaths: string[];
+}): Exclude<GenerationProfile, 'auto'> => {
+  if (args.requested === 'static' || args.requested === 'framework') return args.requested;
+  if (hasExplicitFrameworkRequest(args.prompt) || hasFrameworkProjectShape(args.filePaths)) return 'framework';
+  return 'static';
 };
 
 const getErrorMessage = (err: any, fallback: string) => {
@@ -202,18 +228,42 @@ STRICT PLANNING RULES:
 4. Each task must be a single logical step.
 5. Ensure the plan covers the entire user request.`.trim();
 
-          const selectedProjectType: GenerationConstraints['projectMode'] = 'FRONTEND_ONLY';
-          void projectType;
+          const selectedProjectType: GenerationConstraints['projectMode'] =
+            projectType === 'FRONTEND_ONLY' ? projectType : 'FRONTEND_ONLY';
           const organizationPolicyBlock = buildAIOrganizationPolicyBlock(selectedProjectType);
           const transportPrompt = trimPromptForBackend(prompt, BACKEND_PLAN_PROMPT_LIMIT);
           const enhancedRequestPrompt = constraints
             ? mergePromptWithConstraints(transportPrompt.prompt, constraints)
             : transportPrompt.prompt;
           const explicitFrameworkRequested = hasExplicitFrameworkRequest(enhancedRequestPrompt);
+          const generationProfile = resolveGenerationProfile({
+            requested: constraints?.generationProfile,
+            prompt: enhancedRequestPrompt,
+            filePaths: useProjectStore.getState().files.map((file) => file.path || file.name || '')
+          });
 
           // Add projectType-specific guidelines
           if (selectedProjectType === 'FRONTEND_ONLY') {
-            planningRules += `
+            if (generationProfile === 'framework') {
+              planningRules += `
+
+[PROJECT TYPE: FRONTEND ONLY / FRAMEWORK PROFILE]
+STRUCTURE:
+- Prefer framework-oriented frontend architecture (React/Next/Vite) based on request.
+- Never generate backend/server/database/auth files.
+- Use reusable components, route pages, and typed utility modules.
+- Keep folder conventions: src/app or src/pages, src/components, src/styles, src/lib/utils, public/.
+- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES (honor it)' : 'NO (choose best framework baseline)'}.
+
+COMPONENT DECOMPOSITION:
+- Break the UI into named sections and reusable components.
+- Each plan step must specify target components/pages and affected files.
+
+QUALITY:
+- Each step must be atomic, testable, and preview-verifiable.
+- Enforce complete-first-pass delivery with no placeholder TODOs.`;
+            } else {
+              planningRules += `
 
 [PROJECT TYPE: FRONTEND ONLY]
 STRUCTURE:
@@ -226,7 +276,7 @@ STRUCTURE:
 - Keep shared style.css + script.js as defaults unless architecture requires scoped files.
 - Use route-oriented kebab-case naming for static pages.
 - Do NOT create package.json or build configs.
-- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES (ignored: static-only mode)' : 'NO'}.
+- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES (switch profile if needed)' : 'NO'}.
 - Include a route map contract (site-map.json or equivalent structured mapping) when multi-page output is used.
 
 COMPONENT DECOMPOSITION:
@@ -255,6 +305,7 @@ QUALITY:
 - Each step must be atomic, testable, and independently verifiable in live preview.
 - Optimize for instant preview — all files must be valid, linkable HTML/CSS/JS.
 - Enforce complete-first-pass delivery with no placeholder TODOs.`;
+            }
           }
 
         const enhancedPlanPrompt = `${planningRules}\n\n${organizationPolicyBlock}\n\n[USER REQUEST]\n${enhancedRequestPrompt}`;
@@ -414,6 +465,7 @@ QUALITY:
         activeFile: projectState.activeFile,
         recentPreviewErrors: previewState.logs.slice(-24).map((entry) => String(entry.message || '')),
         prompt: effectivePrompt,
+        memoryHints: aiState.memorySnapshot?.ledger?.decisions?.map((item) => item.summary) || [],
         mode: constraints?.contextIntelligenceMode || 'balanced_graph',
         maxFiles: constraints?.contextIntelligenceMode === 'strict_full' ? 40 : 24,
         maxChars: 120_000,
@@ -422,7 +474,7 @@ QUALITY:
       const retrievalTrace = contextBundle.retrievalTrace;
       const normalizedFiles = contextBundle.files.map((item) => item.path);
 
-      const selectedProjectMode: GenerationConstraints['projectMode'] = 'FRONTEND_ONLY';
+      const selectedProjectMode: GenerationConstraints['projectMode'] = constraints?.projectMode || 'FRONTEND_ONLY';
       const foldersDigest = summarizeTopFolders(normalizedFiles);
       const recentPreviewErrors = previewState.logs
         .slice(-20)
@@ -453,20 +505,46 @@ QUALITY:
 
       const constrainedPrompt = constraints ? mergePromptWithConstraints(effectivePrompt, constraints) : effectivePrompt;
       const explicitFrameworkRequested = hasExplicitFrameworkRequest(constrainedPrompt);
+      const generationProfile = resolveGenerationProfile({
+        requested: constraints?.generationProfile,
+        prompt: constrainedPrompt,
+        filePaths: projectState.files.map((file) => file.path || file.name || '')
+      });
       const frontendStrictModeBanner =
         selectedProjectMode === 'FRONTEND_ONLY'
           ? [
               '[FRONTEND STRICT MODE]',
-              '- Default architecture: adaptive multi-page vanilla HTML/CSS/JS.',
-              '- Use single-page only for simple requests; otherwise split into linked pages.',
+              generationProfile === 'framework'
+                ? '- Framework profile enabled: choose React/Next/Vite structure that best matches request + existing workspace.'
+                : '- Static profile enabled: adaptive multi-page vanilla HTML/CSS/JS by default.',
+              generationProfile === 'framework'
+                ? '- Keep frontend-only boundaries, but allow framework scaffolding and modular architecture.'
+                : '- Use single-page only for simple requests; otherwise split into linked pages.',
               '- Decide the full target file map first, then implement files in deterministic order.',
-              '- Keep folder-first organization: pages/, components/, styles/, scripts/, assets/, data/.',
-              '- Keep shared styling/behavior centralized unless architecture requires scoped files.',
-              '- Never produce React/Next/Vite scaffolding.',
-              `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES (ignored: static-only mode)' : 'NO'}.`,
+              generationProfile === 'framework'
+                ? '- Keep folder organization: src/app|pages, src/components, src/styles, src/lib, public.'
+                : '- Keep folder-first organization: pages/, components/, styles/, scripts/, assets/, data/.',
+              generationProfile === 'framework'
+                ? `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES (honor it)' : 'NO (auto-select best fit)'}.`
+                : `- Explicit framework request detected: ${explicitFrameworkRequested ? 'YES (switching to framework profile)' : 'NO'}.`,
               '- Follow strict quality gate: structure + naming + routing + a11y + responsive + syntax-safe JS.'
             ].join('\n')
           : '';
+
+      const architectureExecutionRules =
+        generationProfile === 'framework'
+          ? [
+              '- If project mode is FRONTEND_ONLY: use a framework-friendly frontend architecture when request/workspace indicates it.',
+              '- Use reusable typed components, predictable routing, and modular style organization.',
+              '- Never generate backend/server/database/auth files.'
+            ].join('\n')
+          : [
+              '- If project mode is FRONTEND_ONLY: default to adaptive multi-page vanilla frontend architecture.',
+              '- For FRONTEND_ONLY static profile: lock a full file plan before writing code and execute file patches in a stable sequence.',
+              '- Use single-page only for simple requests; otherwise create linked pages with coherent navigation.',
+              '- Keep shared style.css and script.js defaults for static mode unless scoped files are clearly justified.',
+              '- Never generate React/Next/Vite structure in static profile.'
+            ].join('\n');
 
       const enhancedPrompt = `
 [SYSTEM PERSONA]
@@ -488,11 +566,10 @@ EXECUTION RULES:
 
 2. **WEB PROJECT REQUIREMENTS (PREVIEW RUNNER READY)**:
    - **STRUCTURE**:
-     - If project mode is FRONTEND_ONLY: default to adaptive multi-page vanilla frontend architecture.
-     - For FRONTEND_ONLY: lock a full file plan before writing code and execute file patches in a stable sequence.
-     - Use single-page only for simple requests; otherwise create linked pages with coherent navigation.
-     - Keep shared style.css and script.js defaults for static mode unless scoped files are clearly justified.
-     - Never generate React/Next/Vite structure.
+${architectureExecutionRules
+  .split('\n')
+  .map((line) => `     ${line}`)
+  .join('\n')}
      - **LIVE PREVIEW**: The project is executed in a Docker-based preview runner (not StackBlitz). Do NOT add StackBlitz/WebContainer scripts.
 
 3. **SURGICAL EDIT POLICY**:

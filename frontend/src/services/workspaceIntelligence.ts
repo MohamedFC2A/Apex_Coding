@@ -1,6 +1,7 @@
 import type { ProjectFile } from '@/types';
 import type { InteractionMode } from '@/stores/aiStore';
 import { buildDependencyEdges } from '@/services/contextGraph';
+import type { TouchBudgetMode } from '@/types/constraints';
 import type {
   WorkspaceAllowedCreateRule,
   WorkspaceAnalysisReport,
@@ -21,6 +22,7 @@ interface AnalyzeWorkspaceIntelligenceOptions {
 export interface StrictWritePolicy {
   mode: 'minimal';
   interactionMode: InteractionMode;
+  touchBudgetMode: TouchBudgetMode;
   allowedEditPaths: string[];
   allowedCreateRules: WorkspaceAllowedCreateRule[];
   maxTouchedFiles: number;
@@ -435,22 +437,29 @@ export const buildStrictWritePolicy = (args: {
   report: WorkspaceAnalysisReport;
   minContextConfidence?: number;
   interactionMode?: InteractionMode;
+  touchBudgetMode?: TouchBudgetMode;
 }): StrictWritePolicy => {
   const minConfidence = Math.max(0, Number(args.minContextConfidence ?? 80));
   const interactionMode = args.interactionMode || 'create';
+  const touchBudgetMode = args.touchBudgetMode || 'adaptive';
   const allowedEditPaths = Array.from(
     new Set(args.report.allowedEditPaths.map((path) => normalizePath(path)).filter(Boolean))
   );
   const editBudget = Math.max(1, allowedEditPaths.length);
   const createBudget = Math.max(0, args.report.allowedCreateRules.length);
-  const maxTouchedFiles =
+  const riskWeight = Math.max(1, args.report.riskFlags.length);
+  const expandedWeight = Math.max(1, Math.ceil(args.report.expandedReadSet.length / 6));
+  const adaptiveBase =
     interactionMode === 'edit'
-      ? Math.max(1, Math.min(12, editBudget + createBudget))
-      : Math.max(6, Math.min(24, allowedEditPaths.length + 4));
+      ? Math.max(1, Math.min(36, editBudget + Math.ceil(createBudget / 2) + expandedWeight + riskWeight))
+      : Math.max(6, Math.min(48, allowedEditPaths.length + createBudget + expandedWeight + 6));
+  const minimalBase = interactionMode === 'edit' ? Math.max(1, Math.min(12, editBudget + createBudget)) : Math.max(6, Math.min(24, allowedEditPaths.length + 4));
+  const maxTouchedFiles = touchBudgetMode === 'minimal' ? minimalBase : adaptiveBase;
 
   return {
     mode: 'minimal',
     interactionMode,
+    touchBudgetMode,
     allowedEditPaths,
     allowedCreateRules: args.report.allowedCreateRules,
     maxTouchedFiles,

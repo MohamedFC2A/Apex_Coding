@@ -421,10 +421,11 @@ export const validateConstraints = (
   const routingViolations: string[] = [];
   const namingViolations: string[] = [];
   const isFrontendOnly = constraints.projectMode === 'FRONTEND_ONLY';
+  const isStaticProfile = constraints.generationProfile !== 'framework';
   const qualityGateMode = constraints.qualityGateMode || 'strict';
   const retrievalCoverageScore = computeRetrievalCoverageScore(files);
 
-  if (isFrontendOnly && qualityGateMode === 'strict') {
+  if (isFrontendOnly && qualityGateMode === 'strict' && isStaticProfile) {
     qualityViolations.push(...validateFrontendStructure(files));
     qualityViolations.push(...validateHtmlQuality(files));
     qualityViolations.push(...validateCssQuality(files));

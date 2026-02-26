@@ -8,6 +8,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { FileSystem } from '@/types';
 import { getLanguageFromExtension } from '@/utils/stackDetector';
 import { LanguageIconBadge } from '@/components/files/LanguageIconBadge';
+import { motion, AnimatePresence } from 'framer-motion';
 
 type SidebarTab = 'files' | 'database';
 
@@ -21,18 +22,9 @@ type TreeNode = {
 };
 
 // --- Animations ---
-const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
-`;
-
 const shimmer = keyframes`
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
-`;
-
-const FadeInWrapper = styled.div`
-  animation: ${fadeIn} 0.3s ease forwards;
 `;
 
 // --- Styled Components ---
@@ -389,7 +381,12 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   };
 
   return (
-    <FadeInWrapper>
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -5 }}
+      transition={{ duration: 0.2 }}
+    >
       <TreeRow
         type="button"
         $active={isActive}
@@ -417,24 +414,32 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
           </StatusGroup>
         )}
       </TreeRow>
-      {isFolder && isOpen && node.children && node.children.length > 0 && (
-        <div>
-          {node.children.map((child) => (
-            <FileTreeItem
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              openNodes={openNodes}
-              onToggle={onToggle}
-              onSelectFile={onSelectFile}
-              activeFile={activeFile}
-              getStatus={getStatus}
-              isRTL={isRTL}
-            />
-          ))}
-        </div>
-      )}
-    </FadeInWrapper>
+      <AnimatePresence>
+        {isFolder && isOpen && node.children && node.children.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            {node.children.map((child) => (
+              <FileTreeItem
+                key={child.path}
+                node={child}
+                depth={depth + 1}
+                openNodes={openNodes}
+                onToggle={onToggle}
+                onSelectFile={onSelectFile}
+                activeFile={activeFile}
+                getStatus={getStatus}
+                isRTL={isRTL}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 };
 

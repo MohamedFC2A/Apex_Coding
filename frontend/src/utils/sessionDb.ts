@@ -1,6 +1,12 @@
 import type { FileStructure, ProjectFile } from '@/types';
-import { loadWorkspace } from '@/utils/workspaceDb';
-import type { ActiveModelProfile, CompressionSnapshot, ContextBudgetState } from '@/types/context';
+import { DB_NAME, DB_VERSION, SESSIONS_STORE, loadWorkspace, openWorkspaceDb } from '@/utils/workspaceDb';
+import type {
+  ActiveModelProfile,
+  CompressionSnapshot,
+  ContextBudgetState,
+  MemorySnapshot
+} from '@/types/context';
+import type { DestructiveSafetyMode, GenerationProfile, TouchBudgetMode } from '@/types/constraints';
 
 type StoredChatRole = 'system' | 'user' | 'assistant';
 
@@ -42,7 +48,11 @@ export type StoredHistorySession = {
   contextSize: number;
   contextBudget: ContextBudgetState;
   compressionSnapshot: CompressionSnapshot;
+  memorySnapshot?: MemorySnapshot;
   activeModelProfile: ActiveModelProfile;
+  generationProfile?: GenerationProfile;
+  destructiveSafetyMode?: DestructiveSafetyMode;
+  touchBudgetMode?: TouchBudgetMode;
   multiAgentEnabled?: boolean;
   executionPhase?: 'idle' | 'planning' | 'executing' | 'interrupted' | 'completed';
   writingFilePath?: string | null;
@@ -52,11 +62,7 @@ export type StoredHistorySession = {
   lastSuccessfulLine?: number;
 };
 
-const DB_NAME = 'apex-coding-workspace';
-const DB_VERSION = 2;
-const SESSIONS_STORE = 'sessions';
-
-let dbPromise: Promise<IDBDatabase> | null = null;
+const MAX_HISTORY_SESSIONS = 120;
 
 const coerceProjectType = (_value: unknown): 'FRONTEND_ONLY' => 'FRONTEND_ONLY';
 
@@ -68,36 +74,26 @@ const coerceExecutionPhase = (value: unknown): StoredHistorySession['executionPh
   return 'idle';
 };
 
-const openDb = (): Promise<IDBDatabase> => {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
-      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'path' });
-      if (!db.objectStoreNames.contains(SESSIONS_STORE)) {
-        const store = db.createObjectStore(SESSIONS_STORE, { keyPath: 'id' });
-        store.createIndex('by_updatedAt', 'updatedAt', { unique: false });
-      } else {
-        try {
-          const store = req.transaction?.objectStore(SESSIONS_STORE);
-          if (store && !Array.from(store.indexNames).includes('by_updatedAt')) {
-            store.createIndex('by_updatedAt', 'updatedAt', { unique: false });
-          }
-        } catch {
-          // ignore
-        }
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  return dbPromise;
+const coerceGenerationProfile = (value: unknown): GenerationProfile => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'static' || normalized === 'framework') return normalized;
+  return 'auto';
+};
+
+const coerceDestructiveSafetyMode = (value: unknown): DestructiveSafetyMode => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'manual_confirm' || normalized === 'no_delete_move') return normalized;
+  return 'backup_then_apply';
+};
+
+const coerceTouchBudgetMode = (value: unknown): TouchBudgetMode => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'minimal') return 'minimal';
+  return 'adaptive';
 };
 
 const withTx = async <T>(storeNames: string[], mode: IDBTransactionMode, fn: (tx: IDBTransaction) => Promise<T>) => {
-  const db = await openDb();
+  const db = await openWorkspaceDb();
   const tx = db.transaction(storeNames, mode);
   const done = new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
@@ -109,9 +105,46 @@ const withTx = async <T>(storeNames: string[], mode: IDBTransactionMode, fn: (tx
   return result;
 };
 
+const normalizeSession = (raw: StoredHistorySession): StoredHistorySession => ({
+  ...raw,
+  projectType: coerceProjectType(raw?.projectType),
+  executionPhase: coerceExecutionPhase(raw?.executionPhase),
+  generationProfile: coerceGenerationProfile((raw as any)?.generationProfile),
+  destructiveSafetyMode: coerceDestructiveSafetyMode((raw as any)?.destructiveSafetyMode),
+  touchBudgetMode: coerceTouchBudgetMode((raw as any)?.touchBudgetMode)
+});
+
+const pruneSessions = async (store: IDBObjectStore) => {
+  const ids: string[] = [];
+  await new Promise<void>((resolve, reject) => {
+    const req = store.index('by_updatedAt').openCursor(null, 'prev');
+    req.onsuccess = () => {
+      const cursor = req.result as IDBCursorWithValue | null;
+      if (!cursor) {
+        resolve();
+        return;
+      }
+      ids.push(String(cursor.primaryKey || ''));
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+  if (ids.length <= MAX_HISTORY_SESSIONS) return;
+  for (const id of ids.slice(MAX_HISTORY_SESSIONS)) {
+    store.delete(id);
+  }
+};
+
 export const saveSessionToDisk = async (session: StoredHistorySession) => {
   return withTx([SESSIONS_STORE], 'readwrite', async (tx) => {
-    tx.objectStore(SESSIONS_STORE).put(session);
+    const store = tx.objectStore(SESSIONS_STORE);
+    store.put({
+      ...session,
+      generationProfile: coerceGenerationProfile((session as any).generationProfile),
+      destructiveSafetyMode: coerceDestructiveSafetyMode((session as any).destructiveSafetyMode),
+      touchBudgetMode: coerceTouchBudgetMode((session as any).touchBudgetMode)
+    });
+    await pruneSessions(store);
     return;
   });
 };
@@ -131,18 +164,14 @@ export const loadSessionsFromDisk = async (limit = 40): Promise<StoredHistorySes
             const cursor = req.result as IDBCursorWithValue | null;
             if (!cursor) return resolve(out);
             const raw = cursor.value as StoredHistorySession;
-            out.push({
-              ...raw,
-              projectType: coerceProjectType(raw?.projectType),
-              executionPhase: coerceExecutionPhase(raw?.executionPhase)
-            });
+            out.push(normalizeSession(raw));
             if (out.length >= limit) return resolve(out);
             cursor.continue();
           };
           req.onerror = () => reject(req.error);
         });
       } catch {
-        // fallback to full scan below
+        // fallback below
       }
     }
 
@@ -150,11 +179,7 @@ export const loadSessionsFromDisk = async (limit = 40): Promise<StoredHistorySes
       const req = store.getAll();
       req.onsuccess = () => {
         const records = (Array.isArray(req.result) ? req.result : []) as StoredHistorySession[];
-        const normalized = records.map((record) => ({
-          ...record,
-          projectType: coerceProjectType(record?.projectType),
-          executionPhase: coerceExecutionPhase(record?.executionPhase)
-        }));
+        const normalized = records.map((record) => normalizeSession(record));
         normalized.sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
         resolve(normalized.slice(0, limit));
       };
@@ -232,9 +257,14 @@ export const archiveCurrentWorkspaceAsSession = async (
       executorModel: 'executor:auto',
       specialistModels: {}
     },
+    generationProfile: coerceGenerationProfile((meta as any)?.generationProfile),
+    destructiveSafetyMode: coerceDestructiveSafetyMode((meta as any)?.destructiveSafetyMode),
+    touchBudgetMode: coerceTouchBudgetMode((meta as any)?.touchBudgetMode),
     executionPhase: coerceExecutionPhase(session.executionPhase)
   };
 
   await saveSessionToDisk(record);
   return record;
 };
+
+export { DB_NAME, DB_VERSION };

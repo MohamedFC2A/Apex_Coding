@@ -7,10 +7,13 @@ import { repairTruncatedContent } from '@/utils/codeRepair';
 import { normalizePlanCategory } from '@/utils/planCategory';
 import { normalizeWorkspaceDirectoryPath, normalizeWorkspaceFilePath } from '@/utils/workspacePaths';
 import { loadSessionsFromDisk, saveSessionToDisk, type StoredHistorySession } from '@/utils/sessionDb';
+import { buildMemorySnapshot } from '@/services/memoryEngine';
+import type { DestructiveSafetyMode, GenerationProfile, TouchBudgetMode } from '@/types/constraints';
 import type {
   ActiveModelProfile,
   CompressionSnapshot,
   ContextBudgetState,
+  MemorySnapshot,
   WorkspaceAnalysisReport
 } from '@/types/context';
 
@@ -90,6 +93,10 @@ export interface HistorySession {
   contextSize: number;
   contextBudget: ContextBudgetState;
   compressionSnapshot: CompressionSnapshot;
+  memorySnapshot?: MemorySnapshot;
+  generationProfile?: GenerationProfile;
+  destructiveSafetyMode?: DestructiveSafetyMode;
+  touchBudgetMode?: TouchBudgetMode;
   activeModelProfile: ActiveModelProfile;
   multiAgentEnabled?: boolean;
   executionPhase?: ExecutionPhase;
@@ -162,6 +169,7 @@ interface AIStoreState {
   currentSessionId: string | null;
   contextBudget: ContextBudgetState;
   compressionSnapshot: CompressionSnapshot;
+  memorySnapshot: MemorySnapshot | null;
   brainEvents: BrainEvent[];
   analysisReport: WorkspaceAnalysisReport | null;
   policyViolations: string[];
@@ -247,7 +255,7 @@ const CONTEXT_CRITICAL_PCT = 90;
 const COMPRESSION_THRESHOLD_CHARS = 100_000;
 const KEEP_RECENT_MESSAGES = 8;
 const SUMMARY_CHUNK_SIZE = 5;
-const MAX_HISTORY_SESSIONS = 40;
+const MAX_HISTORY_SESSIONS = 120;
 const AI_EMERGENCY_SESSION_KEY = 'apex-ai-emergency-session';
 export const AI_NEW_CHAT_GUARD_KEY = 'apex-ai-new-chat-guard';
 
@@ -313,6 +321,13 @@ const readEmergencySession = (): Partial<HistorySession> | null => {
       planSteps: Array.isArray(parsed?.planSteps) ? parsed.planSteps : [],
       contextBudget: parsed?.contextBudget || DEFAULT_CONTEXT_BUDGET,
       compressionSnapshot: parsed?.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
+      memorySnapshot:
+        parsed?.memorySnapshot && typeof parsed.memorySnapshot === 'object'
+          ? (parsed.memorySnapshot as MemorySnapshot)
+          : undefined,
+      generationProfile: parsed?.generationProfile || 'auto',
+      destructiveSafetyMode: parsed?.destructiveSafetyMode || 'backup_then_apply',
+      touchBudgetMode: parsed?.touchBudgetMode || 'adaptive',
       activeModelProfile: parsed?.activeModelProfile || getActiveModelProfile(),
       executionPhase: coerceExecutionPhase(parsed?.executionPhase),
       multiAgentEnabled: Boolean(parsed?.multiAgentEnabled),
@@ -781,6 +796,7 @@ const buildInitialState = (): AIStoreState => ({
   currentSessionId: null,
   contextBudget: DEFAULT_CONTEXT_BUDGET,
   compressionSnapshot: DEFAULT_COMPRESSION_SNAPSHOT,
+  memorySnapshot: null,
   brainEvents: [],
   analysisReport: null,
   policyViolations: [],
@@ -910,6 +926,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         try {
           const thinkingMode = get().modelMode === 'thinking';
           const projectType = get().projectType;
+          const projectSettings = useProjectStore.getState();
           const constraints = {
             projectMode: 'FRONTEND_ONLY' as const,
             selectedFeatures: get().selectedFeatures,
@@ -920,7 +937,12 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             fileControlMode: 'safe_full' as const,
             contextIntelligenceMode: 'strict_full' as const,
             analysisMode: 'strict_full' as const,
-            touchBudgetMode: 'minimal' as const,
+            touchBudgetMode: (projectSettings.touchBudgetMode || 'adaptive') as 'minimal' | 'adaptive',
+            generationProfile: (projectSettings.generationProfile || 'auto') as 'auto' | 'static' | 'framework',
+            destructiveSafetyMode: (projectSettings.destructiveSafetyMode || 'backup_then_apply') as
+              | 'backup_then_apply'
+              | 'manual_confirm'
+              | 'no_delete_move',
             postProcessMode: 'safety_only' as const,
             minContextConfidence: 80
           };
@@ -1260,6 +1282,9 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         const description = projectStore.description || '';
         const activeFile = projectStore.activeFile || null;
         const fileStructure = projectStore.fileStructure || [];
+        const generationProfile = projectStore.generationProfile || 'auto';
+        const destructiveSafetyMode = projectStore.destructiveSafetyMode || 'backup_then_apply';
+        const touchBudgetMode = projectStore.touchBudgetMode || 'adaptive';
 
         const projectBytes = projectFiles.reduce((acc, f) => acc + (f.content ? f.content.length : 0), 0);
         const shouldSnapshotFileContents = projectFiles.length > 0 && projectBytes <= 700_000 && projectFiles.length <= 120;
@@ -1304,6 +1329,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         const contextBudget = calculateContextBudget(state.chatHistory, snapshotFiles);
         const contextSize = contextBudget.usedChars;
         const compressed = compressChatHistoryHierarchical(state.chatHistory, state.compressionSnapshot);
+        const memorySnapshot = buildMemorySnapshot({
+          chatHistory: state.chatHistory,
+          planSteps: state.planSteps
+        });
         const activeModelProfile = getActiveModelProfile();
         const fullChatHistory = state.chatHistory.map((message) => ({ ...message }));
         
@@ -1332,6 +1361,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           contextSize,
           contextBudget,
           compressionSnapshot: compressed.snapshot,
+          memorySnapshot,
+          generationProfile,
+          destructiveSafetyMode,
+          touchBudgetMode,
           activeModelProfile,
           multiAgentEnabled: state.multiAgentEnabled,
           executionPhase: state.executionPhase,
@@ -1392,6 +1425,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             contextSize: snapshot.contextSize,
             contextBudget: snapshot.contextBudget,
             compressionSnapshot: snapshot.compressionSnapshot,
+            memorySnapshot: snapshot.memorySnapshot,
+            generationProfile: snapshot.generationProfile,
+            destructiveSafetyMode: snapshot.destructiveSafetyMode,
+            touchBudgetMode: snapshot.touchBudgetMode,
             activeModelProfile: snapshot.activeModelProfile,
             executionPhase: snapshot.executionPhase,
             writingFilePath: snapshot.writingFilePath,
@@ -1421,6 +1458,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               planSteps: snapshot.planSteps,
               contextBudget: snapshot.contextBudget,
               compressionSnapshot: snapshot.compressionSnapshot,
+              memorySnapshot: snapshot.memorySnapshot,
+              generationProfile: snapshot.generationProfile,
+              destructiveSafetyMode: snapshot.destructiveSafetyMode,
+              touchBudgetMode: snapshot.touchBudgetMode,
               activeModelProfile: snapshot.activeModelProfile,
               multiAgentEnabled: state.multiAgentEnabled,
               executionPhase: snapshot.executionPhase,
@@ -1438,7 +1479,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
         set({
           contextBudget,
-          compressionSnapshot: compressed.snapshot
+          compressionSnapshot: compressed.snapshot,
+          memorySnapshot
         });
       },
 
@@ -1473,6 +1515,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               contextSize: Number(emergency.contextBudget?.usedChars || 0),
               contextBudget: emergency.contextBudget || DEFAULT_CONTEXT_BUDGET,
               compressionSnapshot: emergency.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
+              memorySnapshot: emergency.memorySnapshot,
+              generationProfile: (emergency as any).generationProfile || 'auto',
+              destructiveSafetyMode: (emergency as any).destructiveSafetyMode || 'backup_then_apply',
+              touchBudgetMode: (emergency as any).touchBudgetMode || 'adaptive',
               activeModelProfile: emergency.activeModelProfile || getActiveModelProfile(),
               multiAgentEnabled: Boolean((emergency as any)?.multiAgentEnabled),
               executionPhase: coerceExecutionPhase(emergency.executionPhase),
@@ -1526,6 +1572,10 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             contextSize: Number(s.contextSize || 0),
             contextBudget: s.contextBudget || DEFAULT_CONTEXT_BUDGET,
             compressionSnapshot: s.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
+            memorySnapshot: s.memorySnapshot,
+            generationProfile: (s as any).generationProfile || 'auto',
+            destructiveSafetyMode: (s as any).destructiveSafetyMode || 'backup_then_apply',
+            touchBudgetMode: (s as any).touchBudgetMode || 'adaptive',
             activeModelProfile: s.activeModelProfile || getActiveModelProfile(),
             multiAgentEnabled: Boolean((s as any)?.multiAgentEnabled),
             executionPhase: coerceExecutionPhase(s.executionPhase),
@@ -1563,6 +1613,9 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         projectStore.setSelectedFeatures(Array.isArray(session.selectedFeatures) ? session.selectedFeatures : []);
         projectStore.setCustomFeatureTags(Array.isArray(session.customFeatureTags) ? session.customFeatureTags : []);
         projectStore.setConstraintsEnforcement(session.constraintsEnforcement || 'hard');
+        projectStore.setGenerationProfile(session.generationProfile || 'auto');
+        projectStore.setDestructiveSafetyMode(session.destructiveSafetyMode || 'backup_then_apply');
+        projectStore.setTouchBudgetMode(session.touchBudgetMode || 'adaptive');
         if (typeof session.stack === 'string') projectStore.setStack(session.stack);
         if (typeof session.description === 'string') projectStore.setDescription(session.description);
         projectStore.setFiles(projectFiles);
@@ -1628,6 +1681,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           currentSessionId: sessionId,
           contextBudget: session.contextBudget || DEFAULT_CONTEXT_BUDGET,
           compressionSnapshot: session.compressionSnapshot || DEFAULT_COMPRESSION_SNAPSHOT,
+          memorySnapshot: session.memorySnapshot || null,
           brainEvents: [],
           analysisReport: null,
           policyViolations: [],
@@ -1676,6 +1730,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           currentSessionId: null,
           contextBudget: DEFAULT_CONTEXT_BUDGET,
           compressionSnapshot: DEFAULT_COMPRESSION_SNAPSHOT,
+          memorySnapshot: null,
           brainEvents: [],
           analysisReport: null,
           policyViolations: [],
@@ -1759,7 +1814,8 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         isPreviewOpen: state.isPreviewOpen,
         currentSessionId: state.currentSessionId,
         contextBudget: state.contextBudget,
-        compressionSnapshot: state.compressionSnapshot
+        compressionSnapshot: state.compressionSnapshot,
+        memorySnapshot: state.memorySnapshot
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.modelMode === 'super') {

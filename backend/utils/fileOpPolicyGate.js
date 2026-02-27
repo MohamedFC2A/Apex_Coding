@@ -15,6 +15,8 @@ const SENSITIVE_ROOT_BASENAMES = new Set([
 
 const CSS_DUP_BASENAMES = new Set(['style.css', 'styles.css', 'main.css', 'app.css']);
 const JS_DUP_BASENAMES = new Set(['script.js', 'main.js', 'app.js']);
+const FORBIDDEN_STATIC_CSS_BASENAMES = new Set(['styles.css', 'main.css', 'global.css', 'app.css', 'index.css']);
+const FORBIDDEN_STATIC_JS_BASENAMES = new Set(['app.js', 'main.js', 'index.js']);
 
 const normalizePath = (rawPath) =>
   String(rawPath || '')
@@ -73,11 +75,16 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
         })
         .filter(Boolean)
     : [];
+  const isStaticProfile = createRules.some((entry) => String(entry?.rule?.pattern || '').trim().toLowerCase() === 'index.html');
 
   const manifestPaths =
     (Array.isArray(writePolicy?.manifestPaths) ? writePolicy.manifestPaths : null) ||
     (Array.isArray(workspaceAnalysis?.manifest) ? workspaceAnalysis.manifest.map((entry) => entry.path) : []) ||
     [];
+  const manifestHasAnyHtml = manifestPaths.some((path) => {
+    const name = basename(path);
+    return name.endsWith('.html') || name.endsWith('.htm');
+  });
 
   const existingByPurpose = new Map();
   const purposeByPath = new Map();
@@ -109,6 +116,7 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
 
   const touchedPaths = new Set();
   const createdPaths = new Set();
+  let seenHtmlInRun = false;
   const requestedTouchMode = String(writePolicy?.touchBudgetMode || 'minimal').toLowerCase();
   const providedMaxTouched = Number(writePolicy?.maxTouchedFiles || 0);
   const inferredAdaptiveBudget = Math.max(
@@ -161,6 +169,11 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
     const touch = trackTouchedPath(path);
     if (!touch.ok) return { allowed: false, violation: touch.violation };
 
+    const name = basename(path);
+    if (name.endsWith('.html') || name.endsWith('.htm')) {
+      seenHtmlInRun = true;
+    }
+
     if (mode === 'edit') {
       if (strictEditScope && !allowedEditSet.has(path.toLowerCase()) && !createdPaths.has(path.toLowerCase())) {
         return {
@@ -182,7 +195,43 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
       };
     }
 
-    const name = basename(path);
+    if (isStaticProfile && FORBIDDEN_STATIC_CSS_BASENAMES.has(name)) {
+      return {
+        allowed: false,
+        violation: buildPolicyViolation(
+          'FORBIDDEN_STATIC_FILENAME',
+          `Static frontend forbids creating ${name}; use style.css and styles/*.css only`,
+          path
+        )
+      };
+    }
+    if (isStaticProfile && FORBIDDEN_STATIC_JS_BASENAMES.has(name)) {
+      return {
+        allowed: false,
+        violation: buildPolicyViolation(
+          'FORBIDDEN_STATIC_FILENAME',
+          `Static frontend forbids creating ${name}; use script.js and scripts/*.js only`,
+          path
+        )
+      };
+    }
+
+    if (
+      isStaticProfile &&
+      !manifestHasAnyHtml &&
+      !seenHtmlInRun &&
+      (name.endsWith('.css') || name.endsWith('.js'))
+    ) {
+      return {
+        allowed: false,
+        violation: buildPolicyViolation(
+          'STATIC_ORDER_HTML_FIRST',
+          'Static frontend requires an HTML file to be emitted before CSS/JS',
+          path
+        )
+      };
+    }
+
     const purpose = duplicatePurposeKey(name);
     const existing = existingByPurpose.get(purpose);
     if (

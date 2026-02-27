@@ -1,17 +1,19 @@
 import type { ProjectFile } from '@/types';
 import type { InteractionMode } from '@/stores/aiStore';
 import { buildDependencyEdges } from '@/services/contextGraph';
-import type { TouchBudgetMode } from '@/types/constraints';
+import type { GenerationProfile, TouchBudgetMode } from '@/types/constraints';
 import type {
   WorkspaceAllowedCreateRule,
   WorkspaceAnalysisReport,
   WorkspaceCoverageMetrics,
   WorkspaceManifestEntry
 } from '@/types/context';
+import { resolveGenerationProfile } from '@/utils/generationProfile';
 
 interface AnalyzeWorkspaceIntelligenceOptions {
   files: ProjectFile[];
   prompt?: string;
+  generationProfile?: GenerationProfile;
   activeFile?: string | null;
   recentPreviewErrors?: string[];
   interactionMode?: InteractionMode;
@@ -175,6 +177,7 @@ const bfsExpand = (seeds: string[], adjacency: Map<string, Set<string>>, depthLi
 
 const buildAllowedCreateRules = (
   interactionMode: InteractionMode,
+  generationProfile: Exclude<GenerationProfile, 'auto'>,
   explicitCreatePaths: string[] = []
 ): WorkspaceAllowedCreateRule[] => {
   if (interactionMode === 'edit') {
@@ -187,26 +190,66 @@ const buildAllowedCreateRules = (
         reason: 'explicitly requested create path in edit-mode plan/prompt'
       }));
   }
-  const baseRules: WorkspaceAllowedCreateRule[] = [
-    { pattern: 'pages/**', reason: 'static multipage output' },
-    { pattern: 'components/**', reason: 'component output' },
-    { pattern: 'styles/**', reason: 'stylesheet output' },
-    { pattern: 'scripts/**', reason: 'script output' },
-    { pattern: 'assets/**', reason: 'asset output' },
-    { pattern: 'data/**', reason: 'data output' },
-    { pattern: '*.html', reason: 'html entry output' },
-    { pattern: '*.css', reason: 'css output' },
-    { pattern: '*.js', reason: 'javascript output' },
-    { pattern: '*.json', reason: 'json output' },
-    { pattern: '*.md', reason: 'documentation output' }
+  if (generationProfile === 'framework') {
+    return [
+      { pattern: 'src/**', reason: 'framework source output' },
+      { pattern: 'public/**', reason: 'framework public assets' },
+      { pattern: 'package.json', reason: 'framework package manifest' },
+      { pattern: 'package-lock.json', reason: 'framework lockfile' },
+      { pattern: 'pnpm-lock.yaml', reason: 'framework lockfile' },
+      { pattern: 'yarn.lock', reason: 'framework lockfile' },
+      { pattern: 'tsconfig.json', reason: 'framework tsconfig' },
+      { pattern: 'next.config.*', reason: 'next config' },
+      { pattern: 'vite.config.*', reason: 'vite config' },
+      { pattern: 'postcss.config.*', reason: 'postcss config' },
+      { pattern: 'tailwind.config.*', reason: 'tailwind config' },
+      { pattern: '.env*', reason: 'env files' },
+      { pattern: '*.md', reason: 'documentation output' }
+    ];
+  }
+
+  // Static frontend: keep output predictable and preview-runner friendly.
+  return [
+    { pattern: 'index.html', reason: 'static HTML entry output' },
+    { pattern: 'style.css', reason: 'static primary stylesheet output' },
+    { pattern: 'script.js', reason: 'static primary script output' },
+    { pattern: 'site-map.json', reason: 'static multipage route contract' },
+    { pattern: 'pages/*.html', reason: 'static multipage output' },
+    { pattern: 'pages/**/*.html', reason: 'static multipage output' },
+    { pattern: 'components/*.html', reason: 'static component fragments' },
+    { pattern: 'components/**/*.html', reason: 'static component fragments' },
+    { pattern: 'styles/*.css', reason: 'static additional styles' },
+    { pattern: 'styles/**/*.css', reason: 'static additional styles' },
+    { pattern: 'scripts/*.js', reason: 'static additional scripts' },
+    { pattern: 'scripts/**/*.js', reason: 'static additional scripts' },
+    { pattern: 'data/*.json', reason: 'static data output' },
+    { pattern: 'data/**/*.json', reason: 'static data output' },
+    { pattern: 'assets/*.svg', reason: 'static svg assets' },
+    { pattern: 'assets/**/*.svg', reason: 'static svg assets' },
+    { pattern: 'assets/*.png', reason: 'static png assets' },
+    { pattern: 'assets/**/*.png', reason: 'static png assets' },
+    { pattern: 'assets/*.jpg', reason: 'static jpg assets' },
+    { pattern: 'assets/**/*.jpg', reason: 'static jpg assets' },
+    { pattern: 'assets/*.jpeg', reason: 'static jpeg assets' },
+    { pattern: 'assets/**/*.jpeg', reason: 'static jpeg assets' },
+    { pattern: 'assets/*.webp', reason: 'static webp assets' },
+    { pattern: 'assets/**/*.webp', reason: 'static webp assets' },
+    { pattern: 'assets/*.gif', reason: 'static gif assets' },
+    { pattern: 'assets/**/*.gif', reason: 'static gif assets' },
+    { pattern: 'assets/*.ico', reason: 'static icon assets' },
+    { pattern: 'assets/**/*.ico', reason: 'static icon assets' },
+    { pattern: 'assets/*.woff', reason: 'static font assets' },
+    { pattern: 'assets/**/*.woff', reason: 'static font assets' },
+    { pattern: 'assets/*.woff2', reason: 'static font assets' },
+    { pattern: 'assets/**/*.woff2', reason: 'static font assets' },
+    { pattern: 'assets/*.ttf', reason: 'static font assets' },
+    { pattern: 'assets/**/*.ttf', reason: 'static font assets' },
+    { pattern: 'assets/*.otf', reason: 'static font assets' },
+    { pattern: 'assets/**/*.otf', reason: 'static font assets' },
+    { pattern: 'favicon.ico', reason: 'static favicon output' },
+    { pattern: 'robots.txt', reason: 'static robots output' },
+    { pattern: 'README.md', reason: 'documentation output' }
   ];
-
-  const frontendMirrors: WorkspaceAllowedCreateRule[] = baseRules.map((rule) => ({
-    pattern: `frontend/${rule.pattern}`,
-    reason: `frontend-root mirror: ${rule.reason}`
-  }));
-
-  return [...baseRules, ...frontendMirrors];
 };
 
 const round = (value: number) => Math.max(0, Math.min(100, Math.round(value * 100) / 100));
@@ -289,6 +332,11 @@ export const analyzeWorkspaceIntelligence = (
   const activePath = normalizePath(options.activeFile || '');
   const promptCandidates = extractPromptPathCandidates(options.prompt || '');
   const interactionMode = options.interactionMode || 'create';
+  const resolvedProfile = resolveGenerationProfile({
+    requested: options.generationProfile,
+    prompt: options.prompt || '',
+    filePaths: allPaths
+  });
   const previewSignals = (options.recentPreviewErrors || []).map((line) => String(line || '').toLowerCase());
 
   const manifest: WorkspaceManifestEntry[] = firstPartyFiles.map((file) => ({
@@ -398,7 +446,7 @@ export const analyzeWorkspaceIntelligence = (
     interactionMode === 'edit'
       ? Array.from(minimalEditSet)
       : Array.from(new Set(expandedReadSet.map((path) => normalizePath(path))));
-  const allowedCreateRules = buildAllowedCreateRules(interactionMode, Array.from(explicitCreateCandidates));
+  const allowedCreateRules = buildAllowedCreateRules(interactionMode, resolvedProfile, Array.from(explicitCreateCandidates));
   const maxContextChars = Math.max(20_000, Number(options.maxContextChars || 120_000));
   const estimatedContextChars = expandedReadSet.reduce((acc, path) => acc + String(fileByPath.get(path)?.content || '').length, 0);
 

@@ -8,6 +8,9 @@ import { normalizePlanCategory } from '@/utils/planCategory';
 import { normalizeWorkspaceDirectoryPath, normalizeWorkspaceFilePath } from '@/utils/workspacePaths';
 import { loadSessionsFromDisk, saveSessionToDisk, type StoredHistorySession } from '@/utils/sessionDb';
 import { buildMemorySnapshot } from '@/services/memoryEngine';
+import { sanitizeOperationPath } from '@/utils/fileOpGuards';
+import { toFrontendCanonicalPath } from '@/services/frontendProjectModeV12';
+import { resolveGenerationProfile } from '@/utils/generationProfile';
 import type { DestructiveSafetyMode, GenerationProfile, TouchBudgetMode } from '@/types/constraints';
 import type {
   ActiveModelProfile,
@@ -927,6 +930,48 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           const thinkingMode = get().modelMode === 'thinking';
           const projectType = get().projectType;
           const projectSettings = useProjectStore.getState();
+          const effectiveProfile = resolveGenerationProfile({
+            requested: projectSettings.generationProfile || 'auto',
+            prompt,
+            filePaths: projectSettings.files.map((file) => file.path || file.name || '').filter(Boolean)
+          });
+
+          const normalizePlannedPath = (rawPath: unknown): string | null => {
+            const cleaned = sanitizeOperationPath(String(rawPath || ''));
+            if (!cleaned) return null;
+
+            const canonical = toFrontendCanonicalPath(cleaned);
+            if (!canonical) return null;
+
+            if (effectiveProfile !== 'static') return canonical;
+
+            const lower = canonical.toLowerCase();
+            const base = lower.split('/').pop() || lower;
+            const isRoot = !lower.includes('/');
+
+            if (isRoot && ['styles.css', 'main.css', 'global.css', 'app.css', 'index.css'].includes(base)) {
+              return 'style.css';
+            }
+
+            if (isRoot && ['app.js', 'main.js', 'index.js'].includes(base)) {
+              return 'script.js';
+            }
+
+            if (isRoot && base.endsWith('.html') && base !== 'index.html') {
+              return `pages/${canonical}`;
+            }
+
+            return canonical;
+          };
+
+          const normalizeFileList = (rawFiles: unknown): string[] => {
+            const files = Array.isArray(rawFiles) ? rawFiles : [];
+            const normalized = files
+              .map((path) => normalizePlannedPath(path))
+              .filter((value): value is string => Boolean(value));
+            return Array.from(new Set(normalized));
+          };
+
           const constraints = {
             projectMode: 'FRONTEND_ONLY' as const,
             selectedFeatures: get().selectedFeatures,
@@ -956,6 +1001,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             get().multiAgentEnabled
           );
           const rawSteps: any[] = Array.isArray(data?.steps) ? data.steps : [];
+          const normalizedTree = normalizeFileList(data?.fileTree);
 
           const planSteps: PlanStep[] = rawSteps
             .map((s, i) => ({
@@ -964,8 +1010,12 @@ export const useAIStore = createWithEqualityFn<AIState>()(
               description: String(s?.description ?? ''),
               completed: false,
               status: 'pending' as const,
-              category: normalizePlanCategory(s?.category, s?.title ?? s?.text ?? s?.step ?? '', Array.isArray(s?.files) ? s.files : []),
-              files: Array.isArray(s?.files) ? s.files : [],
+              files: normalizeFileList(s?.files),
+              category: normalizePlanCategory(
+                s?.category,
+                s?.title ?? s?.text ?? s?.step ?? '',
+                normalizeFileList(s?.files)
+              ),
               estimatedSize: (s?.estimatedSize || 'medium') as PlanStep['estimatedSize'],
               depends_on: Array.isArray(s?.depends_on) ? s.depends_on : []
             }))
@@ -998,9 +1048,17 @@ export const useAIStore = createWithEqualityFn<AIState>()(
           } else if (data.title) {
             project.setProjectName(data.title);
           }
-          if (Array.isArray(data?.fileTree) && data.fileTree.length > 0) {
+          const allStepFiles = planSteps.flatMap((step) => (Array.isArray(step.files) ? step.files : [])).filter(Boolean);
+          const fileTree = Array.from(new Set([...normalizedTree, ...allStepFiles]));
+          if (effectiveProfile === 'static') {
+            // Keep baseline files stable even when planner forgets them.
+            for (const baseline of ['index.html', 'style.css', 'script.js']) {
+              if (!fileTree.includes(baseline)) fileTree.unshift(baseline);
+            }
+          }
+          if (fileTree.length > 0) {
             project.setFileStructure(
-              data.fileTree.map((p: string) => ({ path: p, type: 'file' as const }))
+              fileTree.map((p: string) => ({ path: p, type: 'file' as const }))
             );
           }
         } catch (err: any) {

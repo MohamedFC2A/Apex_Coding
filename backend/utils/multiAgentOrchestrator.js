@@ -21,6 +21,8 @@ const SENSITIVE_ROOT_BASENAMES = new Set([
 
 const CSS_DUP_BASENAMES = new Set(['style.css', 'styles.css', 'main.css', 'app.css']);
 const JS_DUP_BASENAMES = new Set(['script.js', 'main.js', 'app.js']);
+const FORBIDDEN_STATIC_CSS_BASENAMES = new Set(['styles.css', 'main.css', 'global.css', 'app.css', 'index.css']);
+const FORBIDDEN_STATIC_JS_BASENAMES = new Set(['app.js', 'main.js', 'index.js']);
 
 const toBool = (value, fallback = false) => {
   if (typeof value === 'boolean') return value;
@@ -308,6 +310,7 @@ const validatePatchStrict = (patchText) => {
   const issues = [];
   const events = [];
   const chunkByPath = new Map();
+  const patchStartModes = new Map();
 
   const starts = (text.match(/\[\[(PATCH_FILE|START_FILE|EDIT_FILE|EDIT_NODE):/g) || []).length;
   const ends = (text.match(/\[\[END_FILE\]\]/g) || []).length;
@@ -345,8 +348,16 @@ const validatePatchStrict = (patchText) => {
       issues.push('Patch start without a valid path');
       continue;
     }
+    patchStartModes.set(path, String(event.mode || 'create').toLowerCase() === 'edit' ? 'edit' : 'create');
     if (CSS_DUP_BASENAMES.has(name)) cssCandidates.add(path.toLowerCase());
     if (JS_DUP_BASENAMES.has(name)) jsCandidates.add(path.toLowerCase());
+
+    if (FORBIDDEN_STATIC_CSS_BASENAMES.has(name)) {
+      issues.push(`Forbidden static CSS filename emitted: ${path}`);
+    }
+    if (FORBIDDEN_STATIC_JS_BASENAMES.has(name)) {
+      issues.push(`Forbidden static JavaScript filename emitted: ${path}`);
+    }
   }
 
   if (cssCandidates.size > 1) {
@@ -356,12 +367,10 @@ const validatePatchStrict = (patchText) => {
     issues.push(`Duplicate-purpose JavaScript files in one output: ${Array.from(jsCandidates).join(', ')}`);
   }
 
-  for (const [path, content] of chunkByPath.entries()) {
-    const name = basename(path);
-    if (['index.html', 'style.css', 'script.js'].includes(name)) {
-      if (String(content || '').trim().length === 0) {
-        issues.push(`Critical file emitted with empty content: ${path}`);
-      }
+  for (const [path, mode] of patchStartModes.entries()) {
+    const content = chunkByPath.get(path) || '';
+    if (String(content || '').trim().length === 0) {
+      issues.push(`File emitted with empty content (${mode}): ${path}`);
     }
   }
 

@@ -12,6 +12,7 @@ import { parseFileOpEventPayload } from '@/services/fileOpEvents';
 import type { WorkspaceAnalysisReport } from '@/types/context';
 import type { StrictWritePolicy } from '@/services/workspaceIntelligence';
 import { sanitizeOperationPath, stripTrailingFileMarkerFragment } from '@/utils/fileOpGuards';
+import { hasExplicitFrameworkRequest, resolveGenerationProfile } from '@/utils/generationProfile';
 
 interface AIResponse {
   plan: string;
@@ -93,33 +94,6 @@ const summarizeTopFolders = (paths: string[]) => {
     .slice(0, 8)
     .map(([name, count]) => `${name}(${count})`)
     .join(', ');
-};
-
-const hasExplicitFrameworkRequest = (prompt: string) => {
-  const text = String(prompt || '').toLowerCase();
-  return /\breact\b|\bnext(?:\.js)?\b|\bvite\b|\btypescript app\b|\bvue\b|\bangular\b|\bsvelte\b/.test(text);
-};
-
-const hasFrameworkProjectShape = (paths: string[]) => {
-  const normalized = paths.map((item) => String(item || '').replace(/\\/g, '/').toLowerCase());
-  return normalized.some((path) =>
-    path.includes('/src/app/') ||
-    path.endsWith('next.config.mjs') ||
-    path.endsWith('next.config.js') ||
-    path.endsWith('vite.config.ts') ||
-    path.endsWith('vite.config.js') ||
-    path.endsWith('package.json')
-  );
-};
-
-const resolveGenerationProfile = (args: {
-  requested?: GenerationProfile;
-  prompt: string;
-  filePaths: string[];
-}): Exclude<GenerationProfile, 'auto'> => {
-  if (args.requested === 'static' || args.requested === 'framework') return args.requested;
-  if (hasExplicitFrameworkRequest(args.prompt) || hasFrameworkProjectShape(args.filePaths)) return 'framework';
-  return 'static';
 };
 
 const getErrorMessage = (err: any, fallback: string) => {

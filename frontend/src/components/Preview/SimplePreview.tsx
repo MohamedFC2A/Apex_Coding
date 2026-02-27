@@ -509,6 +509,7 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         fileNameIndex.set(base, list);
       });
       const autoMapped = new Set<string>();
+      let projectRootDir = '';
 
       const resolveProjectPath = (fromPath: string, reference: string) => {
         if (!reference) return null;
@@ -535,6 +536,7 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         };
 
         if (reference.startsWith('/')) {
+          pushCandidate(joinPath(projectRootDir, cleanRef));
           pushCandidate(cleanRef);
           pushCandidate(`frontend/${cleanRef}`);
           pushCandidate(`frontend/src/${cleanRef}`);
@@ -558,7 +560,11 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         }
 
         const suffixMatches = allPaths.filter((path) => path === cleanRef || path.endsWith(`/${cleanRef}`));
-        const fromRoot = normalizePath(fromPath).startsWith('backend/') ? 'backend/' : 'frontend/';
+        const fromRoot = normalizePath(fromPath).startsWith('backend/')
+          ? 'backend/'
+          : projectRootDir
+            ? `${normalizePath(projectRootDir)}/`
+            : '';
         const referenceName = cleanRef.split('/').pop() || '';
         const referenceExt = extensionOf(cleanRef);
         const preferredByName = referenceName ? fileNameIndex.get(referenceName) || [] : [];
@@ -583,6 +589,53 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         const winner = scored[0]?.path || null;
         if (winner) autoMapped.add(`${fromPath} -> ${reference} => ${winner}`);
         return winner;
+      };
+
+      const selectEntryFile = () => {
+        const htmlPaths = allPaths.filter((path) => {
+          const ext = extensionOf(path);
+          return ext === 'html' || ext === 'htm';
+        });
+        if (htmlPaths.length === 0) return null;
+
+        const indexCandidates = htmlPaths.filter((path) => path === 'index.html' || path.endsWith('/index.html'));
+        const candidates = indexCandidates.length > 0 ? indexCandidates : htmlPaths;
+
+        const scoreHtmlEntry = (path: string) => {
+          const file = pathToFile.get(path);
+          const html = String(file?.content || '');
+          const lower = html.toLowerCase();
+          const base = (path.split('/').pop() || path).toLowerCase();
+          const dir = dirname(path);
+
+          let score = 0;
+          if (base === 'index.html') score += 40;
+          if (path === 'index.html') score += 35;
+          if (dir && /^(components|partials)\b/i.test(dir)) score -= 30;
+          if (path.includes('/components/')) score -= 20;
+
+          if (/\b<!doctype\b/i.test(html)) score += 18;
+          if (lower.includes('<html')) score += 10;
+          if (lower.includes('<head')) score += 6;
+          if (lower.includes('<body')) score += 10;
+          if (lower.includes('<main')) score += 6;
+
+          const size = html.trim().length;
+          score += Math.min(25, Math.log10(size + 1) * 10);
+
+          const stylePath = dir ? `${dir}/style.css` : 'style.css';
+          const scriptPath = dir ? `${dir}/script.js` : 'script.js';
+          if (pathToFile.has(stylePath)) score += 12;
+          if (pathToFile.has(scriptPath)) score += 12;
+
+          // Prefer shallower candidates when all else is equal.
+          score -= Math.max(0, path.split('/').length - 1) * 2;
+          return score;
+        };
+
+        return [...candidates]
+          .map((path) => ({ path, score: scoreHtmlEntry(path) }))
+          .sort((a, b) => b.score - a.score)[0]?.path || null;
       };
 
       const unresolved = new Set<string>();
@@ -650,27 +703,6 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         return url;
       };
 
-      const selectEntryFile = () => {
-        const entries = htmlFiles
-          .map((file) => normalizePath(file.path || file.name || ''))
-          .filter(Boolean);
-        const sortedByDepth = [...entries].sort((a, b) => {
-          const depthA = a.split('/').length;
-          const depthB = b.split('/').length;
-          if (depthA !== depthB) return depthA - depthB;
-          return a.localeCompare(b);
-        });
-        return (
-          entries.find((path) => path === 'index.html') ||
-          entries.find((path) => path === 'frontend/index.html') ||
-          entries.find((path) => path === 'frontend/src/index.html') ||
-          sortedByDepth.find((path) => path.endsWith('/index.html')) ||
-          entries.find((path) => path.endsWith('/index.html')) ||
-          sortedByDepth[0] ||
-          null
-        );
-      };
-
       const entryHtmlPath = selectEntryFile();
 
       if (!entryHtmlPath) {
@@ -693,6 +725,8 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
         publishSnapshot(fallback, fallbackMeta);
         return;
       }
+
+      projectRootDir = dirname(entryHtmlPath);
 
       const entryHtml = String(pathToFile.get(entryHtmlPath)?.content || '');
       const parser = new DOMParser();

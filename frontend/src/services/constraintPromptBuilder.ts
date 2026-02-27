@@ -46,7 +46,7 @@ export const buildFrontendPlanningPolicyBlock = (): string =>
     '[FRONTEND PLANNING POLICY]',
     '- Decompose every UI into named sections: Header/Nav, Hero, Content Sections, Footer at minimum.',
     '- Each plan step must target specific named UI sections or behaviors, not vague tasks.',
-    '- File naming: ONE index.html, ONE style.css (or styles.css), ONE script.js (or app.js).',
+    '- File naming: ONE index.html, ONE style.css, ONE script.js.',
     '- Never create two files serving the same purpose (e.g., main.css AND style.css).',
     '- Plan responsive behavior explicitly: mobile-first base → tablet breakpoint → desktop breakpoint.',
     '- Include interactivity requirements per step: which elements get event listeners, what behavior occurs.',
@@ -120,8 +120,8 @@ export const buildAntiDuplicationPolicyBlock = (): string =>
     '- Never split CSS into multiple files unless explicitly using CSS modules or framework convention.',
     '- Never create a new file if an existing file already serves the same purpose.',
     '- ONE shared CSS file and ONE shared JS file for simple static sites (multi-page may add additional HTML pages).',
-    '- If style.css exists, do not create main.css/styles.css duplicates.',
-    '- If script.js exists, do not create app.js/main.js duplicates for the same static project.',
+    '- Always use style.css for primary styling (never styles.css/main.css/app.css/global.css for the same static project).',
+    '- Always use script.js for primary behavior (never app.js/main.js/index.js for the same static project).',
     '- If editing an existing project, preserve the existing file structure — do not reorganize.'
   ].join('\n');
 

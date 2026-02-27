@@ -125,3 +125,67 @@ test('allows explicit create rule in edit mode then edit on created file', () =>
   assert.equal(createResult.allowed, true);
   assert.equal(editCreatedResult.allowed, true);
 });
+
+test('static profile blocks css/js before any html is emitted', () => {
+  const gate = createFileOpPolicyGate({
+    writePolicy: {
+      allowedEditPaths: [],
+      allowedCreateRules: [
+        { pattern: 'index.html' },
+        { pattern: 'style.css' },
+        { pattern: 'script.js' }
+      ],
+      maxTouchedFiles: 6,
+      manifestPaths: []
+    }
+  });
+
+  const cssFirst = gate.check({
+    op: 'patch',
+    phase: 'start',
+    mode: 'create',
+    path: 'style.css'
+  });
+  assert.equal(cssFirst.allowed, false);
+  assert.equal(cssFirst.violation.code, 'STATIC_ORDER_HTML_FIRST');
+
+  const html = gate.check({
+    op: 'patch',
+    phase: 'start',
+    mode: 'create',
+    path: 'index.html'
+  });
+  assert.equal(html.allowed, true);
+
+  const cssAfter = gate.check({
+    op: 'patch',
+    phase: 'start',
+    mode: 'create',
+    path: 'style.css'
+  });
+  assert.equal(cssAfter.allowed, true);
+});
+
+test('static profile forbids creating main.css even under styles/', () => {
+  const gate = createFileOpPolicyGate({
+    writePolicy: {
+      allowedEditPaths: [],
+      allowedCreateRules: [
+        { pattern: 'index.html' },
+        { pattern: 'styles/*.css' }
+      ],
+      maxTouchedFiles: 6,
+      manifestPaths: []
+    }
+  });
+
+  const result = gate.check({
+    op: 'patch',
+    phase: 'start',
+    mode: 'create',
+    path: 'styles/main.css'
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.violation.code, 'FORBIDDEN_STATIC_FILENAME');
+});

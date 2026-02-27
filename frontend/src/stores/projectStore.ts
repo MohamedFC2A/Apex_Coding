@@ -311,9 +311,18 @@ export const useProjectStore = createWithEqualityFn<ProjectState>()(
 
       setFiles: (files) => {
         const normalizedFiles = normalizeProjectFiles(files);
+        // Deduplicate by effective path: when multiple files resolve to the same
+        // normalized path (e.g., differing only by case, ./ prefix, or backslashes),
+        // keep the last one (most recent content wins).
+        const deduped = new Map<string, ProjectFile>();
+        for (const file of normalizedFiles) {
+          const key = (file.path || file.name || '').toLowerCase();
+          if (key) deduped.set(key, file);
+        }
+        const dedupedFiles = Array.from(deduped.values());
         set({
-          files: normalizedFiles,
-          fileStructure: mergeFileStructureWithFiles([], normalizedFiles)
+          files: dedupedFiles,
+          fileStructure: mergeFileStructureWithFiles([], dedupedFiles)
         });
       },
       

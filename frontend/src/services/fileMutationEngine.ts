@@ -11,6 +11,22 @@ interface FileMutationEngineOptions {
 
 const normalize = (value: string) => sanitizeOperationPath(value);
 
+/**
+ * Maps forbidden filenames to their canonical equivalents.
+ * When AI tries to create a forbidden name, it auto-redirects to the canonical one.
+ */
+const FORBIDDEN_TO_CANONICAL: Record<string, string> = {
+  'styles.css': 'style.css',
+  'main.css': 'style.css',
+  'global.css': 'style.css',
+  'globals.css': 'style.css',
+  'app.css': 'style.css',
+  'index.css': 'style.css',
+  'main.js': 'script.js',
+  'app.js': 'script.js',
+  'index.js': 'script.js',
+};
+
 export const createFileMutationEngine = (options: FileMutationEngineOptions) => {
   const resolvePath = options.resolvePath;
   const basenameRegistry = options.basenameRegistry;
@@ -20,9 +36,15 @@ export const createFileMutationEngine = (options: FileMutationEngineOptions) => 
       'index.html',
       'style.css',
       'styles.css',
+      'main.css',
+      'global.css',
+      'globals.css',
+      'app.css',
+      'index.css',
       'script.js',
       'main.js',
       'app.js',
+      'index.js',
       'package.json'
     ]);
 
@@ -41,6 +63,26 @@ export const createFileMutationEngine = (options: FileMutationEngineOptions) => 
     const normalizedRaw = normalize(rawPath);
     if (!normalizedRaw || !resolvedPath) return;
     rawToResolved.set(normalizedRaw, resolvedPath);
+  };
+
+  /**
+   * If the basename is a forbidden name and a canonical equivalent exists in the project,
+   * redirect to the canonical path. Otherwise, rename the basename to canonical.
+   */
+  const applyForbiddenNameRedirect = (resolvedPath: string): string => {
+    const basename = getBasename(resolvedPath).toLowerCase();
+    const canonicalBasename = FORBIDDEN_TO_CANONICAL[basename];
+    if (!canonicalBasename) return resolvedPath;
+
+    // Check if the canonical file already exists in the registry
+    const canonicalExisting = basenameRegistry.get(canonicalBasename);
+    if (canonicalExisting) return canonicalExisting;
+
+    // Rename: replace the forbidden basename with the canonical one
+    const dir = resolvedPath.includes('/')
+      ? resolvedPath.slice(0, resolvedPath.lastIndexOf('/') + 1)
+      : '';
+    return `${dir}${canonicalBasename}`;
   };
 
   return {
@@ -71,9 +113,15 @@ export const createFileMutationEngine = (options: FileMutationEngineOptions) => 
       if (event.type === 'start') {
         const raw = normalize(event.path || '');
         let resolved = resolvePath(raw) || raw;
+        const mode = event.mode === 'edit' ? 'edit' : 'create';
+
+        // For create mode, apply forbidden-name redirect before duplicate check
+        if (mode === 'create') {
+          resolved = applyForbiddenNameRedirect(resolved);
+        }
+
         const basename = getBasename(resolved).toLowerCase();
         const existingPath = basenameRegistry.get(basename);
-        const mode = event.mode === 'edit' ? 'edit' : 'create';
 
         if (mode === 'create' && existingPath && existingPath !== resolved && duplicateSensitiveBasenames.has(basename)) {
           resolved = existingPath;

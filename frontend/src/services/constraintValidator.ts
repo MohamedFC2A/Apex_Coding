@@ -316,6 +316,37 @@ const hasHtmlMarkupSignal = (source: string) =>
 const detectLanguageTypeMismatches = (files: ProjectFile[]) => {
   const issues: string[] = [];
 
+  /**
+   * Count approximate lines matching a language profile.
+   * This enables proportional detection when content is mixed.
+   */
+  const countCssLines = (text: string) => {
+    const lines = text.split('\n');
+    let count = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+      if (/^[.#@:][a-zA-Z]/.test(trimmed) || /^\w[\w-]*\s*\{/.test(trimmed) || /^\s*[\w-]+\s*:\s*.+;/.test(trimmed)) {
+        count++;
+      }
+    }
+    return count;
+  };
+
+  const countScriptLines = (text: string) => {
+    const lines = text.split('\n');
+    let count = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+      if (/\b(?:const|let|var|function|class|import|export|return|if|for|while|switch|try|catch|async|await|new)\b/.test(trimmed) ||
+          /=>|document\.|window\.|addEventListener\(/.test(trimmed)) {
+        count++;
+      }
+    }
+    return count;
+  };
+
   for (const file of files) {
     const path = normalizePath(file.path || file.name || '');
     if (!path) continue;
@@ -329,6 +360,13 @@ const detectLanguageTypeMismatches = (files: ProjectFile[]) => {
     if (SCRIPT_FILE_RE.test(path)) {
       if (hasCss && !hasScript && !hasHtml) {
         issues.push(`HIDDEN_FILE_TYPE_MISMATCH_JS_CONTAINS_CSS:${path}`);
+      } else if (hasCss && hasScript) {
+        // Proportional check: if CSS lines dominate, flag it
+        const cssLines = countCssLines(content);
+        const jsLines = countScriptLines(content);
+        if (cssLines > 0 && jsLines > 0 && cssLines > jsLines * 1.5) {
+          issues.push(`HIDDEN_FILE_TYPE_MISMATCH_JS_CONTAINS_CSS:${path}`);
+        }
       } else if (hasHtml && !hasScript && !hasCss) {
         issues.push(`HIDDEN_FILE_TYPE_MISMATCH_JS_CONTAINS_HTML:${path}`);
       }
@@ -339,6 +377,13 @@ const detectLanguageTypeMismatches = (files: ProjectFile[]) => {
       const hasSoftCss = hasCssSelectorSignal(content) || hasCssPropertySignal(content);
       if (hasScript && !hasSoftCss && !hasHtml) {
         issues.push(`HIDDEN_FILE_TYPE_MISMATCH_CSS_CONTAINS_JS:${path}`);
+      } else if (hasScript && hasSoftCss) {
+        // Proportional check: if JS lines dominate, flag it
+        const cssLines = countCssLines(content);
+        const jsLines = countScriptLines(content);
+        if (jsLines > 0 && cssLines > 0 && jsLines > cssLines * 1.5) {
+          issues.push(`HIDDEN_FILE_TYPE_MISMATCH_CSS_CONTAINS_JS:${path}`);
+        }
       } else if (hasHtml && !hasSoftCss && !hasScript) {
         issues.push(`HIDDEN_FILE_TYPE_MISMATCH_CSS_CONTAINS_HTML:${path}`);
       }

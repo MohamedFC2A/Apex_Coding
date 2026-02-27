@@ -3703,8 +3703,8 @@ function App() {
 
 
       const SENSITIVE_PATH_RE = /(^|\/)(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|vite\.config\.(js|ts)|next\.config\.(js|mjs|ts)|tsconfig\.json)$/i;
-      const DUPLICATE_CSS_BASENAMES = new Set(['style.css', 'styles.css', 'main.css', 'app.css']);
-      const DUPLICATE_JS_BASENAMES = new Set(['script.js', 'main.js', 'app.js']);
+      const DUPLICATE_CSS_BASENAMES = new Set(['style.css', 'styles.css', 'main.css', 'app.css', 'global.css', 'globals.css', 'index.css']);
+      const DUPLICATE_JS_BASENAMES = new Set(['script.js', 'main.js', 'app.js', 'index.js']);
       const normalizeRefPath = (value: string) =>
         sanitizeOperationPath(value);
       const normalizePolicyPathLower = (value: string) => normalizeRefPath(value).toLowerCase();

@@ -120,9 +120,23 @@ export const buildAntiDuplicationPolicyBlock = (): string =>
     '- Never split CSS into multiple files unless explicitly using CSS modules or framework convention.',
     '- Never create a new file if an existing file already serves the same purpose.',
     '- ONE shared CSS file and ONE shared JS file for simple static sites (multi-page may add additional HTML pages).',
-    '- Always use style.css for primary styling (never styles.css/main.css/app.css/global.css for the same static project).',
+    '- Always use style.css for primary styling (never styles.css/main.css/app.css/global.css/globals.css/index.css for the same static project).',
     '- Always use script.js for primary behavior (never app.js/main.js/index.js for the same static project).',
-    '- If editing an existing project, preserve the existing file structure — do not reorganize.'
+    '- If editing an existing project, preserve the existing file structure — do not reorganize.',
+    '- FORBIDDEN DUPLICATE NAMES (will be auto-renamed): styles.css, main.css, global.css, globals.css, app.css, index.css, main.js, app.js, index.js.'
+  ].join('\n');
+
+export const buildLanguagePurityPolicyBlock = (): string =>
+  [
+    '[LANGUAGE PURITY POLICY]',
+    '- .css files must contain ONLY CSS code: selectors, properties, values, media queries, @import, @keyframes.',
+    '- .js files must contain ONLY JavaScript code: variables, functions, classes, DOM manipulation, event listeners.',
+    '- .html files must contain HTML markup. Inline <style> and <script> blocks inside HTML are acceptable.',
+    '- NEVER write CSS selectors/properties (e.g., color:, display:, .class { }) directly in a .js file.',
+    '- NEVER write JavaScript syntax (const, let, function, addEventListener) directly in a .css file.',
+    '- NEVER write raw HTML tags (<div>, <header>, <section>) directly in a .css or .js file.',
+    '- If you need dynamic styles in JS, use element.style.property or element.classList — not raw CSS.',
+    '- Violation of this policy will trigger automatic content-type detection and rejection.'
   ].join('\n');
 
 export const buildGenerationConstraintsBlock = (constraints: GenerationConstraints): string => {
@@ -161,6 +175,7 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
     ? buildPageArchitecturePolicyBlock(constraints.siteArchitectureMode || 'adaptive_multi_page')
     : null;
   const antiDuplicationBlock = buildAntiDuplicationPolicyBlock();
+  const languagePurityBlock = buildLanguagePurityPolicyBlock();
 
   return [
     '[GENERATION CONSTRAINTS]',
@@ -183,6 +198,8 @@ export const buildGenerationConstraintsBlock = (constraints: GenerationConstrain
     organizationBlock,
     '',
     antiDuplicationBlock,
+    '',
+    languagePurityBlock,
     ...(pageArchitectureBlock ? ['', pageArchitectureBlock] : []),
     ...(frontendProfessionalBaselineBlock ? ['', frontendProfessionalBaselineBlock] : []),
     ...(frontendPolicyBlock ? ['', frontendPolicyBlock] : []),

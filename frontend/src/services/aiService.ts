@@ -531,7 +531,10 @@ NEGATIVE CONSTRAINTS (NEVER DO THIS):
 - NEVER use SEARCH/REPLACE blocks or diff markers.
 - NEVER skip any planned task.
 - NEVER create two files that serve the same purpose (e.g. do NOT create styles.css if style.css already exists).
-- NEVER create CSS/JS files with forbidden names: styles.css, main.css, global.css, app.css, app.js, main.js, index.js.
+- NEVER create CSS/JS files with forbidden names: styles.css, main.css, global.css, globals.css, app.css, index.css, app.js, main.js, index.js.
+- NEVER put CSS code (selectors, properties, media queries) inside a .js file.
+- NEVER put JavaScript code (const, let, var, function, addEventListener) inside a .css file.
+- NEVER put raw HTML markup inside a .js or .css file.
 
 EXECUTION RULES:
 1. **ZERO EMPTY FILES (RULE #0 — HIGHEST PRIORITY)**:
@@ -539,10 +542,12 @@ EXECUTION RULES:
    - Before opening a file block, have the FULL content ready to write.
    - An empty file block or a file with only a comment is a CRITICAL FAILURE.
 
-2. **MANDATORY FILE ORDER (HTML → CSS → JS)**:
+2. **MANDATORY FILE ORDER (HTML → CSS → JS) — STRICT ENFORCEMENT**:
    - For static sites: output index.html FIRST, then style.css, then script.js.
-   - NEVER write style.css or script.js before index.html.
+   - NEVER write style.css or script.js before index.html exists.
    - For multi-page sites: output ALL .html pages first, then the single shared style.css, then the single shared script.js.
+   - Violation of file order is a CRITICAL FAILURE. The runtime will reject out-of-order files.
+   - Think through the COMPLETE content of each file before opening its [[PATCH_FILE:...]] block.
 
 3. **WEB PROJECT REQUIREMENTS (PREVIEW RUNNER READY)**:
    - **STRUCTURE**:
@@ -591,6 +596,14 @@ ${architectureExecutionRules
    - To add an undeclared helper file: [[PATCH_FILE: path | mode: create | reason: justification]].
    - If a path is NOT in the FILE MAP, DO NOT create it — patch an existing file instead.
    - NEVER create a second file serving the same purpose as an existing one.
+
+11. **LANGUAGE PURITY (MANDATORY)**:
+   - Each file MUST contain ONLY code matching its extension.
+   - .html files: HTML markup only (inline <style> and <script> tags are allowed).
+   - .css files: CSS rules, selectors, properties, and media queries ONLY. No JavaScript. No HTML tags.
+   - .js files: JavaScript code ONLY. No CSS rules. No HTML markup. No raw selectors or properties.
+   - If you need to add styles dynamically in JS, use element.style or classList — NOT raw CSS syntax.
+   - If you catch yourself writing CSS syntax in a .js file, STOP and put it in the .css file instead.
 
 ${buildAIOrganizationPolicyBlock(selectedProjectMode)}
 ${frontendStrictModeBanner ? `\n\n${frontendStrictModeBanner}` : ''}

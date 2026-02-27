@@ -197,6 +197,13 @@ export const deleteSessionFromDisk = async (sessionId: string) => {
   });
 };
 
+export const clearAllSessionsFromDisk = async () => {
+  return withTx([SESSIONS_STORE], 'readwrite', async (tx) => {
+    tx.objectStore(SESSIONS_STORE).clear();
+    return;
+  });
+};
+
 export const archiveCurrentWorkspaceAsSession = async (
   session: Omit<
     StoredHistorySession,

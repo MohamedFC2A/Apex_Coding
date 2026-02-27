@@ -189,3 +189,145 @@ test('static profile forbids creating main.css even under styles/', () => {
   assert.equal(result.allowed, false);
   assert.equal(result.violation.code, 'FORBIDDEN_STATIC_FILENAME');
 });
+
+test('blocks javascript file that contains css-dominant content', () => {
+  const gate = createFileOpPolicyGate({
+    writePolicy: {
+      allowedEditPaths: [],
+      allowedCreateRules: [
+        { pattern: 'index.html' },
+        { pattern: 'style.css' },
+        { pattern: 'script.js' }
+      ],
+      maxTouchedFiles: 6,
+      manifestPaths: ['index.html']
+    }
+  });
+
+  const start = gate.check({
+    op: 'patch',
+    phase: 'start',
+    mode: 'create',
+    path: 'script.js'
+  });
+  assert.equal(start.allowed, true);
+
+  gate.check({
+    op: 'patch',
+    phase: 'chunk',
+    path: 'script.js',
+    chunk: '.hero { color: red; }\n.card { display: grid; }\n#app { margin: 0; }'
+  });
+
+  const end = gate.check({
+    op: 'patch',
+    phase: 'end',
+    path: 'script.js',
+    mode: 'create'
+  });
+
+  assert.equal(end.allowed, false);
+  assert.equal(end.violation.code, 'LANGUAGE_MISMATCH_JS');
+});
+
+test('blocks css file that contains javascript-dominant content', () => {
+  const gate = createFileOpPolicyGate({
+    writePolicy: {
+      allowedEditPaths: [],
+      allowedCreateRules: [
+        { pattern: 'index.html' },
+        { pattern: 'style.css' },
+        { pattern: 'script.js' }
+      ],
+      maxTouchedFiles: 6,
+      manifestPaths: ['index.html']
+    }
+  });
+
+  const start = gate.check({
+    op: 'patch',
+    phase: 'start',
+    mode: 'create',
+    path: 'style.css'
+  });
+  assert.equal(start.allowed, true);
+
+  gate.check({
+    op: 'patch',
+    phase: 'chunk',
+    path: 'style.css',
+    chunk: 'const app = document.querySelector("#app");\nif (app) { app.addEventListener("click", () => {}); }'
+  });
+
+  const end = gate.check({
+    op: 'patch',
+    phase: 'end',
+    path: 'style.css',
+    mode: 'create'
+  });
+
+  assert.equal(end.allowed, false);
+  assert.equal(end.violation.code, 'LANGUAGE_MISMATCH_CSS');
+});
+
+test('blocks inline style/script blocks in static html output', () => {
+  const gate = createFileOpPolicyGate({
+    writePolicy: {
+      allowedEditPaths: [],
+      allowedCreateRules: [
+        { pattern: 'index.html' },
+        { pattern: 'style.css' },
+        { pattern: 'script.js' }
+      ],
+      maxTouchedFiles: 6,
+      manifestPaths: []
+    }
+  });
+
+  const start = gate.check({
+    op: 'patch',
+    phase: 'start',
+    mode: 'create',
+    path: 'index.html'
+  });
+  assert.equal(start.allowed, true);
+
+  gate.check({
+    op: 'patch',
+    phase: 'chunk',
+    path: 'index.html',
+    chunk:
+      '<!doctype html><html><head><style>body{color:red;}</style></head><body><script>console.log("x")</script></body></html>'
+  });
+
+  const end = gate.check({
+    op: 'patch',
+    phase: 'end',
+    path: 'index.html',
+    mode: 'create'
+  });
+
+  assert.equal(end.allowed, false);
+  assert.equal(end.violation.code, 'STATIC_INLINE_LANGUAGE_MIXED');
+});
+
+test('static profile blocks unsupported create extension', () => {
+  const gate = createFileOpPolicyGate({
+    writePolicy: {
+      allowedEditPaths: [],
+      allowedCreateRules: [{ pattern: 'index.html' }, { pattern: 'scripts/**' }],
+      maxTouchedFiles: 6,
+      manifestPaths: []
+    }
+  });
+
+  const result = gate.check({
+    op: 'patch',
+    phase: 'start',
+    mode: 'create',
+    path: 'scripts/automation.py'
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.violation.code, 'STATIC_UNSUPPORTED_FILETYPE');
+});

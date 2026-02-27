@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { AlertCircle, History, ListTodo, Menu, X, Eye, EyeOff } from 'lucide-react';
+import { AlertCircle, History, ListTodo, Menu, X, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { SubscriptionIndicator } from './components/SubscriptionIndicator';
 import { useLanguage } from './context/LanguageContext';
@@ -13,6 +13,13 @@ import { getLanguageFromExtension } from './utils/stackDetector';
 import { repairTruncatedContent } from './utils/codeRepair';
 import { sanitizeOperationPath, stripFileOperationMarkers } from './utils/fileOpGuards';
 import { normalizePlanCategory } from './utils/planCategory';
+import {
+  DEFAULT_APP_SETTINGS,
+  patchAppSettings as patchStoredAppSettings,
+  readAppSettings,
+  type AppSettings
+} from './utils/appSettings';
+import { resetAllLocalData } from './utils/dataReset';
 
 import { CodeEditor } from './components/CodeEditor';
 import { Sidebar } from './components/Sidebar';
@@ -117,6 +124,7 @@ const consumeNewChatGuard = (): boolean => {
 };
 
 const globalWriteAutosaveNow = () => {
+  if (!readAppSettings().autoSaveChats) return;
   try {
     useAIStore.getState().saveCurrentSession();
   } catch (e) {
@@ -1805,6 +1813,7 @@ function App() {
     setCustomFeatureTags,
     setConstraintsEnforcement,
     setModelMode,
+    setMultiAgentEnabled,
     setIsGenerating,
     setInteractionMode,
     setSections,
@@ -1838,7 +1847,8 @@ function App() {
     setAnalysisReport,
     addPolicyViolation,
     clearPolicyViolations,
-    setBlockedReason
+    setBlockedReason,
+    startNewChat
   } = useAIStore();
 
   useEffect(() => {
@@ -1869,6 +1879,7 @@ function App() {
     let cancelled = false;
 
     const bootstrapHistory = async () => {
+      const runtimeSettings = readAppSettings();
       const hasFreshNewChatGuard = consumeNewChatGuard();
       if (hasFreshNewChatGuard) {
         useAIStore.setState({
@@ -1912,6 +1923,7 @@ function App() {
       if (cancelled) return;
 
       if (hasFreshNewChatGuard) return;
+      if (!runtimeSettings.restoreLastSession) return;
 
       const latestAI = useAIStore.getState();
       const hasLiveContext =
@@ -1988,9 +2000,12 @@ function App() {
   const [constraintsPanelOpen, setConstraintsPanelOpen] = useState(false);
   const [bootstrapReady, setBootstrapReady] = useState(false);
   const [completionSuggestions, setCompletionSuggestions] = useState<CompletionSuggestion[]>([]);
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => readAppSettings());
+  const [isResettingAllData, setIsResettingAllData] = useState(false);
+  const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
   const chatRoundRef = useRef(0);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
-  const [chatAutoFollow, setChatAutoFollow] = useState(true);
+  const [chatAutoFollow, setChatAutoFollow] = useState<boolean>(() => readAppSettings().chatAutoFollow);
   const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null);
   const [llmConfigHint, setLlmConfigHint] = useState<string>('');
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
@@ -2014,6 +2029,47 @@ function App() {
   const prevPlanCountRef = useRef(0);
   const preStreamContentByPathRef = useRef<Map<string, string>>(new Map());
   const appendResumeModeByPathRef = useRef<Map<string, boolean>>(new Map());
+
+  const updateAppSettings = useCallback((patch: Partial<AppSettings>) => {
+    setAppSettings((prev) => {
+      const next = patchStoredAppSettings({ ...prev, ...(patch || {}) });
+      return next;
+    });
+  }, []);
+
+  const handleWipeAllLocalData = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    const confirmed = window.confirm(
+      'Delete all chats and local app data?\n\nThis will remove conversation history, saved workspace snapshots, preview snapshots, local cache, and cookies for this site.'
+    );
+    if (!confirmed) return;
+
+    setIsResettingAllData(true);
+    setSettingsNotice(null);
+    try {
+      await resetAllLocalData({
+        includeCookies: true,
+        includeSessionStorage: true,
+        includeBrowserCaches: true
+      });
+
+      usePreviewStore.getState().reset();
+      useProjectStore.getState().reset();
+      useAIStore.getState().reset();
+
+      const normalizedDefaults = patchStoredAppSettings(DEFAULT_APP_SETTINGS);
+      setAppSettings(normalizedDefaults);
+      setChatAutoFollow(normalizedDefaults.chatAutoFollow);
+      setHistoryOpen(false);
+      setSettingsNotice('All local chat data and cookies were deleted successfully.');
+    } catch (err: any) {
+      const message = String(err?.message || 'Failed to clear local data completely.');
+      setSettingsNotice(message);
+      setError(message);
+    } finally {
+      setIsResettingAllData(false);
+    }
+  }, [setError]);
 
   const mainActionState = useMemo<MainActionState>(() => {
     if (isPlanning) return 'planning';
@@ -2073,7 +2129,20 @@ function App() {
   const runtimeLabelTone: 'default' | 'good' | 'warn' =
     runtimeStatus === 'error' ? 'warn' : runtimeStatus === 'ready' ? 'good' : 'default';
 
+  useEffect(() => {
+    if (appSettings.chatAutoFollow) {
+      setChatAutoFollow(true);
+      return;
+    }
+    setChatAutoFollow(false);
+    if (chatResumeTimerRef.current) {
+      window.clearTimeout(chatResumeTimerRef.current);
+      chatResumeTimerRef.current = null;
+    }
+  }, [appSettings.chatAutoFollow]);
+
   const handleChatScroll = useCallback(() => {
+    if (!appSettings.chatAutoFollow) return;
     const node = chatScrollRef.current;
     if (!node) return;
     const distanceToBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
@@ -2093,7 +2162,7 @@ function App() {
       setChatAutoFollow(true);
       chatResumeTimerRef.current = null;
     }, 2000);
-  }, []);
+  }, [appSettings.chatAutoFollow]);
 
   useEffect(() => {
     return () => {
@@ -4220,7 +4289,7 @@ function App() {
           setActiveFile(resolvedPath);
           setMobileTab('editor');
           setBrainOpen(true);
-          if (effectiveProjectType === 'FRONTEND_ONLY') {
+          if (appSettings.autoOpenPreview && effectiveProjectType === 'FRONTEND_ONLY') {
             const lower = resolvedPath.toLowerCase();
             if (/\.(html|css|js|jsx|ts|tsx)$/i.test(lower) || lower.endsWith('index.html')) {
               setIsPreviewOpen(true);
@@ -5185,7 +5254,9 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
             logSystem(`[preview] Code complete but partial files remain (${partialPaths.size}). Waiting for auto-resume…`);
           } else {
             logSystem('[preview] Code complete. Preview updating…');
-            setIsPreviewOpen(true);
+            if (appSettings.autoOpenPreview) {
+              setIsPreviewOpen(true);
+            }
           }
         }
       } else {
@@ -5285,6 +5356,7 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
     projectName,
     stack,
     description,
+    appSettings.autoOpenPreview,
     t,
     setProjectId
   ]);
@@ -5986,7 +6058,7 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
           </button>
         </OverlayHeader>
         <OverlayBody>
-          <div style={{ padding: 12, display: 'grid', gap: 10 }}>
+          <div style={{ padding: 12, display: 'grid', gap: 12 }}>
             <div style={{ display: 'grid', gap: 6 }}>
               <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
                 Project Name
@@ -6006,87 +6078,247 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
                 }}
               />
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-                This name is used for saving and restoring your project.
+                Used to identify and restore this workspace.
               </div>
             </div>
 
-            <div style={{ display: 'grid', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
-                  Stack
-                </div>
-                <span style={{ 
-                  fontSize: 9, 
-                  background: 'rgba(34, 211, 238, 0.15)', 
-                  color: 'rgba(34, 211, 238, 0.95)',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  fontWeight: 600
-                }}>
-                  AUTO
-                </span>
+            <div
+              style={{
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.1)',
+                background: 'rgba(255,255,255,0.03)',
+                padding: 10,
+                display: 'grid',
+                gap: 10
+              }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.75 }}>
+                Session & Chat
               </div>
-              <input
-                value={stack || 'Detected automatically by AI'}
-                readOnly
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 2 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>Auto-save conversations</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>Saves chat/session snapshots automatically while you work.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateAppSettings({ autoSaveChats: !appSettings.autoSaveChats })}
+                  style={{
+                    minWidth: 64,
+                    height: 30,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    background: appSettings.autoSaveChats ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)',
+                    color: appSettings.autoSaveChats ? 'rgba(34,197,94,0.95)' : 'rgba(255,255,255,0.75)',
+                    fontWeight: 700,
+                    fontSize: 11,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {appSettings.autoSaveChats ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 2 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>Restore last session</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>When opening the IDE, automatically restore latest conversation.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateAppSettings({ restoreLastSession: !appSettings.restoreLastSession })}
+                  style={{
+                    minWidth: 64,
+                    height: 30,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    background: appSettings.restoreLastSession ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)',
+                    color: appSettings.restoreLastSession ? 'rgba(34,197,94,0.95)' : 'rgba(255,255,255,0.75)',
+                    fontWeight: 700,
+                    fontSize: 11,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {appSettings.restoreLastSession ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 2 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>Chat auto-follow</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>Keep chat viewport tracking latest assistant messages.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !appSettings.chatAutoFollow;
+                    updateAppSettings({ chatAutoFollow: next });
+                    setChatAutoFollow(next);
+                  }}
+                  style={{
+                    minWidth: 64,
+                    height: 30,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    background: appSettings.chatAutoFollow ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)',
+                    color: appSettings.chatAutoFollow ? 'rgba(34,197,94,0.95)' : 'rgba(255,255,255,0.75)',
+                    fontWeight: 700,
+                    fontSize: 11,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {appSettings.chatAutoFollow ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.1)',
+                background: 'rgba(255,255,255,0.03)',
+                padding: 10,
+                display: 'grid',
+                gap: 10
+              }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.75 }}>
+                Preview & AI
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 2 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>Auto-open preview</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>Open preview automatically as files are generated.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateAppSettings({ autoOpenPreview: !appSettings.autoOpenPreview })}
+                  style={{
+                    minWidth: 64,
+                    height: 30,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    background: appSettings.autoOpenPreview ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)',
+                    color: appSettings.autoOpenPreview ? 'rgba(34,197,94,0.95)' : 'rgba(255,255,255,0.75)',
+                    fontWeight: 700,
+                    fontSize: 11,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {appSettings.autoOpenPreview ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 2 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>Use Live Preview route</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>Force Open button to use internal live-preview page, not external server URLs.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateAppSettings({ preferLivePreviewRoute: !appSettings.preferLivePreviewRoute })}
+                  style={{
+                    minWidth: 64,
+                    height: 30,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    background: appSettings.preferLivePreviewRoute ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)',
+                    color: appSettings.preferLivePreviewRoute ? 'rgba(34,197,94,0.95)' : 'rgba(255,255,255,0.75)',
+                    fontWeight: 700,
+                    fontSize: 11,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {appSettings.preferLivePreviewRoute ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 2 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>Multi-AI orchestration</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>Use planner/specialist orchestration for more complex generations.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMultiAgentEnabled(!multiAgentEnabled)}
+                  style={{
+                    minWidth: 64,
+                    height: 30,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    background: multiAgentEnabled ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)',
+                    color: multiAgentEnabled ? 'rgba(34,197,94,0.95)' : 'rgba(255,255,255,0.75)',
+                    fontWeight: 700,
+                    fontSize: 11,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {multiAgentEnabled ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  startNewChat();
+                  setSettingsNotice('Started a fresh chat session.');
+                }}
+                style={{
+                  height: 38,
+                  borderRadius: 10,
+                  border: '1px solid rgba(34, 211, 238, 0.3)',
+                  background: 'rgba(34, 211, 238, 0.12)',
+                  color: 'rgba(255,255,255,0.92)',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Start New Smart Chat
+              </button>
+
+              <button
+                type="button"
+                onClick={handleWipeAllLocalData}
+                disabled={isResettingAllData}
                 style={{
                   height: 40,
-                  borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  background: 'rgba(255,255,255,0.02)',
-                  color: 'rgba(255,255,255,0.60)',
-                  padding: '0 12px',
-                  outline: 'none',
-                  cursor: 'not-allowed'
+                  borderRadius: 10,
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  background: 'rgba(239, 68, 68, 0.16)',
+                  color: 'rgba(254, 226, 226, 0.98)',
+                  fontWeight: 800,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  cursor: isResettingAllData ? 'not-allowed' : 'pointer',
+                  opacity: isResettingAllData ? 0.7 : 1
                 }}
-              />
+              >
+                <Trash2 size={14} />
+                {isResettingAllData ? 'Deleting Data...' : 'Delete All Chats & Local Data'}
+              </button>
             </div>
 
-            <div style={{ display: 'grid', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7 }}>
-                  Description
-                </div>
-                <span style={{ 
-                  fontSize: 9, 
-                  background: 'rgba(34, 211, 238, 0.15)', 
-                  color: 'rgba(34, 211, 238, 0.95)',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  fontWeight: 600
-                }}>
-                  AUTO
-                </span>
-              </div>
-              <textarea
-                value={description || 'Generated automatically from your prompt'}
-                readOnly
-                rows={3}
-                className="scrollbar-thin"
+            {settingsNotice ? (
+              <div
                 style={{
-                  borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  background: 'rgba(255,255,255,0.02)',
-                  color: 'rgba(255,255,255,0.60)',
-                  padding: '10px 12px',
-                  outline: 'none',
-                  resize: 'none',
-                  cursor: 'not-allowed'
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.86)',
+                  lineHeight: 1.4,
+                  background: 'rgba(34, 211, 238, 0.12)',
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(34, 211, 238, 0.28)'
                 }}
-              />
-            </div>
-
-            <div style={{ 
-              fontSize: 11, 
-              color: 'rgba(34, 197, 94, 0.85)', 
-              lineHeight: 1.4,
-              background: 'rgba(34, 197, 94, 0.1)',
-              padding: '8px 10px',
-              borderRadius: 8,
-              border: '1px solid rgba(34, 197, 94, 0.2)'
-            }}>
-              Auto-save enabled. AI determines stack and description automatically.
-            </div>
+              >
+                {settingsNotice}
+              </div>
+            ) : null}
           </div>
         </OverlayBody>
       </OverlayPanel>

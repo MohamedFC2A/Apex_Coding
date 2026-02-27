@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Code, ExternalLink, FileText, RefreshCw } 
 import { useProjectStore } from '@/stores/projectStore';
 import { repairTruncatedContent, validatePreviewContent } from '@/utils/codeRepair';
 import { buildLivePreviewPath, publishLivePreviewSnapshot } from '@/utils/livePreviewLink';
+import { readAppSettings } from '@/utils/appSettings';
 
 interface SimplePreviewProps {
   className?: string;
@@ -984,7 +985,13 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
     if (!previewContent) return;
     const stableProjectId = ensureProjectId();
     publishLivePreviewSnapshot(stableProjectId, previewContent, previewMeta as unknown as Record<string, unknown>);
-    const targetPath = buildLivePreviewPath(stableProjectId);
+    const encodedId = encodeURIComponent(stableProjectId);
+    const canonicalLivePath = `/live-preview/${encodedId}`;
+    const scopedLivePath = `/app/live-preview/${encodedId}`;
+    const settings = readAppSettings();
+    const targetPath = settings.preferLivePreviewRoute
+      ? (String(window.location.pathname || '').startsWith('/app') ? scopedLivePath : canonicalLivePath)
+      : buildLivePreviewPath(stableProjectId);
     const targetUrl =
       typeof window !== 'undefined'
         ? `${window.location.origin}${targetPath}`
@@ -1089,10 +1096,10 @@ export const SimplePreview: React.FC<SimplePreviewProps> = ({ className }) => {
                   <button
                     onClick={handleOpenNewTab}
                     className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 transition hover:bg-white/10 hover:text-white"
-                    title="Open in new tab"
+                    title="Open Live Preview in new tab"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Open</span>
+                    <span className="hidden sm:inline">Open Live Preview</span>
                   </button>
                 </div>
               </div>

@@ -17,6 +17,31 @@ const CSS_DUP_BASENAMES = new Set(['style.css', 'styles.css', 'main.css', 'app.c
 const JS_DUP_BASENAMES = new Set(['script.js', 'main.js', 'app.js']);
 const FORBIDDEN_STATIC_CSS_BASENAMES = new Set(['styles.css', 'main.css', 'global.css', 'app.css', 'index.css']);
 const FORBIDDEN_STATIC_JS_BASENAMES = new Set(['app.js', 'main.js', 'index.js']);
+const SCRIPT_FILE_RE = /\.(?:mjs|cjs|js|jsx|ts|tsx)$/i;
+const STYLE_FILE_RE = /\.(?:css|scss|sass|less)$/i;
+const HTML_FILE_RE = /\.(?:html?|xhtml)$/i;
+const STATIC_ALLOWED_PATCH_EXTENSIONS = new Set([
+  'html',
+  'htm',
+  'css',
+  'js',
+  'mjs',
+  'cjs',
+  'json',
+  'md',
+  'txt',
+  'svg',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'gif',
+  'ico',
+  'woff',
+  'woff2',
+  'ttf',
+  'otf'
+]);
 
 const normalizePath = (rawPath) =>
   String(rawPath || '')
@@ -30,6 +55,13 @@ const basename = (rawPath) => {
   if (!normalized) return '';
   const parts = normalized.split('/');
   return String(parts[parts.length - 1] || '').toLowerCase();
+};
+
+const extname = (rawPath) => {
+  const name = basename(rawPath);
+  const idx = name.lastIndexOf('.');
+  if (idx <= 0) return '';
+  return name.slice(idx + 1).toLowerCase();
 };
 
 const duplicatePurposeKey = (name) => {
@@ -59,6 +91,193 @@ const buildPolicyViolation = (code, message, path, extra = {}) => ({
   path: normalizePath(path || ''),
   ...extra
 });
+
+const hasScriptSyntaxSignal = (source) => {
+  const text = String(source || '');
+  if (!text.trim()) return false;
+  return /\b(?:const|let|var|function|class|import|export|return|if|for|while|switch|try|catch|async|await|new)\b|=>|document\.|window\.|addEventListener\(/m.test(
+    text
+  );
+};
+
+const hasCssSelectorSignal = (source) => {
+  const text = String(source || '');
+  if (!text.trim()) return false;
+  return /(?:^|\n)\s*(?:@media[^{]+\{|[:.#]?[a-zA-Z][\w-]*(?:\s+[:.#]?[a-zA-Z][\w-]*)*\s*\{)/m.test(text);
+};
+
+const hasCssPropertySignal = (source) =>
+  /\b(?:color|background(?:-color)?|display|position|margin|padding|font-size|font-family|border(?:-radius)?|width|height|grid|flex|justify-content|align-items)\s*:/i.test(
+    String(source || '')
+  );
+
+const hasCssSyntaxSignal = (source) => hasCssSelectorSignal(source) && hasCssPropertySignal(source);
+
+const hasHtmlMarkupSignal = (source) =>
+  /<(?:!doctype|html|head|body|main|section|article|header|footer|nav|div|span|script|style|meta|link)\b/i.test(
+    String(source || '')
+  );
+
+const countCssLines = (text) => {
+  const lines = String(text || '').split('\n');
+  let count = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+    if (/^[.#@:][a-zA-Z]/.test(trimmed) || /^\w[\w-]*\s*\{/.test(trimmed) || /^\s*[\w-]+\s*:\s*.+;/.test(trimmed)) {
+      count += 1;
+    }
+  }
+  return count;
+};
+
+const countScriptLines = (text) => {
+  const lines = String(text || '').split('\n');
+  let count = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+    if (
+      /\b(?:const|let|var|function|class|import|export|return|if|for|while|switch|try|catch|async|await|new)\b/.test(
+        trimmed
+      ) ||
+      /=>|document\.|window\.|addEventListener\(/.test(trimmed)
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+};
+
+const hasInlineStyleBlock = (source) => {
+  const text = String(source || '');
+  const matches = text.match(/<style\b[^>]*>[\s\S]*?<\/style>/gi);
+  if (!matches) return false;
+  for (const block of matches) {
+    const inner = String(block)
+      .replace(/^<style\b[^>]*>/i, '')
+      .replace(/<\/style>$/i, '')
+      .trim();
+    if (inner.length > 0) return true;
+  }
+  return false;
+};
+
+const hasInlineScriptBlock = (source) => {
+  const text = String(source || '');
+  const matches = text.match(/<script\b(?![^>]*\bsrc\s*=)[^>]*>[\s\S]*?<\/script>/gi);
+  if (!matches) return false;
+  for (const block of matches) {
+    const inner = String(block)
+      .replace(/^<script\b[^>]*>/i, '')
+      .replace(/<\/script>$/i, '')
+      .trim();
+    if (inner.length > 0) return true;
+  }
+  return false;
+};
+
+const isStaticPatchExtensionAllowed = (path) => {
+  const ext = extname(path);
+  if (!ext) return true;
+  return STATIC_ALLOWED_PATCH_EXTENSIONS.has(ext);
+};
+
+const detectLanguageMismatchViolation = (path, content, { isStaticProfile = false } = {}) => {
+  const normalizedPath = normalizePath(path);
+  const text = String(content || '');
+  if (!normalizedPath || !text.trim()) return null;
+
+  const hasScript = hasScriptSyntaxSignal(text);
+  const hasCss = hasCssSyntaxSignal(text);
+  const hasHtml = hasHtmlMarkupSignal(text);
+
+  if (SCRIPT_FILE_RE.test(normalizedPath)) {
+    if (hasCss && !hasScript && !hasHtml) {
+      return buildPolicyViolation(
+        'LANGUAGE_MISMATCH_JS',
+        'JavaScript file appears to contain CSS content; move styles to CSS files',
+        normalizedPath
+      );
+    }
+    if (hasCss && hasScript) {
+      const cssLines = countCssLines(text);
+      const jsLines = countScriptLines(text);
+      if (cssLines > 0 && jsLines > 0 && cssLines > jsLines * 1.5) {
+        return buildPolicyViolation(
+          'LANGUAGE_MISMATCH_JS',
+          'JavaScript file is dominated by CSS content; keep JavaScript and CSS separated',
+          normalizedPath
+        );
+      }
+    }
+    if (hasHtml && !hasScript && !hasCss) {
+      return buildPolicyViolation(
+        'LANGUAGE_MISMATCH_JS',
+        'JavaScript file appears to contain HTML markup; move markup to HTML files',
+        normalizedPath
+      );
+    }
+    return null;
+  }
+
+  if (STYLE_FILE_RE.test(normalizedPath)) {
+    const hasSoftCss = hasCssSelectorSignal(text) || hasCssPropertySignal(text);
+    if (hasScript && !hasSoftCss && !hasHtml) {
+      return buildPolicyViolation(
+        'LANGUAGE_MISMATCH_CSS',
+        'CSS file appears to contain JavaScript logic; move logic to JavaScript files',
+        normalizedPath
+      );
+    }
+    if (hasScript && hasSoftCss) {
+      const cssLines = countCssLines(text);
+      const jsLines = countScriptLines(text);
+      if (jsLines > 0 && cssLines > 0 && jsLines > cssLines * 1.5) {
+        return buildPolicyViolation(
+          'LANGUAGE_MISMATCH_CSS',
+          'CSS file is dominated by JavaScript content; keep CSS and JavaScript separated',
+          normalizedPath
+        );
+      }
+    }
+    if (hasHtml && !hasSoftCss && !hasScript) {
+      return buildPolicyViolation(
+        'LANGUAGE_MISMATCH_CSS',
+        'CSS file appears to contain HTML markup; move markup to HTML files',
+        normalizedPath
+      );
+    }
+    return null;
+  }
+
+  if (HTML_FILE_RE.test(normalizedPath)) {
+    if (!hasHtml && hasCss) {
+      return buildPolicyViolation(
+        'LANGUAGE_MISMATCH_HTML',
+        'HTML file appears to contain only CSS content and lacks HTML markup',
+        normalizedPath
+      );
+    }
+    if (!hasHtml && hasScript) {
+      return buildPolicyViolation(
+        'LANGUAGE_MISMATCH_HTML',
+        'HTML file appears to contain only JavaScript content and lacks HTML markup',
+        normalizedPath
+      );
+    }
+    if (isStaticProfile && (hasInlineStyleBlock(text) || hasInlineScriptBlock(text))) {
+      return buildPolicyViolation(
+        'STATIC_INLINE_LANGUAGE_MIXED',
+        'Static frontend requires CSS/JS in dedicated files; inline <style>/<script> blocks are not allowed',
+        normalizedPath
+      );
+    }
+    return null;
+  }
+
+  return null;
+};
 
 const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } = {}) => {
   const allowedEditSet = new Set((writePolicy?.allowedEditPaths || []).map((path) => normalizePath(path).toLowerCase()).filter(Boolean));
@@ -116,6 +335,7 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
 
   const touchedPaths = new Set();
   const createdPaths = new Set();
+  const activePatchByPath = new Map();
   let seenHtmlInRun = false;
   const requestedTouchMode = String(writePolicy?.touchBudgetMode || 'minimal').toLowerCase();
   const providedMaxTouched = Number(writePolicy?.maxTouchedFiles || 0);
@@ -185,6 +405,7 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
           )
         };
       }
+      activePatchByPath.set(path.toLowerCase(), { path, mode, content: '' });
       return { allowed: true };
     }
 
@@ -192,6 +413,17 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
       return {
         allowed: false,
         violation: buildPolicyViolation('CREATE_OUT_OF_SCOPE', 'Create path is outside allowed create rules', path)
+      };
+    }
+
+    if (isStaticProfile && !isStaticPatchExtensionAllowed(path)) {
+      return {
+        allowed: false,
+        violation: buildPolicyViolation(
+          'STATIC_UNSUPPORTED_FILETYPE',
+          `Static frontend forbids creating unsupported file type "${extname(path) || 'unknown'}"`,
+          path
+        )
       };
     }
 
@@ -252,6 +484,51 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
 
     registerPath(path);
     createdPaths.add(path.toLowerCase());
+    activePatchByPath.set(path.toLowerCase(), { path, mode, content: '' });
+    return { allowed: true };
+  };
+
+  const checkPatchChunk = (event) => {
+    const path = normalizePath(event.path);
+    if (!path) return { allowed: true };
+    const key = path.toLowerCase();
+    const active = activePatchByPath.get(key);
+    if (!active) return { allowed: true };
+    const chunk = String(event.chunk || '');
+    if (!chunk) return { allowed: true };
+    active.content += chunk;
+    activePatchByPath.set(key, active);
+    return { allowed: true };
+  };
+
+  const checkPatchEnd = (event) => {
+    const path = normalizePath(event.path);
+    if (!path) return { allowed: true };
+    const key = path.toLowerCase();
+    const active = activePatchByPath.get(key);
+    activePatchByPath.delete(key);
+    if (!active) return { allowed: true };
+
+    const mode = active.mode === 'edit' ? 'edit' : 'create';
+    const content = String(active.content || '');
+    if (mode === 'create' && content.trim().length === 0) {
+      return {
+        allowed: false,
+        violation: buildPolicyViolation(
+          'EMPTY_CREATE_CONTENT',
+          'Create operation emitted empty file content',
+          path
+        )
+      };
+    }
+
+    const mismatchViolation = detectLanguageMismatchViolation(path, content, { isStaticProfile });
+    if (mismatchViolation) {
+      return {
+        allowed: false,
+        violation: mismatchViolation
+      };
+    }
     return { allowed: true };
   };
 
@@ -342,6 +619,8 @@ const createFileOpPolicyGate = ({ writePolicy = {}, workspaceAnalysis = null } =
       const op = String(event.op || '').toLowerCase();
       const phase = String(event.phase || '').toLowerCase();
       if (op === 'patch' && phase === 'start') return checkPatchStart(event);
+      if (op === 'patch' && phase === 'chunk') return checkPatchChunk(event);
+      if (op === 'patch' && phase === 'end') return checkPatchEnd(event);
       if (op === 'delete' && phase === 'end') return checkDelete(event);
       if (op === 'move' && phase === 'end') return checkMove(event);
       return { allowed: true };
@@ -374,6 +653,8 @@ const buildPolicyRepairPrompt = ({ originalPrompt, violation, writePolicy, works
     'Your last patch stream violated strict write policy.',
     'Output ONLY valid file-op protocol markers and full file contents.',
     'Do not output explanations.',
+    'Keep HTML/CSS/JavaScript separated by file type.',
+    'For static frontend mode, keep CSS in .css files and JS in .js files (no inline <style>/<script>).',
     '',
     '[VIOLATION]',
     `code=${violation?.code || 'UNKNOWN'}`,

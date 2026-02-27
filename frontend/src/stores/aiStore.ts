@@ -11,6 +11,7 @@ import { buildMemorySnapshot } from '@/services/memoryEngine';
 import { sanitizeOperationPath } from '@/utils/fileOpGuards';
 import { toFrontendCanonicalPath } from '@/services/frontendProjectModeV12';
 import { resolveGenerationProfile } from '@/utils/generationProfile';
+import { isChatAutoSaveEnabled } from '@/utils/appSettings';
 import type { DestructiveSafetyMode, GenerationProfile, TouchBudgetMode } from '@/types/constraints';
 import type {
   ActiveModelProfile,
@@ -261,6 +262,7 @@ const SUMMARY_CHUNK_SIZE = 5;
 const MAX_HISTORY_SESSIONS = 120;
 const AI_EMERGENCY_SESSION_KEY = 'apex-ai-emergency-session';
 export const AI_NEW_CHAT_GUARD_KEY = 'apex-ai-new-chat-guard';
+const lastSessionSaveSignatureById = new Map<string, string>();
 
 // Keep long-running sessions responsive: cap large UI strings.
 const MAX_THINKING_CHARS = 120_000;
@@ -806,6 +808,37 @@ const buildInitialState = (): AIStoreState => ({
   blockedReason: null
 });
 
+const buildSessionSaveSignature = (args: {
+  projectName: string;
+  activeFile: string | null;
+  stack: string;
+  description: string;
+  files: ProjectFile[];
+  chatHistory: ChatMessage[];
+  plan: string;
+  planSteps: PlanStep[];
+  executionPhase: ExecutionPhase;
+  writingFilePath: string | null;
+}) => {
+  const fileCount = Array.isArray(args.files) ? args.files.length : 0;
+  const fileSize = (args.files || []).reduce((acc, file) => acc + Number(String(file?.content || '').length), 0);
+  const chatCount = Array.isArray(args.chatHistory) ? args.chatHistory.length : 0;
+  const lastChat = chatCount > 0 ? args.chatHistory[chatCount - 1] : null;
+  const lastMessageKey = `${String(lastChat?.role || '')}:${String(lastChat?.content || '').slice(0, 180)}`;
+  const planCount = Array.isArray(args.planSteps) ? args.planSteps.length : 0;
+  return [
+    String(args.projectName || ''),
+    String(args.activeFile || ''),
+    String(args.stack || ''),
+    String(args.description || ''),
+    `files:${fileCount}:${fileSize}`,
+    `chat:${chatCount}:${lastMessageKey}`,
+    `plan:${String(args.plan || '').slice(0, 160)}:${planCount}`,
+    `phase:${String(args.executionPhase || 'idle')}`,
+    `writing:${String(args.writingFilePath || '')}`
+  ].join('|');
+};
+
 const initialState: AIStoreState = buildInitialState();
 
 export const useAIStore = createWithEqualityFn<AIState>()(
@@ -815,9 +848,11 @@ export const useAIStore = createWithEqualityFn<AIState>()(
 
       const scheduleSessionSave = (delay = 900) => {
         if (typeof window === 'undefined') return;
+        if (!isChatAutoSaveEnabled()) return;
         if (sessionSaveTimer) window.clearTimeout(sessionSaveTimer);
         sessionSaveTimer = window.setTimeout(() => {
           sessionSaveTimer = null;
+          if (!isChatAutoSaveEnabled()) return;
           get().saveCurrentSession();
         }, delay);
       };
@@ -1379,7 +1414,7 @@ export const useAIStore = createWithEqualityFn<AIState>()(
             state.lastPlannedPrompt.trim().length > 0 ||
             projectName.trim().length > 0;
           if (!canCreateSession) return;
-          sessionId = `project-${sanitizedName}-${Date.now()}`;
+          sessionId = `project-${sanitizedName}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
         }
 
         const titleSource = projectName || state.lastPlannedPrompt || state.prompt || 'Untitled Session';
@@ -1395,6 +1430,21 @@ export const useAIStore = createWithEqualityFn<AIState>()(
         const fullChatHistory = state.chatHistory.map((message) => ({ ...message }));
         
         const existingSession = state.history.find(s => s.id === sessionId);
+        const saveSignature = buildSessionSaveSignature({
+          projectName,
+          activeFile,
+          stack,
+          description,
+          files: projectFiles,
+          chatHistory: fullChatHistory,
+          plan: state.plan,
+          planSteps: state.planSteps,
+          executionPhase: state.executionPhase,
+          writingFilePath: state.writingFilePath
+        });
+        const previousSignature = lastSessionSaveSignatureById.get(sessionId);
+        if (previousSignature === saveSignature) return;
+        lastSessionSaveSignatureById.set(sessionId, saveSignature);
         const createdAt = existingSession?.createdAt || Date.now();
 
         const snapshot: HistorySession = {

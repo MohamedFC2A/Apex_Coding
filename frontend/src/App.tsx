@@ -196,50 +196,50 @@ const Container = styled.div<{ $reserveConsole: boolean }>`
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 18px clamp(12px, 2vw, 24px);
-  padding-bottom: calc(18px + 40px);
+  gap: 10px;
+  padding: 12px clamp(10px, 1.5vw, 18px);
+  padding-bottom: calc(12px + 40px);
   min-height: 0;
   max-width: min(1880px, 100%);
   width: 100%;
   margin: 0 auto;
 
   @media (max-width: 1024px) {
-    padding: 12px;
-    padding-bottom: calc(12px + 40px);
-    gap: 12px;
+    padding: 10px;
+    padding-bottom: calc(10px + 40px);
+    gap: 8px;
   }
 
   @media (max-width: 768px) {
-    padding: 12px;
+    padding: 10px;
     padding-bottom: calc(
       var(--mobile-nav-height) +
       env(safe-area-inset-bottom) +
       ${(p) => (p.$reserveConsole ? 'var(--brain-console-collapsed-height)' : '0px')}
     );
-    gap: 12px;
+    gap: 8px;
   }
 `;
 
 const HeaderArea = styled.div`
   flex-shrink: 0;
-  min-height: var(--header-height);
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   position: relative;
   overflow: hidden;
   background: rgba(10, 14, 25, 0.65);
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
-    0 16px 40px rgba(0, 0, 0, 0.4),
+    0 10px 30px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
     
-  padding: 0 16px;
+  padding: 0 14px;
   flex-wrap: nowrap;
   transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
 
@@ -276,22 +276,22 @@ const HeaderArea = styled.div`
     border-color: rgba(255, 255, 255, 0.15);
     background: rgba(12, 16, 28, 0.75);
     box-shadow:
-      0 20px 50px rgba(0, 0, 0, 0.5),
+      0 14px 36px rgba(0, 0, 0, 0.45),
       0 0 0 1px rgba(255, 255, 255, 0.05) inset;
     transform: translateY(-1px);
   }
 
   @media (max-width: 1024px) {
-    gap: 12px;
-    padding: 0 12px;
+    gap: 10px;
+    padding: 0 10px;
   }
 
   @media (max-width: 768px) {
     min-height: auto;
-    padding: 8px 10px;
+    padding: 7px 10px;
     gap: 8px;
     flex-wrap: wrap;
-    border-radius: 14px;
+    border-radius: 12px;
   }
 `;
 
@@ -1342,8 +1342,6 @@ const ChatComposerWrap = styled.div`
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  max-height: 55%;
-  overflow-y: auto;
 `;
 
 const WorkbenchColumn = styled.div`
@@ -5762,35 +5760,6 @@ ${missingPaths.map((path) => `- ${path}`).join('\n')}
             </MobileMenuButton>
           </HeaderRight>
         </HeaderArea>
-
-        <WorkspaceSignalRail style={{ flexDirection: isRTL ? 'row-reverse' : 'row' }}>
-          <WorkspaceSignalCopy>
-            <WorkspaceSignalBadge>Apex Workspace</WorkspaceSignalBadge>
-            <WorkspaceSignalTitle>
-              {isGenerating ? 'Building your project in real time' : 'Your AI-first command center is ready'}
-            </WorkspaceSignalTitle>
-            <WorkspaceSignalSubtext>
-              {runtimeMessage?.trim()
-                ? runtimeMessage
-                : 'Prompt once, then monitor progress without losing flow.'}
-            </WorkspaceSignalSubtext>
-          </WorkspaceSignalCopy>
-          <WorkspaceSignalStats>
-            <WorkspaceSignalStat $tone={contextLabelTone} style={{ padding: '3px 8px 3px 3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <CircularContextProgress budget={contextBudget} tone={contextLabelTone} />
-              CTX
-            </WorkspaceSignalStat>
-            <WorkspaceSignalStat $tone={runtimeLabelTone}>
-              {runtimeLabel}
-            </WorkspaceSignalStat>
-            <WorkspaceSignalStat>
-              {modelMode === 'thinking' ? 'Thinking mode' : modelMode === 'fast' ? 'Fast mode' : 'Super mode'}
-            </WorkspaceSignalStat>
-            <WorkspaceSignalStat $tone={isPreviewOpen ? 'good' : 'default'}>
-              {isPreviewOpen ? 'Preview on' : 'Preview off'}
-            </WorkspaceSignalStat>
-          </WorkspaceSignalStats>
-        </WorkspaceSignalRail>
 
         {!isMobileViewport ? (
           <DesktopLayout>

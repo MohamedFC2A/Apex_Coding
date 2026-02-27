@@ -33,22 +33,38 @@ const Shell = styled.div`
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
-  backdrop-filter: blur(24px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background:
+    linear-gradient(160deg, rgba(12, 16, 28, 0.7) 0%, rgba(8, 12, 22, 0.85) 100%),
+    radial-gradient(300px 200px at 0% 0%, rgba(59, 130, 246, 0.09), transparent 70%);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   box-shadow: 
-    0 8px 32px 0 rgba(0, 0, 0, 0.36),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   overflow: hidden;
   min-height: 0;
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), rgba(139, 92, 246, 0.4), transparent);
+    pointer-events: none;
+    z-index: 1;
+  }
   
   &:hover {
     box-shadow: 
-      0 12px 48px 0 rgba(0, 0, 0, 0.45),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.12);
+      0 16px 52px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.13);
   }
 `;
 
@@ -68,21 +84,27 @@ const HeaderRow = styled.div`
 `;
 
 const HeaderTitle = styled.div`
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.95);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   
   &::before {
     content: '';
-    width: 6px;
-    height: 6px;
-    background: #3b82f6;
+    width: 7px;
+    height: 7px;
+    background: linear-gradient(135deg, #3b82f6, #22d3ee);
     border-radius: 50%;
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.7), 0 0 20px rgba(34, 211, 238, 0.3);
+    animation: sidebarDot 3s ease-in-out infinite;
+  }
+
+  @keyframes sidebarDot {
+    0%, 100% { box-shadow: 0 0 12px rgba(59, 130, 246, 0.7), 0 0 20px rgba(34, 211, 238, 0.3); }
+    50% { box-shadow: 0 0 16px rgba(59, 130, 246, 0.9), 0 0 28px rgba(34, 211, 238, 0.5); }
   }
 `;
 
@@ -150,26 +172,42 @@ const TreeRow = styled.button<{ $active?: boolean }>`
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.2)' : 'transparent')};
-  background: ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.1)' : 'transparent')};
-  color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.7)')};
+  gap: 9px;
+  padding: 7px 10px 7px ${(p) => (p.$active ? '8px' : '10px')};
+  border-radius: 10px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.25)' : 'transparent')};
+  background: ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.12)' : 'transparent')};
+  color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.68)')};
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   margin-bottom: 2px;
+  position: relative;
+
+  ${(p) => p.$active && `
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 20%;
+      bottom: 20%;
+      width: 2px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, #3b82f6, #22d3ee);
+      box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+    }
+  `}
 
   &:hover {
-    background: ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)')};
+    background: ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.06)')};
     color: rgba(255, 255, 255, 1);
-    transform: translateX(2px);
+    transform: translateX(${(p) => (p.$active ? '0' : '2px')});
+    border-color: ${(p) => (p.$active ? 'rgba(59, 130, 246, 0.35)' : 'rgba(255, 255, 255, 0.06)')};
   }
   
   & svg {
-    opacity: ${(p) => (p.$active ? 1 : 0.7)};
-    transition: opacity 0.2s;
+    opacity: ${(p) => (p.$active ? 1 : 0.65)};
+    transition: opacity 0.18s;
   }
 `;
 
@@ -248,14 +286,25 @@ const SkeletonStack = styled.div`
 
 const Footer = styled.div`
   flex-shrink: 0;
-  padding: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(10px);
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(12px);
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 10px;
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: 16px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  }
 `;
 
 const FooterMeta = styled.div`
@@ -266,17 +315,19 @@ const FooterMeta = styled.div`
 
 const FooterMetaLine = styled.div`
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.75);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   
   &:last-child {
-    font-size: 10px;
+    font-size: 9px;
     opacity: 0.5;
-    font-weight: 400;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 `;
 
@@ -286,18 +337,22 @@ const FooterButton = styled.button`
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.75);
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(34, 211, 238, 0.14));
+    border-color: rgba(59, 130, 246, 0.35);
     color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  }
+
+  &:active {
+    transform: translateY(0);
   }
 `;
 

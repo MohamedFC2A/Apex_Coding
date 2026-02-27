@@ -12,24 +12,39 @@ const Shell = styled(motion.div)<{ $mode: 'create' | 'edit' }>`
   max-width: 100%;
   margin: 0 auto;
   flex-shrink: 0;
-  border-radius: 16px;
-  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.44)' : 'rgba(34, 211, 238, 0.3)')};
-  background: linear-gradient(180deg, rgba(8, 12, 18, 0.95) 0%, rgba(6, 9, 14, 0.95) 100%);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
+  border-radius: 20px;
+  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.46)' : 'rgba(34, 211, 238, 0.32)')};
+  background: linear-gradient(180deg, rgba(9, 13, 20, 0.97) 0%, rgba(6, 9, 14, 0.98) 100%);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
   box-shadow: 
-    0 24px 64px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(34, 211, 238, 0.15)')};
+    0 24px 64px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.18)' : 'rgba(34, 211, 238, 0.12)')};
   overflow: hidden;
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: ${(p) => p.$mode === 'edit'
+      ? 'linear-gradient(90deg, transparent 10%, rgba(245, 158, 11, 0.6) 50%, transparent 90%)'
+      : 'linear-gradient(90deg, transparent 10%, rgba(34, 211, 238, 0.5) 50%, transparent 90%)'};
+    z-index: 1;
+    pointer-events: none;
+  }
   
   &:focus-within {
     box-shadow: 
-      0 32px 80px rgba(0, 0, 0, 0.6),
-      0 0 0 1px ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(34, 211, 238, 0.3)')},
-      0 0 30px ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(34, 211, 238, 0.15)')},
-      inset 0 1px 0 ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.25)' : 'rgba(34, 211, 238, 0.25)')};
-    border-color: ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.6)' : 'rgba(34, 211, 238, 0.5)')};
+      0 32px 80px rgba(0, 0, 0, 0.65),
+      0 0 0 1px ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.35)' : 'rgba(34, 211, 238, 0.32)')},
+      0 0 40px ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(34, 211, 238, 0.12)')},
+      inset 0 1px 0 ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.22)' : 'rgba(34, 211, 238, 0.22)')};
+    border-color: ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.65)' : 'rgba(34, 211, 238, 0.55)')};
     transform: translateY(-2px);
   }
 `;
@@ -39,9 +54,13 @@ const TopBar = styled.div<{ $mode: 'create' | 'edit' }>`
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(34, 211, 238, 0.08)')};
+  padding: 10px 14px 9px;
+  border-bottom: 1px solid ${(p) => p.$mode === 'edit'
+    ? 'rgba(245, 158, 11, 0.18)'
+    : 'rgba(34, 211, 238, 0.1)'};
+  background: ${(p) => p.$mode === 'edit'
+    ? 'rgba(245, 158, 11, 0.08)'
+    : 'rgba(34, 211, 238, 0.06)'};
 
   @media (max-width: 768px) {
     padding: 10px;
@@ -58,16 +77,36 @@ const TopLeft = styled.div`
 const ModeBadge = styled.span<{ $mode: 'create' | 'edit' }>`
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   border-radius: 999px;
-  padding: 4px 10px;
+  padding: 4px 11px 4px 8px;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.95)' : 'rgba(34, 211, 238, 0.95)')};
-  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.36)' : 'rgba(34, 211, 238, 0.36)')};
-  background: rgba(0, 0, 0, 0.24);
+  color: ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.97)' : 'rgba(34, 211, 238, 0.97)')};
+  border: 1px solid ${(p) => (p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.38)' : 'rgba(34, 211, 238, 0.38)')};
+  background: ${(p) => p.$mode === 'edit'
+    ? 'rgba(245, 158, 11, 0.1)'
+    : 'rgba(34, 211, 238, 0.08)'};
   white-space: nowrap;
+
+  &::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: ${(p) => p.$mode === 'edit' ? 'rgba(245, 158, 11, 0.9)' : 'rgba(34, 211, 238, 0.9)'};
+    box-shadow: ${(p) => p.$mode === 'edit'
+      ? '0 0 6px rgba(245, 158, 11, 0.7)'
+      : '0 0 6px rgba(34, 211, 238, 0.7)'};
+    animation: modeDotBlink 2s ease-in-out infinite;
+  }
+
+  @keyframes modeDotBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
 `;
 
 const TopInfo = styled.span`
@@ -276,27 +315,29 @@ const InputWrap = styled.div`
 const Input = styled.textarea`
   width: 100%;
   min-width: 0;
-  min-height: 86px;
-  max-height: 260px;
+  min-height: 90px;
+  max-height: 300px;
   resize: none;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   outline: none;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 14px 16px;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.28);
   color: rgba(255, 255, 255, 0.97);
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.65;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.3);
+    color: rgba(255, 255, 255, 0.28);
+    font-style: italic;
   }
 
   &:focus {
-    border-color: rgba(34, 211, 238, 0.3);
-    background: rgba(0, 0, 0, 0.4);
-    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+    border-color: rgba(34, 211, 238, 0.28);
+    background: rgba(0, 0, 0, 0.38);
+    box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.55);
   }
 
   &:disabled {
@@ -305,10 +346,10 @@ const Input = styled.textarea`
   }
 
   @media (max-width: 768px) {
-    min-height: 92px;
-    max-height: min(230px, 38vh);
+    min-height: 96px;
+    max-height: min(260px, 40vh);
     font-size: 16px;
-    padding: 11px;
+    padding: 12px;
   }
 `;
 

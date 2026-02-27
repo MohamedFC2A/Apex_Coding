@@ -1074,7 +1074,7 @@ const DesktopLayout = styled.div`
     flex: 1;
     min-height: 0;
     min-width: 0;
-    grid-template-columns: minmax(350px, 0.31fr) minmax(0, 0.69fr);
+    grid-template-columns: minmax(360px, 0.34fr) minmax(0, 0.66fr);
     gap: 14px;
     width: 100%;
   }
@@ -1095,14 +1095,31 @@ const ChatPanel = styled.div`
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
+  border-radius: 20px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   background:
-    linear-gradient(180deg, rgba(11, 16, 28, 0.4) 0%, rgba(8, 12, 22, 0.6) 100%),
-    radial-gradient(300px 200px at 8% 8%, rgba(59, 130, 246, 0.08), transparent 70%);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    linear-gradient(180deg, rgba(10, 14, 26, 0.55) 0%, rgba(6, 9, 18, 0.72) 100%),
+    radial-gradient(400px 250px at 5% 5%, rgba(59, 130, 246, 0.1), transparent 65%),
+    radial-gradient(350px 200px at 95% 90%, rgba(139, 92, 246, 0.07), transparent 65%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(34, 211, 238, 0.4) 40%, rgba(139, 92, 246, 0.3) 70%, transparent 100%);
+    z-index: 1;
+    pointer-events: none;
+  }
 `;
 
 const ChatHeader = styled.div`
@@ -1111,38 +1128,49 @@ const ChatHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 100%);
+  position: relative;
+  z-index: 2;
 `;
 
 const ChatHeaderTitle = styled.div`
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.95);
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 
   &::before {
     content: '';
     display: inline-block;
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: rgba(34, 211, 238, 0.85);
-    box-shadow: 0 0 7px rgba(34, 211, 238, 0.6);
+    background: rgba(34, 211, 238, 0.9);
+    box-shadow: 0 0 10px rgba(34, 211, 238, 0.7), 0 0 20px rgba(34, 211, 238, 0.3);
     flex-shrink: 0;
+    animation: chatDotPulse 2.5s ease-in-out infinite;
+  }
+
+  @keyframes chatDotPulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(34, 211, 238, 0.7), 0 0 20px rgba(34, 211, 238, 0.3); }
+    50% { box-shadow: 0 0 14px rgba(34, 211, 238, 0.9), 0 0 28px rgba(34, 211, 238, 0.5); }
   }
 `;
 
 const ChatHeaderMeta = styled.div`
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(255, 255, 255, 0.55);
   font-weight: 600;
   letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 `;
 
 const ContextBarTrack = styled.div`
@@ -1198,52 +1226,75 @@ const ChatBubble = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
   align-self: ${(p) => (p.$role === 'user' ? 'flex-end' : 'flex-start')};
   width: fit-content;
   max-width: 88%;
-  border-radius: ${(p) => (
-    p.$role === 'user' ? '16px 16px 6px 16px' : '16px 16px 16px 6px'
-  )};
-  padding: 11px 13px;
-  border: 1px solid ${(p) => (
+  border-radius: ${(p) =>
+    p.$role === 'user' ? '18px 18px 6px 18px' : '18px 18px 18px 6px'
+  };
+  padding: 12px 14px;
+  border: 1px solid ${(p) =>
     p.$role === 'user'
-      ? 'rgba(34, 211, 238, 0.36)'
+      ? 'rgba(34, 211, 238, 0.4)'
       : p.$role === 'assistant'
-        ? 'rgba(52, 211, 153, 0.28)'
-        : 'rgba(255, 255, 255, 0.14)'
-  )};
-  background: ${(p) => (
+        ? 'rgba(52, 211, 153, 0.32)'
+        : 'rgba(255, 255, 255, 0.14)'};
+  background: ${(p) =>
     p.$role === 'user'
-      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.2), rgba(59, 130, 246, 0.14))'
+      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.22) 0%, rgba(59, 130, 246, 0.18) 100%)'
       : p.$role === 'assistant'
-        ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.14), rgba(16, 185, 129, 0.08))'
-        : 'linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03))'
-  )};
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px rgba(2, 8, 20, 0.28);
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+        ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(16, 185, 129, 0.09) 100%)'
+        : 'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03))'};
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: ${(p) =>
+    p.$role === 'user'
+      ? '0 8px 28px rgba(2, 8, 20, 0.3), 0 0 0 1px rgba(34, 211, 238, 0.1) inset'
+      : '0 8px 28px rgba(2, 8, 20, 0.25)'};
+  transition: all 200ms cubic-bezier(0.25, 0.8, 0.25, 1);
+  position: relative;
+
+  ${(p) => p.$role === 'assistant' && `
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 12px;
+      bottom: 12px;
+      width: 2px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, rgba(52, 211, 153, 0.8), rgba(34, 211, 238, 0.5));
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+    }
+  `}
 
   &:hover {
-    box-shadow: 0 12px 28px rgba(2, 8, 20, 0.36);
+    box-shadow: ${(p) =>
+      p.$role === 'user'
+        ? '0 12px 32px rgba(2, 8, 20, 0.4), 0 0 0 1px rgba(34, 211, 238, 0.15) inset'
+        : '0 12px 32px rgba(2, 8, 20, 0.35)'};
+    transform: translateY(-1px);
   }
 `;
 
 const ChatBubbleRole = styled.div<{ $role: 'user' | 'assistant' | 'system' }>`
   font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.10em;
+  font-weight: 900;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  margin-bottom: 5px;
-  color: ${(p) => (
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: ${(p) =>
     p.$role === 'user'
       ? 'rgba(103, 232, 249, 1)'
       : p.$role === 'assistant'
         ? 'rgba(134, 239, 172, 1)'
-        : 'rgba(255, 255, 255, 0.6)'
-  )};
+        : 'rgba(255, 255, 255, 0.6)'};
 `;
 
 const ChatBubbleText = styled.div`
-  font-size: 12.5px;
-  line-height: 1.58;
-  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  line-height: 1.62;
+  color: rgba(255, 255, 255, 0.93);
   white-space: pre-wrap;
   word-break: break-word;
   letter-spacing: 0.01em;
@@ -1269,13 +1320,20 @@ const ChatTimestamp = styled.span`
 `;
 
 const ChatEmpty = styled.div`
-  border: 1px dashed rgba(125, 244, 255, 0.28);
-  border-radius: 12px;
-  padding: 13px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.72);
-  line-height: 1.45;
-  background: rgba(34, 211, 238, 0.06);
+  border: 1px dashed rgba(125, 244, 255, 0.25);
+  border-radius: 16px;
+  padding: 20px 16px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.68);
+  line-height: 1.6;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.06), rgba(59, 130, 246, 0.04));
+  text-align: center;
+  animation: emptyPulse 3s ease-in-out infinite;
+
+  @keyframes emptyPulse {
+    0%, 100% { border-color: rgba(125, 244, 255, 0.2); }
+    50% { border-color: rgba(125, 244, 255, 0.38); }
+  }
 `;
 
 const ChatComposerWrap = styled.div`
@@ -1300,35 +1358,55 @@ const WorkbenchTabs = styled.div`
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px;
+  gap: 5px;
+  padding: 5px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
   width: fit-content;
-  box-shadow: 0 10px 24px rgba(2, 8, 20, 0.28);
+  box-shadow: 0 8px 20px rgba(2, 8, 20, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
 `;
 
 const WorkbenchTab = styled.button<{ $active: boolean }>`
-  height: 32px;
-  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.42)' : 'rgba(255, 255, 255, 0.14)')};
+  height: 34px;
+  border: 1px solid ${(p) => (p.$active ? 'rgba(34, 211, 238, 0.45)' : 'transparent')};
   background: ${(p) =>
     p.$active
-      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(59, 130, 246, 0.18))'
-      : 'rgba(255, 255, 255, 0.03)'};
-  color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 0.98)' : 'rgba(255, 255, 255, 0.72)')};
+      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.2) 0%, rgba(59, 130, 246, 0.16) 100%)'
+      : 'transparent'};
+  color: ${(p) => (p.$active ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.65)')};
   border-radius: 11px;
-  padding: 0 12px;
+  padding: 0 16px;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: all 180ms ease;
+  transition: all 200ms cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: ${(p) => p.$active ? '0 4px 16px rgba(34, 211, 238, 0.18), inset 0 1px 0 rgba(255,255,255,0.1)' : 'none'};
+  position: relative;
+
+  ${(p) => p.$active && `
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 25%;
+      right: 25%;
+      height: 2px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, rgba(34, 211, 238, 0.8), rgba(59, 130, 246, 0.6));
+      box-shadow: 0 0 6px rgba(34, 211, 238, 0.5);
+    }
+  `}
 
   &:hover {
-    border-color: rgba(34, 211, 238, 0.32);
-    color: rgba(255, 255, 255, 0.92);
+    border-color: ${(p) => p.$active ? 'rgba(34, 211, 238, 0.55)' : 'rgba(255, 255, 255, 0.12)'};
+    color: rgba(255, 255, 255, 0.95);
+    background: ${(p) => p.$active
+      ? 'linear-gradient(135deg, rgba(34, 211, 238, 0.25), rgba(59, 130, 246, 0.2))'
+      : 'rgba(255, 255, 255, 0.05)'};
   }
 `;
 

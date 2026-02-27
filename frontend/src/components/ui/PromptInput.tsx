@@ -509,7 +509,7 @@ export const PromptInput = forwardRef<HTMLTextAreaElement, PromptInputProps>(
           <CounterPill $warn={remaining < 120}>{remaining.toLocaleString()} chars</CounterPill>
         </TopBar>
 
-        <ProjectModeRow>
+        <ProjectModeRow style={{ display: 'none' }}>
           <ProjectModeLabel>{labels?.projectModeLabel || 'Project Mode'}</ProjectModeLabel>
           <ProjectModeSwitch aria-label={labels?.projectModeLabel || 'Project mode'}>
             <ProjectModeButton

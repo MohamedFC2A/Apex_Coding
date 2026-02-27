@@ -1342,6 +1342,7 @@ const ChatComposerWrap = styled.div`
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 `;
 
 const WorkbenchColumn = styled.div`
@@ -2828,6 +2829,7 @@ function App() {
     const workspaceAnalysis = analyzeWorkspaceIntelligence({
       files: projectSnapshotForAnalysis.files,
       prompt: basePrompt,
+      generationProfile: generationConstraints.generationProfile,
       activeFile: projectSnapshotForAnalysis.activeFile,
       recentPreviewErrors: previewSnapshotForAnalysis.logs.slice(-32).map((entry) => String(entry.message || '')),
       interactionMode,
@@ -3771,13 +3773,7 @@ function App() {
       const buildCreatePathCandidates = (path: string) => {
         const normalized = normalizeRefPath(path);
         if (!normalized) return [] as string[];
-        const out = new Set<string>([normalized]);
-        const lowered = normalized.toLowerCase();
-        if (lowered.startsWith('frontend/')) {
-          const trimmed = normalized.slice('frontend/'.length);
-          if (trimmed) out.add(trimmed);
-        }
-        return Array.from(out);
+        return [normalized];
       };
       const localTouchedPaths = new Set<string>();
       const localCreatedPaths = new Set<string>();
@@ -3834,7 +3830,6 @@ function App() {
         const baseline = ['index.html', 'style.css', 'script.js'];
         for (const fileName of baseline) {
           seeded.add(fileName);
-          seeded.add(`frontend/${fileName}`);
         }
 
         for (const base of baseline) {
